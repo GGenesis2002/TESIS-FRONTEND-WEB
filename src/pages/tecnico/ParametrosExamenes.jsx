@@ -1,0 +1,701 @@
+import { useState, useEffect } from "react";
+import API from "../../services/api";
+
+const SEXOS = ["General", "Masculino", "Femenino"];
+
+export default function ParametrosExamenes() {
+  const [tab, setTab] = useState("listado");
+  const [examenes, setExamenes] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [buscar, setBuscar] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const [examenSeleccionado, setExamenSeleccionado] = useState(null);
+  const [parametros, setParametros] = useState([]);
+  const [modoEdicion, setModoEdicion] = useState(false);
+  const [paramEditando, setParamEditando] = useState(null);
+
+  // ── CAMBIO 1: tipo_resultado agregado al form de nuevo examen ──
+  const [nuevoExamen, setNuevoExamen] = useState({
+    id_categoria: "",
+    nombre_examen: "",
+    precio: "",
+    tipo_resultado: "PARAMETROS", // <-- nuevo campo
+  });
+  const [guardandoExamen, setGuardandoExamen] = useState(false);
+
+  const [nuevoParam, setNuevoParam] = useState({
+    nombre_parametro: "",
+    rango_min: "",
+    rango_max: "",
+    unidad: "",
+    sexo_referencia: "General",
+    edad_min: "0",
+    edad_max: "120",
+  });
+  const [guardandoParam, setGuardandoParam] = useState(false);
+
+  const [nuevaCat, setNuevaCat] = useState({ nombre_categoria: "", descripcion: "" });
+  const [editandoCat, setEditandoCat] = useState(null);
+  const [guardandoCat, setGuardandoCat] = useState(false);
+  const [buscarCat, setBuscarCat] = useState("");
+
+  const [confirmarEliminar, setConfirmarEliminar] = useState(null);
+
+  const [editandoExamen, setEditandoExamen] = useState(null);
+
+  // ── Sistema de modales diseñados (reemplaza alert nativos) ──
+  const [notifModal, setNotifModal] = useState(null);
+  const showError   = (titulo, errores) => setNotifModal({ tipo:"error",   titulo, errores: errores || [] });
+  const showSuccess = (titulo, mensaje) => setNotifModal({ tipo:"success", titulo, mensaje });
+  const closeModal  = ()               => setNotifModal(null);
+
+  // ── Cargar ──
+  const cargarExamenes = async () => {
+    setLoading(true);
+    try {
+      const { data } = await API.get(`/examenes${buscar ? `?buscar=${buscar}` : ""}`);
+      setExamenes(data);
+    } catch { setExamenes([]); }
+    finally { setLoading(false); }
+  };
+
+  const cargarCategorias = async () => {
+    try {
+      const { data } = await API.get("/categorias");
+      setCategorias(data);
+    } catch { setCategorias([]); }
+  };
+
+  const cargarParametros = async (id_examen) => {
+    try {
+      const { data } = await API.get(`/parametros/examen/${id_examen}`);
+      setParametros(data);
+    } catch { setParametros([]); }
+  };
+
+  useEffect(() => { cargarExamenes(); cargarCategorias(); }, []);
+  useEffect(() => { cargarExamenes(); }, [buscar]);
+
+  // ── Guardar examen ── (ahora envía tipo_resultado)
+ const handleGuardarExamen = async () => {
+  const errores = [];
+  if (!nuevoExamen.id_categoria)                                             errores.push("Selecciona una categoría.");
+  if (!nuevoExamen.nombre_examen?.trim())                                    errores.push("El nombre del examen es obligatorio.");
+  if (nuevoExamen.precio === "" || nuevoExamen.precio === null)               errores.push("El precio es obligatorio.");
+  else if (isNaN(Number(nuevoExamen.precio)) || Number(nuevoExamen.precio) < 0) errores.push("El precio debe ser un número positivo.");
+  if (!nuevoExamen.tipo_resultado)                                           errores.push("Selecciona el tipo de resultado.");
+  if (errores.length > 0) { showError("Campos incompletos", errores); return; }
+
+  setGuardandoExamen(true);
+  try {
+    if (editandoExamen) {
+      await API.put(`/examenes/${editandoExamen.id_examen}`, nuevoExamen);
+      showSuccess("Examen actualizado", "Los datos del examen fueron guardados correctamente.");
+    } else {
+      await API.post("/examenes", nuevoExamen);
+      showSuccess("Examen creado", "El examen fue registrado en el catálogo correctamente.");
+    }
+    setNuevoExamen({ id_categoria: "", nombre_examen: "", precio: "", tipo_resultado: "PARAMETROS" });
+    setEditandoExamen(null);
+    cargarExamenes();
+  } catch (err) {
+    console.error(err);
+    showError("Error al guardar", ["No se pudo guardar el examen.", "Verifica la conexión e intenta nuevamente."]);
+  } finally {
+    setGuardandoExamen(false);
+  }
+};
+  const handleGuardarParam = async () => {
+    const errores = [];
+    if (!nuevoParam.nombre_parametro?.trim())                                      errores.push("El nombre del parámetro es obligatorio.");
+    if (nuevoParam.rango_min === "" || nuevoParam.rango_min === null)               errores.push("El valor mínimo es obligatorio.");
+    else if (isNaN(Number(nuevoParam.rango_min)))                                   errores.push("El valor mínimo debe ser numérico.");
+    if (nuevoParam.rango_max === "" || nuevoParam.rango_max === null)               errores.push("El valor máximo es obligatorio.");
+    else if (isNaN(Number(nuevoParam.rango_max)))                                   errores.push("El valor máximo debe ser numérico.");
+    if (nuevoParam.rango_min !== "" && nuevoParam.rango_max !== "" &&
+        Number(nuevoParam.rango_min) > Number(nuevoParam.rango_max))               errores.push("El mínimo no puede ser mayor que el máximo.");
+    if (!nuevoParam.unidad?.trim())                                                 errores.push("La unidad de medida es obligatoria (ej: mg/dL).");
+    if (nuevoParam.edad_min === "" || isNaN(Number(nuevoParam.edad_min)))           errores.push("La edad mínima debe ser un número.");
+    if (nuevoParam.edad_max === "" || isNaN(Number(nuevoParam.edad_max)))           errores.push("La edad máxima debe ser un número.");
+    if (Number(nuevoParam.edad_min) > Number(nuevoParam.edad_max))                 errores.push("La edad mínima no puede superar la máxima.");
+    if (errores.length > 0) { showError("Campos incompletos", errores); return; }
+
+    setGuardandoParam(true);
+    try {
+      if (paramEditando) {
+        await API.put(`/parametros/${paramEditando.id_parametro}`, nuevoParam);
+      } else {
+        await API.post("/parametros", { ...nuevoParam, id_examen: examenSeleccionado.id_examen });
+      }
+      resetParamForm();
+      cargarParametros(examenSeleccionado.id_examen);
+    } catch (err) {
+      console.error(err);
+      showError("Error al guardar", ["No se pudo guardar el parámetro.", "Verifica la conexión e intenta nuevamente."]);
+    } finally {
+      setGuardandoParam(false);
+    }
+  };
+
+  // Agrega esta función en tu componente
+const handleEditarExamen = (examen) => {
+  setEditandoExamen(examen); // Guardamos el examen completo que estamos editando
+  setNuevoExamen({
+    id_categoria: examen.id_categoria,
+    nombre_examen: examen.nombre_examen,
+    precio: examen.precio,
+    tipo_resultado: examen.tipo_resultado || "PARAMETROS" // Aseguramos el nuevo campo
+  });
+  setModoEdicion(true); // Suponiendo que tienes un estado modoEdicion
+};
+
+  const resetParamForm = () => {
+    setNuevoParam({ nombre_parametro: "", rango_min: "", rango_max: "", unidad: "", sexo_referencia: "General", edad_min: "0", edad_max: "120" });
+    setParamEditando(null);
+    setModoEdicion(false);
+  };
+
+  // ── Eliminar parámetro ──
+  const handleEliminarParam = async (id) => {
+    try {
+      await API.delete(`/parametros/${id}`);
+      cargarParametros(examenSeleccionado.id_examen);
+    } catch {}
+    finally { setConfirmarEliminar(null); }
+  };
+
+  // ── Editar parámetro ──
+  const handleEditarParam = (p) => {
+    setParamEditando(p);
+    setNuevoParam({
+      nombre_parametro: p.nombre_parametro,
+      rango_min: p.rango_min,
+      rango_max: p.rango_max,
+      unidad: p.unidad,
+      sexo_referencia: p.sexo_referencia || "General",
+      edad_min: p.edad_min || "0",
+      edad_max: p.edad_max || "120",
+    });
+    setModoEdicion(true);
+  };
+
+  // ── Ver parámetros ──
+  const handleVerParametros = (examen) => {
+    setExamenSeleccionado(examen);
+    cargarParametros(examen.id_examen);
+    resetParamForm();
+  };
+
+  // ── Guardar categoría ──
+  const handleGuardarCategoria = async () => {
+    if (!nuevaCat.nombre_categoria?.trim()) {
+      showError("Campo obligatorio", ["El nombre de la categoría es obligatorio."]);
+      return;
+    }
+    setGuardandoCat(true);
+    try {
+      if (editandoCat) {
+        await API.put(`/categorias/${editandoCat.id_categoria}`, nuevaCat);
+      } else {
+        await API.post("/categorias", nuevaCat);
+      }
+      setNuevaCat({ nombre_categoria: "", descripcion: "" });
+      setEditandoCat(null);
+      cargarCategorias();
+    } catch {}
+    finally { setGuardandoCat(false); }
+  };
+
+  const categoriasFiltradas = categorias.filter(c =>
+    c.nombre_categoria?.toLowerCase().includes(buscarCat.toLowerCase())
+  );
+
+  // ── VISTA PARÁMETROS ──
+  // CAMBIO 2: Si el examen es tipo PDF, mostrar aviso en lugar del formulario de parámetros
+  if (examenSeleccionado) {
+    const esPDF = examenSeleccionado.tipo_resultado === "PDF";
+
+    return (
+      <div style={containerStyle}>
+        <div style={{ marginBottom: "1.5rem" }}>
+          <div style={tabRowStyle}>
+            <TabBtn active={tab === "listado"} onClick={() => setTab("listado")} label="☰ LISTADO" />
+            <TabBtn active={tab === "categorias"} onClick={() => setTab("categorias")} label="⚙ CATEGORÍAS" />
+          </div>
+          <button onClick={() => setExamenSeleccionado(null)} style={backBtnStyle}>
+            ← VOLVER AL LISTADO
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "1rem", flexWrap: "wrap" }}>
+            <h2 style={{ ...titleStyle, margin: 0 }}>
+              {modoEdicion ? "EDITANDO" : "CONFIGURAR"}
+            </h2>
+            <h2 style={{ ...titleStyle, color: "#E88B3A", margin: 0 }}>
+              {examenSeleccionado.nombre_examen.toUpperCase()}
+            </h2>
+            {/* CAMBIO 3: Badge de tipo visible en el header */}
+            <span style={esPDF ? badgePDFStyle : badgeParamStyle}>
+              {esPDF ? "📄 PDF" : "📋 PARÁMETROS"}
+            </span>
+          </div>
+        </div>
+
+        {/* CAMBIO 4: Si es PDF → aviso informativo. Si es PARAMETROS → formulario normal */}
+        {esPDF ? (
+          <div style={pdfAvisoStyle}>
+            <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>📄</div>
+            <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "1.1rem", color: "#92400E", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
+              Este examen entrega resultados como PDF
+            </p>
+            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", color: "#78350F", lineHeight: 1.6, margin: 0 }}>
+              Los parámetros no aplican para este examen. Cuando se registre el resultado,
+              el técnico deberá adjuntar el archivo PDF del informe directamente.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Form parámetro — sin cambios */}
+            <div style={{
+              ...panelStyle,
+              marginBottom: "1.5rem",
+              border: modoEdicion ? "2px solid #E88B3A" : "1px solid #F1F5F9",
+              background: modoEdicion ? "#FFFBF7" : "#FFF",
+            }}>
+              <p style={formSectionTitleStyle}>
+                {modoEdicion ? "Editando Parámetro" : "Nuevo Parámetro"}
+              </p>
+
+              {/* Fila 1: Nombre + Sexo */}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <input
+                  placeholder="Ej: Glucosa en ayunas"
+                  value={nuevoParam.nombre_parametro}
+                  onChange={e => setNuevoParam(f => ({ ...f, nombre_parametro: e.target.value }))}
+                  style={paramInputStyle}
+                />
+                <select
+                  value={nuevoParam.sexo_referencia}
+                  onChange={e => setNuevoParam(f => ({ ...f, sexo_referencia: e.target.value }))}
+                  style={paramSelectStyle}
+                >
+                  {SEXOS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              {/* Fila 2: Rangos + Unidad */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <input placeholder="Mín 0.00" type="number" step="0.01"
+                  value={nuevoParam.rango_min}
+                  onChange={e => setNuevoParam(f => ({ ...f, rango_min: e.target.value }))}
+                  style={paramInputStyle} />
+                <input placeholder="Máx 0.00" type="number" step="0.01"
+                  value={nuevoParam.rango_max}
+                  onChange={e => setNuevoParam(f => ({ ...f, rango_max: e.target.value }))}
+                  style={paramInputStyle} />
+                <input placeholder="mg/dL"
+                  value={nuevoParam.unidad}
+                  onChange={e => setNuevoParam(f => ({ ...f, unidad: e.target.value }))}
+                  style={paramInputStyle} />
+              </div>
+
+              {/* Fila 3: Edad Min + Edad Max + Botón */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0.75rem", alignItems: "center" }}>
+                <input placeholder="Edad mín (años)" type="number"
+                  value={nuevoParam.edad_min}
+                  onChange={e => setNuevoParam(f => ({ ...f, edad_min: e.target.value }))}
+                  style={paramInputStyle} />
+                <input placeholder="Edad máx (años)" type="number"
+                  value={nuevoParam.edad_max}
+                  onChange={e => setNuevoParam(f => ({ ...f, edad_max: e.target.value }))}
+                  style={paramInputStyle} />
+                {modoEdicion ? (
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button onClick={handleGuardarParam} style={circleOrangeBtn}>✓</button>
+                    <button onClick={resetParamForm} style={circleRedBtn}>✕</button>
+                  </div>
+                ) : (
+                  <button onClick={handleGuardarParam} disabled={guardandoParam} style={circleDarkBtn}>
+                    {guardandoParam ? "..." : "+"}
+                  </button>
+                )}
+              </div>
+
+              <div style={paramLabelsStyle}>
+                <span style={{ flex: 2 }}>NOMBRE PARÁMETRO</span>
+                <span style={{ flex: 1 }}>SEXO</span>
+                <span style={{ flex: 1 }}>MIN - MAX</span>
+                <span style={{ flex: 1 }}>UNIDAD</span>
+                <span style={{ flex: 1 }}>EDAD (años)</span>
+              </div>
+            </div>
+
+            {/* Tabla parámetros — sin cambios */}
+            <div style={panelStyle}>
+              <div style={paramTableHeaderStyle}>
+                <span style={{ flex: 2 }}>PARÁMETRO</span>
+                <span style={{ flex: 1, textAlign: "center" }}>SEXO</span>
+                <span style={{ flex: 1, textAlign: "center" }}>RANGO (2 DEC)</span>
+                <span style={{ flex: 1, textAlign: "center" }}>UNIDAD</span>
+                <span style={{ flex: 1, textAlign: "center" }}>EDAD</span>
+                <span style={{ flex: 1, textAlign: "right" }}>ACCIONES</span>
+              </div>
+
+              {parametros.length === 0 ? (
+                <p style={{ textAlign: "center", color: "#9CA3AF", padding: "2rem", fontSize: "0.85rem" }}>
+                  Sin parámetros registrados
+                </p>
+              ) : (
+                parametros.map(p => (
+                  <div key={p.id_parametro} style={paramRowStyle}>
+                    <div style={{ flex: 2, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <div style={paramAccentBarStyle} />
+                      <span style={paramNameStyle}>{p.nombre_parametro.toUpperCase()}</span>
+                    </div>
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <span style={{
+                        ...sexoBadgeStyle,
+                        background: p.sexo_referencia === "Masculino" ? "rgba(59,130,246,0.1)" :
+                                    p.sexo_referencia === "Femenino"  ? "rgba(236,72,153,0.1)" :
+                                    "rgba(107,114,128,0.1)",
+                        color: p.sexo_referencia === "Masculino" ? "#3B82F6" :
+                               p.sexo_referencia === "Femenino"  ? "#EC4899" : "#6B7280",
+                      }}>
+                        {p.sexo_referencia === "Masculino" ? "♂" :
+                         p.sexo_referencia === "Femenino"  ? "♀" : "⚥"}
+                      </span>
+                    </div>
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <span style={rangoStyle}>
+                        {parseFloat(p.rango_min).toFixed(2)} — {parseFloat(p.rango_max).toFixed(2)}
+                      </span>
+                    </div>
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <span style={unidadBadgeStyle}>{p.unidad}</span>
+                    </div>
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <span style={edadBadgeStyle}>{p.edad_min}-{p.edad_max} años</span>
+                    </div>
+                    <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                      <button onClick={() => handleEditarParam(p)} style={iconActionBtn("#E88B3A")}>✏️</button>
+                      <button onClick={() => setConfirmarEliminar(p.id_parametro)} style={iconActionBtn("#DC2626")}>🗑️</button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Modal confirmar eliminar — diseñado */}
+        {confirmarEliminar && (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:"1rem" }}>
+            <div style={{ background:"#FFF", borderRadius:"16px", width:"100%", maxWidth:"400px", overflow:"hidden", boxShadow:"0 24px 60px rgba(0,0,0,0.2)", fontFamily:"'Barlow', sans-serif" }}>
+              {/* Header rojo */}
+              <div style={{ background:"#FEF2F2", borderBottom:"1px solid #FECACA", padding:"1.25rem 1.5rem", display:"flex", alignItems:"center", gap:"0.75rem" }}>
+                <span style={{ fontSize:"1.6rem", lineHeight:1 }}>🗑️</span>
+                <h3 style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:800, fontSize:"1.1rem", color:"#DC2626", margin:0, textTransform:"uppercase", letterSpacing:"0.04em" }}>
+                  ¿Eliminar Parámetro?
+                </h3>
+              </div>
+              {/* Body */}
+              <div style={{ padding:"1.25rem 1.5rem" }}>
+                <p style={{ margin:0, fontSize:"0.87rem", color:"#374151", lineHeight:1.6 }}>
+                  Esta acción es <strong>irreversible</strong> y afectará los rangos de referencia de futuros exámenes.
+                </p>
+              </div>
+              {/* Botones */}
+              <div style={{ padding:"0 1.5rem 1.25rem", display:"flex", gap:"0.65rem" }}>
+                <button onClick={() => setConfirmarEliminar(null)}
+                  style={{ flex:1, padding:"0.6rem", background:"#F3F4F6", color:"#374151", border:"1px solid #E5E7EB", borderRadius:"8px", fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:"0.82rem", cursor:"pointer", letterSpacing:"0.05em", textTransform:"uppercase" }}>
+                  Cancelar
+                </button>
+                <button onClick={() => handleEliminarParam(confirmarEliminar)}
+                  style={{ flex:1, padding:"0.6rem", background:"#DC2626", color:"#FFF", border:"none", borderRadius:"8px", fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:"0.82rem", cursor:"pointer", letterSpacing:"0.05em", textTransform:"uppercase" }}>
+                  Sí, eliminar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Modal notificación diseñado */}
+        {notifModal && <NotifModal data={notifModal} onClose={closeModal} />}
+      </div>
+    );
+  }
+
+  // ── VISTA PRINCIPAL ──
+  return (
+    <div style={containerStyle}>
+      <div style={{ marginBottom: "1.5rem" }}>
+        <h2 style={titleStyle}>
+          GESTIÓN DE <span style={{ color: "#E88B3A" }}>EXÁMENES</span>
+        </h2>
+        <div style={tabRowStyle}>
+          <TabBtn active={tab === "listado"} onClick={() => setTab("listado")} label="☰ LISTADO" />
+          <TabBtn active={tab === "categorias"} onClick={() => setTab("categorias")} label="⚙ CATEGORÍAS" />
+        </div>
+      </div>
+
+      {tab === "listado" && (
+        <>
+          {/* CAMBIO 5: Form de nuevo examen con selector de tipo_resultado */}
+          <div style={{ ...panelStyle, background: "#1F2937", marginBottom: "1.5rem" }}>
+            <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.75rem", fontWeight: 700, color: "#94A3B8", letterSpacing: "0.15em", textTransform: "uppercase", margin: "0 0 0.75rem" }}>
+              NUEVO EXAMEN
+            </p>
+            <div style={examenFormRowStyle}>
+              <select
+                value={nuevoExamen.id_categoria}
+                onChange={e => setNuevoExamen(f => ({ ...f, id_categoria: e.target.value }))}
+                style={darkSelectStyle}>
+                <option value="">Categoría...</option>
+                {categorias.map(c => <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>)}
+              </select>
+              <input placeholder="Nombre Examen" value={nuevoExamen.nombre_examen}
+                onChange={e => setNuevoExamen(f => ({ ...f, nombre_examen: e.target.value }))}
+                style={darkInputStyle} />
+              <input placeholder="Precio" type="number" value={nuevoExamen.precio}
+                onChange={e => setNuevoExamen(f => ({ ...f, precio: e.target.value }))}
+                style={{ ...darkInputStyle, flex: "0 0 100px" }} />
+
+              {/* CAMBIO 6: Selector tipo_resultado con colores */}
+              <select
+                value={nuevoExamen.tipo_resultado}
+                onChange={e => setNuevoExamen(f => ({ ...f, tipo_resultado: e.target.value }))}
+                style={{
+                  ...darkSelectStyle,
+                  flex: "0 0 150px",
+                  background: nuevoExamen.tipo_resultado === "PDF" ? "#78350F" : "#1e3a5f",
+                  fontWeight: 700,
+                }}>
+                <option value="PARAMETROS">📋 Parámetros</option>
+                <option value="PDF">📄 PDF</option>
+              </select>
+
+              <button onClick={handleGuardarExamen} disabled={guardandoExamen} style={guardarBtnStyle}>
+                {guardandoExamen ? "..." : "+ GUARDAR"}
+              </button>
+            </div>
+          </div>
+
+          <div style={searchWrapStyle}>
+            <span style={{ color: "#9CA3AF" }}>🔍</span>
+            <input placeholder="Buscar por examen o categoría..." value={buscar}
+              onChange={e => setBuscar(e.target.value)}
+              style={{ flex: 1, border: "none", outline: "none", fontFamily: "'Barlow', sans-serif", fontSize: "0.9rem", color: "#374151", background: "transparent" }} />
+          </div>
+
+          {loading ? (
+            <p style={{ textAlign: "center", color: "#6B7280", padding: "3rem" }}>Cargando exámenes...</p>
+          ) : (
+            <div style={examenesGridStyle}>
+              {examenes.map(e => (
+                <div key={e.id_examen} style={examenCardStyle}>
+                  <div style={{ fontSize: "1.5rem", color: "#E5E7EB", marginBottom: "0.5rem" }}>🔬</div>
+                  <p style={catLabelStyle}>{e.nombre_categoria}</p>
+                  <p style={examenNameStyle}>{e.nombre_examen}</p>
+                  <p style={precioStyle}>${parseFloat(e.precio).toFixed(2)}</p>
+
+                  {/* CAMBIO 7: Badge de tipo en cada card del listado */}
+                  <div style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                    <span style={e.tipo_resultado === "PDF" ? badgePDFStyle : badgeParamStyle}>
+                      {e.tipo_resultado === "PDF" ? "📄 PDF" : "📋 Parámetros"}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+                    <button 
+                      onClick={() => handleEditarExamen(e)} 
+                      style={iconActionBtn("#E88B3A")} 
+                      title="Editar"
+                    >
+                      ✏️
+                    </button>
+                    {/* CAMBIO 8: Si es PDF el botón de configurar no aplica, se oculta */}
+                    {e.tipo_resultado !== "PDF" && (
+                      <button onClick={() => handleVerParametros(e)} style={iconActionBtn("#6B7280")} title="Configurar parámetros">⚙️</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "categorias" && (
+        <>
+          <div style={{ ...panelStyle, marginBottom: "1.5rem", border: editandoCat ? "2px solid #E88B3A" : "1px solid #F1F5F9", background: editandoCat ? "#FFFBF7" : "#FFF" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <p style={formSectionTitleStyle}>+ NUEVA CATEGORÍA</p>
+              {editandoCat && (
+                <button onClick={() => { setEditandoCat(null); setNuevaCat({ nombre_categoria: "", descripcion: "" }); }}
+                  style={{ background: "none", border: "none", color: "#DC2626", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+                  CANCELAR
+                </button>
+              )}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+              <input placeholder="Nombre de la Categoría" value={nuevaCat.nombre_categoria}
+                onChange={e => setNuevaCat(f => ({ ...f, nombre_categoria: e.target.value }))}
+                style={fieldInputStyle} />
+              <input placeholder="Descripción (Opcional)" value={nuevaCat.descripcion}
+                onChange={e => setNuevaCat(f => ({ ...f, descripcion: e.target.value }))}
+                style={fieldInputStyle} />
+            </div>
+            <button onClick={handleGuardarCategoria} disabled={guardandoCat} style={registrarCatBtnStyle}>
+              💾 {editandoCat ? "Actualizar Categoría" : "Registrar Categoría"}
+            </button>
+          </div>
+
+          <div style={searchWrapStyle}>
+            <span style={{ color: "#9CA3AF" }}>🔍</span>
+            <input placeholder="Filtrar categorías por nombre..." value={buscarCat}
+              onChange={e => setBuscarCat(e.target.value)}
+              style={{ flex: 1, border: "none", outline: "none", fontFamily: "'Barlow', sans-serif", fontSize: "0.9rem", color: "#374151", background: "transparent" }} />
+          </div>
+
+          <div style={catGridStyle}>
+            {categoriasFiltradas.map(c => (
+              <div key={c.id_categoria} style={catCardStyle}>
+                <span style={{ color: "#E88B3A", fontSize: "1.1rem" }}>🏷️</span>
+                <div style={{ flex: 1 }}>
+                  <p style={catCardNameStyle}>{c.nombre_categoria.toUpperCase()}</p>
+                  <p style={catCardDescStyle}>{c.descripcion || c.nombre_categoria.toLowerCase()}</p>
+                </div>
+                <button onClick={() => { setEditandoCat(c); setNuevaCat({ nombre_categoria: c.nombre_categoria, descripcion: c.descripcion || "" }); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: "1rem" }}>✏️</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {/* Modal notificación diseñado */}
+      {notifModal && <NotifModal data={notifModal} onClose={closeModal} />}
+    </div>
+  );
+}
+
+// ─── MODAL DE NOTIFICACIÓN DISEÑADO ──────────────────────────────────────────
+function NotifModal({ data, onClose }) {
+  const cfg = {
+    error:   { icon:"⚠️", accent:"#DC2626", bg:"#FEF2F2", border:"#FECACA", btnBg:"#DC2626", btnLabel:"Entendido" },
+    success: { icon:"✅", accent:"#059669", bg:"#F0FDF4", border:"#BBF7D0", btnBg:"#059669", btnLabel:"Aceptar"   },
+    warning: { icon:"🔔", accent:"#D97706", bg:"#FFFBEB", border:"#FDE68A", btnBg:"#D97706", btnLabel:"Aceptar"   },
+  }[data.tipo] || { icon:"ℹ️", accent:"#3B82F6", bg:"#EFF6FF", border:"#BFDBFE", btnBg:"#3B82F6", btnLabel:"Aceptar" };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:"1rem" }}>
+      <div style={{ background:"#FFF", borderRadius:"16px", width:"100%", maxWidth:"400px", overflow:"hidden", boxShadow:"0 24px 60px rgba(0,0,0,0.2)", fontFamily:"'Barlow', sans-serif" }}>
+        {/* Header con color según tipo */}
+        <div style={{ background:cfg.bg, borderBottom:`1px solid ${cfg.border}`, padding:"1.25rem 1.5rem", display:"flex", alignItems:"center", gap:"0.75rem" }}>
+          <span style={{ fontSize:"1.6rem", lineHeight:1 }}>{cfg.icon}</span>
+          <h3 style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:800, fontSize:"1.1rem", color:cfg.accent, margin:0, textTransform:"uppercase", letterSpacing:"0.04em" }}>
+            {data.titulo}
+          </h3>
+        </div>
+        {/* Body */}
+        <div style={{ padding:"1.25rem 1.5rem" }}>
+          {data.errores && data.errores.length > 0 ? (
+            <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:"0.4rem" }}>
+              {data.errores.map((e, i) => (
+                <li key={i} style={{ display:"flex", alignItems:"flex-start", gap:"0.5rem", fontSize:"0.87rem", color:"#374151" }}>
+                  <span style={{ color:cfg.accent, fontWeight:700, flexShrink:0, marginTop:"1px" }}>›</span>
+                  {e}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p style={{ margin:0, fontSize:"0.87rem", color:"#374151", lineHeight:1.6 }}>{data.mensaje}</p>
+          )}
+        </div>
+        {/* Footer */}
+        <div style={{ padding:"0 1.5rem 1.25rem", display:"flex", justifyContent:"flex-end" }}>
+          <button onClick={onClose} style={{ padding:"0.55rem 1.5rem", background:cfg.btnBg, color:"#FFF", border:"none", borderRadius:"8px", fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:"0.85rem", letterSpacing:"0.06em", cursor:"pointer", textTransform:"uppercase" }}>
+            {cfg.btnLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TAB BTN ──────────────────────────────────────────────────────────────────
+function TabBtn({ active, onClick, label }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: "0.6rem 1.25rem", background: active ? "#E88B3A" : "transparent",
+      color: active ? "#FFF" : "#6B7280", border: active ? "none" : "1px solid #E5E7EB",
+      borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif",
+      fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", cursor: "pointer", textTransform: "uppercase",
+    }}>{label}</button>
+  );
+}
+
+// ─── ESTILOS ──────────────────────────────────────────────────────────────────
+const containerStyle = { padding: "1rem", fontFamily: "'Barlow', sans-serif" };
+const titleStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontSize: "1.75rem", fontWeight: 700, color: "#1F2937", margin: "0 0 1rem", textTransform: "uppercase" };
+const tabRowStyle = { display: "flex", gap: "0.5rem", marginBottom: "1.5rem" };
+const panelStyle = { background: "#FFF", borderRadius: "12px", padding: "1.5rem", border: "1px solid #F1F5F9", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" };
+const searchWrapStyle = { display: "flex", alignItems: "center", gap: "0.75rem", background: "#FFF", border: "1.5px solid #E5E7EB", borderRadius: "8px", padding: "0.6rem 1rem", marginBottom: "1.5rem" };
+
+const examenFormRowStyle = { display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" };
+const darkSelectStyle = { flex: 1, padding: "0.65rem 0.75rem", background: "#374151", color: "#FFF", border: "none", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", cursor: "pointer" };
+const darkInputStyle = { flex: 1, padding: "0.65rem 0.75rem", background: "#374151", color: "#FFF", border: "none", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", outline: "none" };
+const guardarBtnStyle = { padding: "0.65rem 1.25rem", background: "#FFF", color: "#1F2937", border: "none", borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", whiteSpace: "nowrap" };
+
+const examenesGridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" };
+const examenCardStyle = { background: "#FFF", borderRadius: "10px", padding: "1.25rem", border: "1px solid #F1F5F9", boxShadow: "0 2px 4px rgba(0,0,0,0.03)" };
+const catLabelStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.7rem", fontWeight: 700, color: "#E88B3A", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.25rem" };
+const examenNameStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontSize: "1.1rem", fontWeight: 700, color: "#1F2937", margin: "0 0 0.25rem", textTransform: "uppercase" };
+const precioStyle = { fontFamily: "'Barlow', sans-serif", fontSize: "0.9rem", color: "#6B7280", margin: 0 };
+
+const backBtnStyle = { background: "none", border: "none", color: "#6B7280", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: "0.25rem" };
+const formSectionTitleStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.8rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 };
+const paramLabelsStyle = { display: "flex", gap: "0.75rem", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.65rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", marginTop: "0.75rem" };
+const paramInputStyle = { padding: "0.65rem 0.75rem", border: "1px solid #E5E7EB", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", color: "#374151", background: "#FAFAFA", outline: "none" };
+const paramSelectStyle = { ...paramInputStyle, cursor: "pointer" };
+const paramTableHeaderStyle = { display: "flex", padding: "0.6rem 1rem", background: "#F8FAFC", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", borderRadius: "8px", marginBottom: "0.5rem" };
+const paramRowStyle = { display: "flex", alignItems: "center", padding: "0.9rem 0.5rem", borderBottom: "1px solid #F8FAFC" };
+const paramAccentBarStyle = { width: "3px", height: "20px", background: "#E88B3A", borderRadius: "2px", flexShrink: 0 };
+const paramNameStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "1rem", color: "#1F2937", textTransform: "uppercase" };
+const rangoStyle = { fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", color: "#374151" };
+const unidadBadgeStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.75rem", fontWeight: 700, background: "rgba(232,139,58,0.1)", color: "#E88B3A", padding: "0.2rem 0.5rem", borderRadius: "4px", textTransform: "uppercase" };
+const sexoBadgeStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.9rem", fontWeight: 700, padding: "0.3rem 0.6rem", borderRadius: "20px" };
+const edadBadgeStyle = { fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#6B7280", background: "#F8FAFC", padding: "0.2rem 0.5rem", borderRadius: "4px" };
+const iconActionBtn = (color) => ({ background: "none", border: "none", cursor: "pointer", fontSize: "0.9rem", padding: "0.3rem", color, borderRadius: "4px" });
+const circleDarkBtn = { width: "36px", height: "36px", borderRadius: "50%", background: "#1F2937", color: "#FFF", border: "none", cursor: "pointer", fontSize: "1.2rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
+const circleOrangeBtn = { ...circleDarkBtn, background: "#E88B3A" };
+const circleRedBtn = { ...circleDarkBtn, background: "#DC2626" };
+
+const registrarCatBtnStyle = { padding: "0.65rem 1.25rem", background: "#1F2937", color: "#FFF", border: "none", borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" };
+const catGridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" };
+const catCardStyle = { background: "#FFF", borderRadius: "10px", padding: "1rem 1.25rem", border: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: "0.75rem" };
+const catCardNameStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.9rem", color: "#1F2937", margin: 0, textTransform: "uppercase" };
+const catCardDescStyle = { fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#9CA3AF", margin: 0 };
+
+const overlayStyle = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" };
+const confirmModalStyle = { background: "#FFF", borderRadius: "16px", padding: "2rem", width: "100%", maxWidth: "380px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" };
+const fieldInputStyle = { width: "100%", padding: "0.65rem 0.9rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontSize: "0.9rem", color: "#1F2937", background: "#FAFAFA", outline: "none", boxSizing: "border-box" };
+
+// ─── ESTILOS NUEVOS ───────────────────────────────────────────────────────────
+// Badge para cards y header de configuración
+const badgePDFStyle = {
+  display: "inline-block", padding: "0.2rem 0.6rem",
+  background: "#FEF3C7", color: "#92400E",
+  borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700,
+  fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em",
+};
+const badgeParamStyle = {
+  display: "inline-block", padding: "0.2rem 0.6rem",
+  background: "#EFF6FF", color: "#1e3a5f",
+  borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700,
+  fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em",
+};
+
+// Aviso cuando el examen seleccionado es de tipo PDF
+const pdfAvisoStyle = {
+  background: "#FFFBEB", border: "1.5px dashed #FCD34D",
+  borderRadius: "12px", padding: "2.5rem 2rem",
+  textAlign: "center", marginTop: "0.5rem",
+};

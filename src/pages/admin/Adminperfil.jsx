@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import API from "../../services/api";
 
-/* ─── URL base para mostrar la imagen de firma ───────────────────────────── */
-const FIRMA_BASE = "http://localhost:4000/storage/firmas";
+
 
 /* ─── Hook: canvas de firma a mano ──────────────────────────────────────── */
 function useSignaturePad(ref) {
@@ -105,7 +104,7 @@ export default function AdminPerfil() {
           cargo:       data.cargo       || "",
           observacion: data.observacion || "",
         });
-        setFirmaActual(data.firma_digital || null);
+        setFirmaActual(data.firma_url || null);
       })
       .catch((err) => {
         const msg = err.response?.data?.error || err.message;
@@ -177,7 +176,8 @@ export default function AdminPerfil() {
       const { data } = await API.put("/admin/perfil", fd);
 
       if (data.firma) {
-        setFirmaActual(data.firma);
+    const { data: perfil } = await API.get("/admin/perfil");
+    setFirmaActual(perfil.firma_url || null);
         setFileSelec(null);
         setFileThumb(null);
         clear();
@@ -326,10 +326,11 @@ export default function AdminPerfil() {
           {firmaActual && (
             <div style={S.currentFirmaBox}>
               <p style={S.previewLbl}>Firma almacenada</p>
+             
               <img
-                src={`${FIRMA_BASE}/${firmaActual}`}
-                alt="Firma digital"
-                style={S.firmaImg}
+                  src={firmaActual}
+                  alt="Firma digital"
+                  style={S.firmaImg}
               />
               <button onClick={() => setConfirmDel(true)} style={S.btnTrash}>
                 🗑 Quitar firma actual

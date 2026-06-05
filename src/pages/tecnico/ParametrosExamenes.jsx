@@ -41,6 +41,9 @@ export default function ParametrosExamenes() {
   const [buscarCat, setBuscarCat] = useState("");
 
   const [confirmarEliminar, setConfirmarEliminar] = useState(null);
+  // tipo: "parametro" | "examen" | "categoria"
+  const [confirmarEliminarExamen, setConfirmarEliminarExamen] = useState(null);
+  const [confirmarEliminarCategoria, setConfirmarEliminarCategoria] = useState(null);
 
   const [editandoExamen, setEditandoExamen] = useState(null);
 
@@ -163,6 +166,35 @@ const handleEditarExamen = (examen) => {
       cargarParametros(examenSeleccionado.id_examen);
     } catch {}
     finally { setConfirmarEliminar(null); }
+  };
+
+  // ── Eliminar examen ──
+  const handleEliminarExamen = async (id) => {
+    try {
+      await API.delete(`/examenes/${id}`);
+      showSuccess("Examen eliminado", "El examen y todos sus parámetros fueron desactivados correctamente.");
+      cargarExamenes();
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message;
+      showError("Error al eliminar", [msg || "No se pudo eliminar el examen."]);
+    } finally {
+      setConfirmarEliminarExamen(null);
+    }
+  };
+
+  // ── Eliminar categoría ──
+  const handleEliminarCategoria = async (id) => {
+    try {
+      await API.delete(`/categorias/${id}`);
+      showSuccess("Categoría eliminada", "La categoría y todos sus exámenes asociados fueron desactivados.");
+      cargarCategorias();
+      cargarExamenes();
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message;
+      showError("Error al eliminar", [msg || "No se pudo eliminar la categoría."]);
+    } finally {
+      setConfirmarEliminarCategoria(null);
+    }
   };
 
   // ── Editar parámetro ──
@@ -511,10 +543,14 @@ const handleEditarExamen = (examen) => {
                     >
                       ✏️
                     </button>
-                    {/* CAMBIO 8: Si es PDF el botón de configurar no aplica, se oculta */}
                     {e.tipo_resultado !== "PDF" && (
                       <button onClick={() => handleVerParametros(e)} style={iconActionBtn("#6B7280")} title="Configurar parámetros">⚙️</button>
                     )}
+                    <button
+                      onClick={() => setConfirmarEliminarExamen(e)}
+                      style={iconActionBtn("#DC2626")}
+                      title="Eliminar examen"
+                    >🗑️</button>
                   </div>
                 </div>
               ))}
@@ -563,13 +599,97 @@ const handleEditarExamen = (examen) => {
                   <p style={catCardNameStyle}>{c.nombre_categoria.toUpperCase()}</p>
                   <p style={catCardDescStyle}>{c.descripcion || c.nombre_categoria.toLowerCase()}</p>
                 </div>
-                <button onClick={() => { setEditandoCat(c); setNuevaCat({ nombre_categoria: c.nombre_categoria, descripcion: c.descripcion || "" }); }}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: "1rem" }}>✏️</button>
+                <div style={{ display: "flex", gap: "0.25rem" }}>
+                  <button onClick={() => { setEditandoCat(c); setNuevaCat({ nombre_categoria: c.nombre_categoria, descripcion: c.descripcion || "" }); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: "1rem" }}>✏️</button>
+                  <button onClick={() => setConfirmarEliminarCategoria(c)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#DC2626", fontSize: "1rem" }} title="Eliminar categoría">🗑️</button>
+                </div>
               </div>
             ))}
           </div>
         </>
       )}
+      {/* Modal eliminar EXAMEN */}
+      {confirmarEliminarExamen && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:"1rem" }}>
+          <div style={{ background:"#FFF", borderRadius:"16px", width:"100%", maxWidth:"420px", overflow:"hidden", boxShadow:"0 24px 60px rgba(0,0,0,0.25)", fontFamily:"'Barlow', sans-serif" }}>
+            <div style={{ background:"#FEF2F2", borderBottom:"1px solid #FECACA", padding:"1.25rem 1.5rem", display:"flex", alignItems:"center", gap:"0.75rem" }}>
+              <span style={{ fontSize:"1.6rem" }}>⚠️</span>
+              <h3 style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:800, fontSize:"1.1rem", color:"#DC2626", margin:0, textTransform:"uppercase", letterSpacing:"0.04em" }}>
+                ¿Eliminar Examen?
+              </h3>
+            </div>
+            <div style={{ padding:"1.25rem 1.5rem" }}>
+              <p style={{ margin:"0 0 0.75rem", fontSize:"0.92rem", color:"#111827", fontWeight:700 }}>
+                🔬 {confirmarEliminarExamen.nombre_examen}
+              </p>
+              <div style={{ background:"#FFF7ED", border:"1px solid #FDE68A", borderRadius:"8px", padding:"0.75rem 1rem", fontSize:"0.85rem", color:"#92400E", lineHeight:1.6 }}>
+                <strong>Esta acción desactivará:</strong>
+                <ul style={{ margin:"0.4rem 0 0", paddingLeft:"1.25rem" }}>
+                  <li>El examen <strong>{confirmarEliminarExamen.nombre_examen}</strong></li>
+                  <li>Todos los <strong>parámetros</strong> asociados a este examen</li>
+                  <li>Las <strong>asignaciones</strong> de especialistas a este examen</li>
+                </ul>
+              </div>
+              <p style={{ margin:"0.75rem 0 0", fontSize:"0.82rem", color:"#6B7280" }}>
+                Los resultados históricos no serán afectados. Puedes reactivar el examen desde la papelera.
+              </p>
+            </div>
+            <div style={{ padding:"0 1.5rem 1.25rem", display:"flex", gap:"0.65rem" }}>
+              <button onClick={() => setConfirmarEliminarExamen(null)}
+                style={{ flex:1, padding:"0.65rem", background:"#F3F4F6", color:"#374151", border:"1px solid #E5E7EB", borderRadius:"8px", fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:"0.82rem", cursor:"pointer", textTransform:"uppercase" }}>
+                Cancelar
+              </button>
+              <button onClick={() => handleEliminarExamen(confirmarEliminarExamen.id_examen)}
+                style={{ flex:1, padding:"0.65rem", background:"#DC2626", color:"#FFF", border:"none", borderRadius:"8px", fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:"0.82rem", cursor:"pointer", textTransform:"uppercase" }}>
+                Sí, eliminar examen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal eliminar CATEGORÍA */}
+      {confirmarEliminarCategoria && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:"1rem" }}>
+          <div style={{ background:"#FFF", borderRadius:"16px", width:"100%", maxWidth:"420px", overflow:"hidden", boxShadow:"0 24px 60px rgba(0,0,0,0.25)", fontFamily:"'Barlow', sans-serif" }}>
+            <div style={{ background:"#FEF2F2", borderBottom:"1px solid #FECACA", padding:"1.25rem 1.5rem", display:"flex", alignItems:"center", gap:"0.75rem" }}>
+              <span style={{ fontSize:"1.6rem" }}>⚠️</span>
+              <h3 style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:800, fontSize:"1.1rem", color:"#DC2626", margin:0, textTransform:"uppercase", letterSpacing:"0.04em" }}>
+                ¿Eliminar Categoría?
+              </h3>
+            </div>
+            <div style={{ padding:"1.25rem 1.5rem" }}>
+              <p style={{ margin:"0 0 0.75rem", fontSize:"0.92rem", color:"#111827", fontWeight:700 }}>
+                🏷️ {confirmarEliminarCategoria.nombre_categoria}
+              </p>
+              <div style={{ background:"#FEF2F2", border:"1px solid #FECACA", borderRadius:"8px", padding:"0.75rem 1rem", fontSize:"0.85rem", color:"#991B1B", lineHeight:1.6 }}>
+                <strong>⚠️ Advertencia — efecto en cascada:</strong>
+                <ul style={{ margin:"0.4rem 0 0", paddingLeft:"1.25rem" }}>
+                  <li>La categoría <strong>{confirmarEliminarCategoria.nombre_categoria}</strong> será desactivada</li>
+                  <li><strong>Todos los exámenes</strong> de esta categoría serán desactivados</li>
+                  <li><strong>Todos los parámetros</strong> de esos exámenes quedarán inaccesibles</li>
+                </ul>
+              </div>
+              <p style={{ margin:"0.75rem 0 0", fontSize:"0.82rem", color:"#6B7280" }}>
+                Los resultados históricos no serán afectados. Puedes reactivar la categoría y sus exámenes individualmente desde la papelera.
+              </p>
+            </div>
+            <div style={{ padding:"0 1.5rem 1.25rem", display:"flex", gap:"0.65rem" }}>
+              <button onClick={() => setConfirmarEliminarCategoria(null)}
+                style={{ flex:1, padding:"0.65rem", background:"#F3F4F6", color:"#374151", border:"1px solid #E5E7EB", borderRadius:"8px", fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:"0.82rem", cursor:"pointer", textTransform:"uppercase" }}>
+                Cancelar
+              </button>
+              <button onClick={() => handleEliminarCategoria(confirmarEliminarCategoria.id_categoria)}
+                style={{ flex:1, padding:"0.65rem", background:"#DC2626", color:"#FFF", border:"none", borderRadius:"8px", fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:"0.82rem", cursor:"pointer", textTransform:"uppercase" }}>
+                Sí, eliminar todo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal notificación diseñado */}
       {notifModal && <NotifModal data={notifModal} onClose={closeModal} />}
     </div>

@@ -185,7 +185,7 @@ export default function AdminPerfil() {
 
       // Persistir en localStorage para que otros componentes lean cargo y firma actualizados
       const updatedSession = { ...session, ...form };
-      if (data.firma) updatedSession.firma_digital = data.firma;
+      if (data.firma_url) updatedSession.firma_digital = data.firma_url;
       localStorage.setItem("user", JSON.stringify(updatedSession));
       showToast(true, "Perfil actualizado correctamente.");
     } catch (err) {

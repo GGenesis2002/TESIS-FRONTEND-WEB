@@ -337,17 +337,43 @@ async function generarPDFResultado(orden, resultados, admin) {
     try {
       const _apiBase = (import.meta.env?.VITE_API_URL || "").replace(/\/api\/?$/, "")
                     || window.location.origin.replace(/:\d+$/, ":4000");
-      const firmaUrl = admin.firma.startsWith("http")
-        ? admin.firma
-        : `${_apiBase}/storage/firmas/${admin.firma}`;
+
+      // Normalizar URL: puede llegar como URL completa, ruta relativa con / o solo nombre de archivo
+      let firmaUrl;
+      if (admin.firma.startsWith("http")) {
+        firmaUrl = admin.firma;                                    // https://supabase.co/storage/...
+      } else if (admin.firma.startsWith("/storage/")) {
+        firmaUrl = `${_apiBase}${admin.firma}`;                   // /storage/firmas/archivo.png
+      } else {
+        firmaUrl = `${_apiBase}/storage/firmas/${admin.firma}`;   // solo "archivo.png"
+      }
+
+      console.log("🖊️ Cargando firma desde:", firmaUrl);
+
       const firmaResp = await fetch(firmaUrl);
+      if (!firmaResp.ok) throw new Error(`HTTP ${firmaResp.status} al cargar firma: ${firmaUrl}`);
+
       const firmaBlob = await firmaResp.blob();
-      const firmaDataUrl = await new Promise((res) => {
-        const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(firmaBlob);
+      const firmaDataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = () => rej(new Error("FileReader falló al leer la firma"));
+        r.readAsDataURL(firmaBlob);
       });
-      doc.addImage(firmaDataUrl, "PNG", firmaX, y, 70, 18, undefined, "FAST");
+
+      // Detectar formato real por el data URL
+      const fmt = firmaDataUrl.includes("image/jpeg") || firmaDataUrl.includes("image/jpg")
+        ? "JPEG" : "PNG";
+
+      doc.addImage(firmaDataUrl, fmt, firmaX, y, 70, 18, undefined, "FAST");
       y += 19;
-    } catch (_) { /* si no carga la imagen, continuar sin ella */ }
+      console.log("✅ Firma añadida al PDF correctamente");
+    } catch (err) {
+      console.error("❌ No se pudo cargar la firma:", err.message);
+      // Continúa sin imagen — igual dibuja la línea y el nombre
+    }
+  } else {
+    console.warn("⚠️ admin.firma está vacío o null. Valor recibido:", admin);
   }
 
   doc.setDrawColor(31, 41, 55);
@@ -534,10 +560,11 @@ function ModalPublicar({ orden, onConfirm, onClose }) {
   const rolActivo = user.rol || (Array.isArray(user.roles) ? user.roles[0] : null) || "Responsable Técnico";
   // Preferir datos del backend (orden.admin_*) sobre localStorage
   const admin = {
-    nombre: orden?.admin_nombre || `${user.nombres || ""} ${user.apellidos || ""}`.trim() || "Administrador",
-    cargo:  orden?.admin_cargo  || user.cargo || rolActivo,
-    firma:  orden?.admin_firma  || null,   // nombre de archivo ej: "firma_admin_3.png"
-  };
+  nombre: orden?.admin_nombre || `${user.nombres || ""} ${user.apellidos || ""}`.trim() || "Administrador",
+  cargo:  orden?.admin_cargo  || user.cargo || rolActivo,
+  // Prioridad: URL firmada del backend → fallback a nada (nunca el path raw)
+  firma:  orden?.admin_firma_url || null,
+};
 
   const resultados = orden?.resultados || [];
 
@@ -631,21 +658,14 @@ function ModalPublicar({ orden, onConfirm, onClose }) {
           const mergedBytes = await fusionarPDFs(docFinal, pdfUrlsAdjuntos);
           if (mergedBytes instanceof Uint8Array) {
             pdfBlob = new Blob([mergedBytes], { type: "application/pdf" });
-            // Descargar el fusionado localmente
-            const blobUrl = URL.createObjectURL(pdfBlob);
-            const a = document.createElement("a");
-            a.href = blobUrl;
-            a.download = `resultado_${orden.numero_ticket || orden.id_orden}.pdf`;
-            a.click();
-            URL.revokeObjectURL(blobUrl);
+            // Solo subir al backend, sin forzar descarga local
           } else {
             // fallback: el merge falló, usar doc original
             pdfBlob = docFinal.output("blob");
-            docFinal.save(`resultado_${orden.numero_ticket || orden.id_orden}.pdf`);
           }
         } else {
           pdfBlob = docFinal.output("blob");
-          docFinal.save(`resultado_${orden.numero_ticket || orden.id_orden}.pdf`);
+          // Solo subir al backend, sin forzar descarga local
         }
 
         const formData = new FormData();
@@ -1048,7 +1068,7 @@ function ModalPublicar({ orden, onConfirm, onClose }) {
             {totalValidados > 0 && (
               <button onClick={handlePreviewPDF}
                 style={{ ...btnSmall, background: "rgba(139,92,246,0.08)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.2)", display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
-                📄 {pdfGenerado ? "Descargar PDF" : "Vista previa PDF"}
+                📄 Visualizar PDF
               </button>
             )}
           </div>
@@ -1111,17 +1131,6 @@ function ModalPublicar({ orden, onConfirm, onClose }) {
                 📄 {pdfPreview.nombre}
               </span>
               <div style={{ display: "flex", gap: "0.5rem" }}>
-                <a
-                  href={pdfPreview.url}
-                  download={`${pdfPreview.nombre}.pdf`}
-                  style={{
-                    padding: "0.3rem 0.85rem", background: "#8B5CF6", color: "#FFF",
-                    borderRadius: "6px", fontSize: "0.75rem",
-                    fontFamily: "'Barlow', sans-serif", fontWeight: 600,
-                    textDecoration: "none",
-                  }}>
-                  ⬇ Descargar
-                </a>
                 <button
                   onClick={() => setPdfPreview(null)}
                   style={{
@@ -1202,11 +1211,11 @@ export default function AdminResultados() {
       const detalle = await api.getDetalleOrden(orden.id_orden);
       const user    = JSON.parse(localStorage.getItem("user") || "{}");
       const rolActivo = user.rol || (Array.isArray(user.roles) ? user.roles[0] : null) || "Responsable Técnico";
-      const admin = {
-        nombre: detalle?.admin_nombre || `${user.nombres || ""} ${user.apellidos || ""}`.trim() || "Administrador",
-        cargo:  detalle?.admin_cargo  || user.cargo || rolActivo,
-        firma:  detalle?.admin_firma  || null,
-      };
+     const admin = {
+      nombre: detalle?.admin_nombre || `${user.nombres || ""} ${user.apellidos || ""}`.trim() || "Administrador",
+      cargo:  detalle?.admin_cargo  || user.cargo || rolActivo,
+      firma:  detalle?.admin_firma  || user.firma_digital || null,  // ← agrega el fallback
+    };
       const resultados = detalle?.resultados || [];
 
       // Generar PDF base con los resultados de parámetros
@@ -1418,10 +1427,6 @@ export default function AdminResultados() {
                 📄 {pdfVisor.nombre}
               </span>
               <div style={{ display: "flex", gap: "0.5rem" }}>
-                <a href={pdfVisor.url} download={`${pdfVisor.nombre}.pdf`}
-                  style={{ padding: "0.3rem 0.85rem", background: "#8B5CF6", color: "#FFF", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "'Barlow', sans-serif", fontWeight: 600, textDecoration: "none" }}>
-                  ⬇ Descargar
-                </a>
                 <button onClick={() => { URL.revokeObjectURL(pdfVisor.url); setPdfVisor(null); }}
                   style={{ padding: "0.3rem 0.85rem", background: "#EF4444", color: "#FFF", border: "none", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "'Barlow', sans-serif", fontWeight: 600, cursor: "pointer" }}>
                   ✕ Cerrar

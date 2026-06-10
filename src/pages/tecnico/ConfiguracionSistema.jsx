@@ -102,10 +102,10 @@ export default function ConfiguracionSistema() {
           desc="Tiempo antes de que el QR expire"
         >
           <select value={config.expiracionQR} onChange={e => handleChange('expiracionQR', e.target.value)} style={S.select}>
-            <option value="2">2 horas</option>
-            <option value="12">12 horas</option>
-            <option value="24">24 horas</option>
-            <option value="48">48 horas</option>
+            <option value="2">12 horas</option>
+            <option value="12">24 horas</option>
+            <option value="24">48 horas</option>
+            <option value="48">72 horas</option>
           </select>
         </Fila>
       </Section>

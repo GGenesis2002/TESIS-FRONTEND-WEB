@@ -16,6 +16,7 @@ const EC = {
 
 const PUEDE_EDITAR   = ["Generada"];
 const PUEDE_CANCELAR = ["Generada"];
+const PUEDE_ELIMINAR = ["Generada", "Cancelada"];
 
 const FONT  = "'Barlow', sans-serif";
 const FONTC = "'Barlow Condensed', sans-serif";
@@ -76,6 +77,10 @@ export default function GestionOrdenes() {
   const [motivoCancel, setMotivoCancel]           = useState("");
   const [cancelando, setCancelando]               = useState(false);
   const [motivoError, setMotivoError]             = useState("");
+
+  // Eliminar
+  const [showConfirmEliminar, setShowConfirmEliminar] = useState(null);
+  const [eliminando, setEliminando]                   = useState(false);
 
   // QR Lector
   const videoRef  = useRef(null);
@@ -235,6 +240,20 @@ export default function GestionOrdenes() {
     } catch (err) {
       showToast("error", "Error al intentar cancelar la orden.");
     } finally { setCancelando(false); }
+  };
+
+  // ── ELIMINAR ORDEN ────────────────────────────────────────────────────────────
+  const handleEliminar = async () => {
+    if (!showConfirmEliminar) return;
+    setEliminando(true);
+    try {
+      await API.delete(`/ordenes/${showConfirmEliminar.id_orden}`);
+      setOrdenes(prev => prev.filter(o => o.id_orden !== showConfirmEliminar.id_orden));
+      showToast("success", `Orden ${showConfirmEliminar.numero_ticket} eliminada permanentemente.`);
+      setShowConfirmEliminar(null);
+    } catch (err) {
+      showToast("error", err.response?.data?.error || "Error al eliminar la orden.");
+    } finally { setEliminando(false); }
   };
 
   // ── QR CÁMARA ─────────────────────────────────────────────────────────────────
@@ -401,7 +420,7 @@ export default function GestionOrdenes() {
           <span style={{ flex: 1 }}>ESTADO</span>
           <span style={{ flex: 1 }}>FECHA</span>
           <span style={{ flex: "0 0 90px", textAlign: "right" }}>TOTAL</span>
-          <span style={{ flex: "0 0 155px", textAlign: "center" }}>ACCIONES</span>
+          <span style={{ flex: "0 0 185px", textAlign: "center" }}>ACCIONES</span>
         </div>
 
         {loading ? (
@@ -413,6 +432,7 @@ export default function GestionOrdenes() {
             const ec = EC[o.estado] || { bg: "#F8FAFC", color: "#6B7280" };
             const puedeEditar   = PUEDE_EDITAR.includes(o.estado);
             const puedeCancelar = PUEDE_CANCELAR.includes(o.estado);
+            const puedeEliminar = PUEDE_ELIMINAR.includes(o.estado);
             return (
               <div
                 key={o.id_orden}
@@ -429,10 +449,11 @@ export default function GestionOrdenes() {
                 </span>
                 <span style={{ flex: 1, fontSize: "0.85rem", color: "#6B7280" }}>{o.fecha_orden ? new Date(o.fecha_orden).toLocaleDateString() : "—"}</span>
                 <span style={{ flex: "0 0 90px", textAlign: "right", fontWeight: 700, fontFamily: FONTC }}>${parseFloat(o.total || 0).toFixed(2)}</span>
-                <span style={{ flex: "0 0 155px", display: "flex", gap: "0.35rem", justifyContent: "center" }}>
+                <span style={{ flex: "0 0 185px", display: "flex", gap: "0.35rem", justifyContent: "center" }}>
                   <button onClick={() => abrirDetalle(o)} style={{ ...s.btnIcon, background: "#F3F4F6", color: DARK }} title="Ver detalle">👁️</button>
                   {puedeEditar && <button onClick={() => abrirEditar(o)} style={{ ...s.btnIcon, background: "rgba(59,130,246,0.1)", color: "#3B82F6" }} title="Editar">✏️</button>}
                   {puedeCancelar && <button onClick={() => { setShowConfirmCancel(o); setMotivoCancel(""); setMotivoError(""); }} style={{ ...s.btnIcon, background: "rgba(239,68,68,0.1)", color: "#EF4444" }} title="Cancelar">🚫</button>}
+                  {puedeEliminar && <button onClick={() => setShowConfirmEliminar(o)} style={{ ...s.btnIcon, background: "rgba(127,29,29,0.1)", color: "#7F1D1D" }} title="Eliminar permanentemente">🗑️</button>}
                 </span>
               </div>
             );
@@ -818,6 +839,69 @@ export default function GestionOrdenes() {
                 </button>
                 <button onClick={() => { setShowConfirmCancel(null); setMotivoError(""); }} style={s.btnCancel}>
                   Atrás
+                </button>
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+          MODAL — CONFIRMAR ELIMINACIÓN
+      ════════════════════════════════════════════════════════════ */}
+      {showConfirmEliminar && (
+        <Overlay onClose={() => setShowConfirmEliminar(null)}>
+          <div style={s.modalContainer}>
+            <ModalHeader
+              title="ELIMINAR"
+              titleOrange="ORDEN"
+              subtitle={`Ticket ${showConfirmEliminar.numero_ticket}`}
+              onClose={() => setShowConfirmEliminar(null)}
+            />
+            <div style={s.modalBody}>
+              {/* Advertencia visual fuerte */}
+              <div style={{ background: "#450A0A", borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1.25rem", display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                <span style={{ fontSize: "1.5rem", flexShrink: 0 }}>🗑️</span>
+                <div>
+                  <p style={{ fontFamily: FONTC, fontSize: "0.9rem", fontWeight: 800, color: "#FCA5A5", margin: "0 0 0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Eliminación permanente
+                  </p>
+                  <p style={{ fontSize: "0.83rem", color: "#FEE2E2", margin: 0, lineHeight: 1.6 }}>
+                    Esta acción <strong>no se puede deshacer</strong>. La orden y todos sus exámenes asociados serán borrados del sistema de forma definitiva.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ background: "#F8FAFC", border: "1px solid #E5E7EB", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem" }}>
+                <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
+                  Resumen de la orden a eliminar
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <p style={{ fontSize: "0.88rem", color: "#374151", margin: 0 }}>
+                    <strong>Ticket:</strong> <span style={{ fontFamily: FONTC, color: ORANGE, fontWeight: 700 }}>{showConfirmEliminar.numero_ticket}</span>
+                  </p>
+                  <p style={{ fontSize: "0.88rem", color: "#374151", margin: 0 }}>
+                    <strong>Paciente:</strong> {showConfirmEliminar.nombres} {showConfirmEliminar.apellidos}
+                  </p>
+                  <p style={{ fontSize: "0.88rem", color: "#374151", margin: 0 }}>
+                    <strong>Estado:</strong> {showConfirmEliminar.estado}
+                  </p>
+                  <p style={{ fontSize: "0.88rem", color: "#374151", margin: 0 }}>
+                    <strong>Total:</strong> ${parseFloat(showConfirmEliminar.total || 0).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.75rem" }}>
+                <button
+                  onClick={handleEliminar}
+                  disabled={eliminando}
+                  style={{ ...s.btnFull, flex: 1, background: "#7F1D1D", opacity: eliminando ? 0.6 : 1 }}
+                >
+                  {eliminando ? "Eliminando..." : "🗑️ SÍ, ELIMINAR DEFINITIVAMENTE"}
+                </button>
+                <button onClick={() => setShowConfirmEliminar(null)} style={s.btnCancel}>
+                  Cancelar
                 </button>
               </div>
             </div>

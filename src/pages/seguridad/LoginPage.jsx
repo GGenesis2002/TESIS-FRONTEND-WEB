@@ -124,7 +124,7 @@ export default function LoginPage() {
               <label style={labelStyle}>Usuario</label>
               <InputField
                 type="text"
-                placeholder="Ej. gg"
+                placeholder="Ej. usuario123"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={loading}

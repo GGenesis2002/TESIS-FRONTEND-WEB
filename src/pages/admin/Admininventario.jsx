@@ -530,6 +530,8 @@ export default function AdminInventario() {
   const [confirmModal, setConfirmModal] = useState(null); // { titulo, mensaje, onOk }
   const showNotif   = (titulo, mensaje, tipo = "error") => setNotifModal({ tipo, titulo, mensaje });
   const showConfirm = (titulo, mensaje, onOk) => setConfirmModal({ titulo, mensaje, onOk });
+  // Manual de usuario
+  const [showManual, setShowManual] = useState(false);
   // Filtro tipo movimiento
   const [tipoMovFiltro, setTipoMovFiltro] = useState("TODOS");
   // Paginación movimientos
@@ -727,6 +729,15 @@ export default function AdminInventario() {
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+          {/* Botón Manual de Usuario */}
+          <button onClick={() => setShowManual(true)} title="Manual de usuario" style={{
+            ...btnSec,
+            padding: "0.55rem 0.9rem",
+            display: "flex", alignItems: "center", gap: "0.4rem",
+            borderColor: "#C4B5FD", color: "#5B21B6", background: "#F5F3FF",
+          }}>
+            📖 <span style={{ fontWeight: 700, fontSize: "0.82rem" }}>Manual</span>
+          </button>
           {/* Botón refrescar */}
           <button onClick={cargar} disabled={loading} title="Refrescar datos" style={{
             ...btnSec,
@@ -1405,7 +1416,373 @@ export default function AdminInventario() {
           </div>
         </div>
       )}
+
+      {/* ── MODAL MANUAL DE USUARIO (interactivo paso a paso) ── */}
+      {showManual && (
+        <ManualUsuario onClose={() => setShowManual(false)} />
+      )}
     </div>
+  );
+}
+
+// ─── MANUAL INTERACTIVO ───────────────────────────────────────────────────────
+function ManualUsuario({ onClose }) {
+  const [paso, setPaso] = useState(0);
+
+  const pasos = [
+    {
+      num: 1, icon: "🏷️", color: "#16A34A", bg: "#F0FDF4", border: "#86EFAC", textColor: "#14532D",
+      titulo: "Registra las Categorías",
+      que: "Las categorías agrupan tus insumos por tipo (Reactivos, Material descartable, Equipos, etc.).",
+      como: [
+        "Ve a la pestaña 🏷️ Categorías.",
+        "Haz clic en + Nueva Categoría.",
+        "Ingresa el nombre y una descripción opcional.",
+        "Guarda. Repite para cada tipo de agrupación que necesites.",
+      ],
+      porQue: "Sin categorías, todos los insumos estarán sin clasificar. Hazlo primero para que estén disponibles al crear insumos.",
+    },
+    {
+      num: 2, icon: "🧪", color: "#7C3AED", bg: "#F5F3FF", border: "#C4B5FD", textColor: "#3B0764",
+      titulo: "Registra los Tipos de Muestra",
+      que: "Son los tipos de muestra biológica que se usan en el laboratorio: Tubo EDTA, Hisopo, Lanceta, Tubo citrato, etc.",
+      como: [
+        "Ve a la pestaña 🧪 Tipos de Muestra.",
+        "Escribe el nombre del tipo en el campo de texto.",
+        "Haz clic en Agregar.",
+        "Repite por cada tipo que manejes.",
+      ],
+      porQue: "Solo se asignan a insumos que sirven para tomar muestras (tubos, hisopos, lancetas). Reactivos o guantes no llevan tipo de muestra.",
+    },
+    {
+      num: 3, icon: "📦", color: "#B45309", bg: "#FFF7ED", border: "#FED7AA", textColor: "#451A03",
+      titulo: "Registra los Insumos",
+      que: "Cada insumo es un producto físico del inventario: reactivos, tubos, guantes, jeringas, etc.",
+      como: [
+        "Ve a la pestaña 📦 Insumos.",
+        "Haz clic en + Nuevo Insumo.",
+        "Completa: nombre, unidad de medida (ml, unidades, mg…), categoría y tipo de muestra si aplica.",
+        "Define el Stock inicial (cantidad actual) y el Stock mínimo (punto de alerta).",
+        "Guarda. El insumo aparecerá en la tabla con su estado (✅ OK / ⚠️ Bajo / ❌ Sin stock).",
+      ],
+      porQue: "El stock inicial se registra solo al crear. Para modificarlo después, usa Movimientos (⬆️ en la tabla).",
+    },
+    {
+      num: 4, icon: "🔗", color: "#0369A1", bg: "#F0F9FF", border: "#BAE6FD", textColor: "#0C4A6E",
+      titulo: "Configura las Recetas",
+      que: "Una receta define qué insumos —y en qué cantidad— se consumen cada vez que se realiza un examen.",
+      como: [
+        "Ve a la pestaña 🔗 Recetas.",
+        "Haz clic en 🔗 Nueva Vinculación.",
+        "Selecciona el examen del listado.",
+        "Agrega filas: elige el insumo y la cantidad que se usa por cada examen.",
+        "Guarda. El descuento de stock quedará activo automáticamente.",
+      ],
+      porQue: "Cuando el sistema registre ese examen, los insumos vinculados se descontarán solos. Sin receta, el stock no baja automáticamente.",
+    },
+    {
+      num: 5, icon: "📋", color: "#374151", bg: "#F8FAFC", border: "#E2E8F0", textColor: "#111827",
+      titulo: "Gestiona los Movimientos",
+      que: "Registra manualmente entradas (compras/reposiciones) y salidas (uso/merma) de cualquier insumo.",
+      como: [
+        "En la pestaña 📦 Insumos, haz clic en el ícono ⬆️ del insumo que quieres mover.",
+        "Selecciona Entrada (suma stock) o Salida (resta stock).",
+        "Indica la cantidad y una observación opcional.",
+        "Guarda. El stock se actualizará de inmediato.",
+        "En la pestaña 📋 Movimientos verás el historial completo con usuario y fecha.",
+      ],
+      porQue: "Usa esto para reponer stock de compras, corregir diferencias de conteo o registrar descartes.",
+    },
+    {
+      num: 6, icon: "⚠️", color: "#92400E", bg: "#FFFBEB", border: "#FCD34D", textColor: "#451A03",
+      titulo: "Revisa las Alertas",
+      que: "Las alertas muestran los insumos cuyo stock actual cayó por debajo del mínimo configurado.",
+      como: [
+        "La pestaña ⚠️ Alertas se resalta en rojo cuando hay insumos críticos.",
+        "Revísala periódicamente para detectar qué necesita reposición.",
+        "La columna 'Necesita X más' indica cuántas unidades faltan para alcanzar el mínimo.",
+        "Para reponer: ve a 📦 Insumos, localiza el insumo y usa ⬆️ Movimiento → Entrada.",
+      ],
+      porQue: "Si no repones a tiempo puedes quedarte sin stock durante un examen. Las alertas son el semáforo del inventario.",
+    },
+  ];
+
+  const p = pasos[paso];
+  const esUltimo = paso === pasos.length - 1;
+
+  return (
+    <div style={{ ...overlay, zIndex: 400 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ ...modalBox, width: "620px", maxWidth: "96vw" }}>
+
+        {/* Cabecera */}
+        <div style={{ background: "#1E293B", borderRadius: "14px 14px 0 0", padding: "1.1rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <p style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.05rem", color: "#FFF", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              📖 Manual de usuario — Inventario
+            </p>
+            <p style={{ margin: "0.15rem 0 0", fontFamily: "'Barlow', sans-serif", fontSize: "0.73rem", color: "#94A3B8" }}>
+              Sigue los pasos en orden para configurar el módulo correctamente
+            </p>
+          </div>
+          <button onClick={onClose} style={{ ...closeBtn, color: "#94A3B8", fontSize: "1.1rem" }}>✕</button>
+        </div>
+
+        {/* Barra de progreso de pasos */}
+        <div style={{ padding: "1rem 1.5rem 0", display: "flex", gap: "0.4rem", alignItems: "center" }}>
+          {pasos.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => setPaso(i)}
+              title={`Paso ${s.num}: ${s.titulo}`}
+              style={{
+                flex: 1, height: "6px", border: "none", borderRadius: "3px", cursor: "pointer",
+                background: i < paso ? "#10B981" : i === paso ? s.color : "#E2E8F0",
+                transition: "background 0.2s",
+                padding: 0,
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ padding: "0.3rem 1.5rem 0", display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", color: "#9CA3AF" }}>
+            Paso {paso + 1} de {pasos.length}
+          </span>
+          <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", color: "#9CA3AF" }}>
+            {pasos.filter((_, i) => i < paso).length} completados
+          </span>
+        </div>
+
+        {/* Contenido del paso */}
+        <div style={{ padding: "1.25rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+
+          {/* Encabezado paso */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+            <div style={{
+              width: "52px", height: "52px", borderRadius: "50%",
+              background: p.bg, border: `2px solid ${p.border}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "1.5rem", flexShrink: 0,
+            }}>
+              {p.icon}
+            </div>
+            <div>
+              <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", fontWeight: 700, color: p.color, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                Paso {p.num} de {pasos.length}
+              </p>
+              <p style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.15rem", color: "#1F2937", letterSpacing: "0.02em" }}>
+                {p.titulo}
+              </p>
+            </div>
+          </div>
+
+          {/* ¿Qué es? */}
+          <div style={{ background: p.bg, border: `1px solid ${p.border}`, borderRadius: "10px", padding: "0.85rem 1rem" }}>
+            <p style={{ margin: "0 0 0.25rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", fontWeight: 700, color: p.color, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              ¿Qué es?
+            </p>
+            <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.83rem", color: p.textColor, lineHeight: 1.55 }}>
+              {p.que}
+            </p>
+          </div>
+
+          {/* ¿Cómo hacerlo? */}
+          <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "0.85rem 1rem" }}>
+            <p style={{ margin: "0 0 0.6rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              ¿Cómo hacerlo?
+            </p>
+            <ol style={{ margin: 0, paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+              {p.como.map((c, i) => (
+                <li key={i} style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "#374151", lineHeight: 1.5 }}>
+                  {c}
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {/* ¿Por qué importa? */}
+          <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "0.75rem 1rem" }}>
+            <span style={{ fontSize: "1rem", flexShrink: 0 }}>💡</span>
+            <div>
+              <p style={{ margin: "0 0 0.15rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", fontWeight: 700, color: "#92400E", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                ¿Por qué es importante?
+              </p>
+              <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "#78350F", lineHeight: 1.5 }}>
+                {p.porQue}
+              </p>
+            </div>
+          </div>
+
+          {/* Navegación */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.25rem" }}>
+            <button
+              onClick={() => setPaso(prev => Math.max(0, prev - 1))}
+              disabled={paso === 0}
+              style={{ ...btnSec, opacity: paso === 0 ? 0.4 : 1, cursor: paso === 0 ? "not-allowed" : "pointer" }}>
+              ← Anterior
+            </button>
+
+            {/* Puntitos de navegación */}
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+              {pasos.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPaso(i)}
+                  style={{
+                    width: i === paso ? "20px" : "8px", height: "8px",
+                    borderRadius: "4px", border: "none", cursor: "pointer",
+                    background: i === paso ? p.color : i < paso ? "#10B981" : "#D1D5DB",
+                    transition: "all 0.2s", padding: 0,
+                  }}
+                />
+              ))}
+            </div>
+
+            {esUltimo ? (
+              <button onClick={onClose} style={{ ...btnPrimary, background: "#10B981" }}>
+                ✓ Listo
+              </button>
+            ) : (
+              <button onClick={() => setPaso(prev => Math.min(pasos.length - 1, prev + 1))} style={btnPrimary}>
+                Siguiente →
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── COMPONENTE PRINCIPAL (cierre) ────────────────────────────────────────────
+function _AdminInventarioClosed() {
+  // Este bloque es solo para que el parser encuentre el cierre correcto
+  return (
+        <div style={{ display: "none" }}>
+            {/* Cabecera */}
+            <div style={{ background: "linear-gradient(135deg, #1E293B 0%, #334155 100%)", borderRadius: "14px 14px 0 0", padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <p style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.15rem", color: "#FFF", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  📖 Manual de Usuario — Inventario
+                </p>
+                <p style={{ margin: "0.2rem 0 0", fontFamily: "'Barlow', sans-serif", fontSize: "0.76rem", color: "#94A3B8" }}>
+                  Guía completa del módulo de gestión de insumos
+                </p>
+              </div>
+              <button onClick={() => setShowManual(false)} style={{ ...closeBtn, color: "#94A3B8", fontSize: "1.1rem" }}>✕</button>
+            </div>
+
+            <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+
+              {/* Orden recomendado */}
+              <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "1rem 1.15rem" }}>
+                <p style={{ margin: "0 0 0.55rem", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "0.9rem", color: "#1E40AF", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  🚀 ¿Por dónde empezar? — Orden recomendado
+                </p>
+                <ol style={{ margin: 0, paddingLeft: "1.3rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "#1D4ED8", lineHeight: 2 }}>
+                  <li>Crea las <strong>Categorías</strong> que agruparán tus insumos (ej: Reactivos, Material descartable).</li>
+                  <li>Si tienes insumos de toma de muestra, registra los <strong>Tipos de Muestra</strong> (ej: Tubo EDTA, Hisopo).</li>
+                  <li>Da de alta cada <strong>Insumo</strong> con su stock inicial y stock mínimo.</li>
+                  <li>Vincula insumos a exámenes mediante <strong>Recetas</strong> para el descuento automático de stock.</li>
+                  <li>A partir de ahí, registra <strong>Movimientos</strong> para mantener el inventario al día.</li>
+                  <li>Revisa las <strong>Alertas</strong> periódicamente para reponer insumos a tiempo.</li>
+                </ol>
+              </div>
+
+              {/* Secciones */}
+              {[
+                {
+                  icon: "📦", color: "#B45309", bg: "#FFF7ED", border: "#FED7AA",
+                  title: "Insumos",
+                  desc: "Listado completo de todos los insumos del laboratorio. Muestra el stock actual de cada uno y su estado (✅ OK / ⚠️ Stock Bajo / ❌ Sin Stock).",
+                  actions: [
+                    ["+ Nuevo Insumo", "Registra un nuevo insumo. Completa nombre, unidad de medida, categoría, tipo de muestra (opcional), stock inicial y stock mínimo de alerta."],
+                    ["✏️ Editar", "Modifica los datos del insumo. El stock no se ajusta desde aquí; usa el botón ⬆️ Movimiento."],
+                    ["⬆️ Movimiento", "Registra una entrada (reposición / compra) o salida (uso / merma / descarte) del insumo seleccionado."],
+                    ["🗑️ Desactivar", "Oculta el insumo del listado activo. El historial de movimientos se conserva intacto."],
+                  ],
+                },
+                {
+                  icon: "🧪", color: "#6D28D9", bg: "#F5F3FF", border: "#C4B5FD",
+                  title: "Tipos de Muestra",
+                  desc: "Catálogo de tipos de muestra biológica (Tubo EDTA, Hisopo, Lanceta, etc.). Se asignan únicamente a insumos que sirven para tomar muestras; reactivos, guantes u otros materiales no requieren tipo de muestra.",
+                  actions: [
+                    ["Agregar tipo", "Escribe el nombre y pulsa 'Agregar'. Quedará disponible al crear o editar insumos."],
+                    ["🗑️ Eliminar tipo", "Solo posible si ningún insumo activo tiene ese tipo asignado."],
+                  ],
+                },
+                {
+                  icon: "🏷️", color: "#166534", bg: "#F0FDF4", border: "#86EFAC",
+                  title: "Categorías",
+                  desc: "Agrupan los insumos por tipo (Reactivos, Material descartable, Equipos, etc.). Facilitan la búsqueda y organización del inventario.",
+                  actions: [
+                    ["+ Nueva Categoría", "Ingresa nombre y una descripción opcional."],
+                    ["✏️ Editar", "Modifica nombre o descripción de la categoría."],
+                    ["🗑️ Eliminar", "Solo posible si la categoría no tiene insumos activos vinculados."],
+                  ],
+                },
+                {
+                  icon: "🔗", color: "#0369A1", bg: "#F0F9FF", border: "#BAE6FD",
+                  title: "Recetas — Vinculación Examen ↔ Insumo",
+                  desc: "Define qué insumos y en qué cantidad se consumen al realizar un examen. Cuando el sistema registre ese examen, el stock de los insumos vinculados se descontará automáticamente.",
+                  actions: [
+                    ["🔗 Nueva Vinculación", "Selecciona el examen y agrega filas indicando el insumo y la cantidad por examen. Guarda al terminar."],
+                    ["🗑️ Eliminar vinculación", "El examen deja de descontar ese insumo automáticamente."],
+                  ],
+                },
+                {
+                  icon: "📋", color: "#374151", bg: "#F8FAFC", border: "#E2E8F0",
+                  title: "Movimientos",
+                  desc: "Historial cronológico de todas las entradas y salidas de stock del inventario. Funciona como auditoría: quién realizó el movimiento, cuándo y con qué observación.",
+                  actions: [
+                    ["Filtro TODOS / ENTRADA / SALIDA", "Muestra solo el tipo de movimiento seleccionado."],
+                    ["🔍 Buscar", "Filtra por nombre del insumo, observación o usuario que realizó el movimiento."],
+                    ["Cargar más", "Los movimientos se muestran de 50 en 50. Pulsa el botón al final para ver registros anteriores."],
+                  ],
+                },
+                {
+                  icon: "⚠️", color: "#92400E", bg: "#FFFBEB", border: "#FCD34D",
+                  title: "Alertas",
+                  desc: "Lista los insumos con stock actual por debajo del mínimo configurado. La pestaña se resalta en rojo cuando hay alertas pendientes. Indica exactamente cuántas unidades se deben reponer.",
+                  actions: [
+                    ["Columna 'Necesita X más'", "Muestra el déficit exacto: unidades que faltan para alcanzar el stock mínimo."],
+                    ["¿Cómo reponer?", "Ve a la pestaña Insumos, localiza el insumo y usa ⬆️ Movimiento → Entrada para reponer el stock."],
+                  ],
+                },
+              ].map(sec => (
+                <div key={sec.title} style={{ background: sec.bg, border: `1px solid ${sec.border}`, borderRadius: "10px", padding: "1rem 1.15rem" }}>
+                  <p style={{ margin: "0 0 0.5rem", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "0.9rem", color: sec.color, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {sec.icon} {sec.title}
+                  </p>
+                  <p style={{ margin: "0 0 0.65rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.81rem", color: "#374151", lineHeight: 1.55 }}>{sec.desc}</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                    {sec.actions.map(([accion, detalle]) => (
+                      <div key={accion} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                        <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", fontWeight: 700, color: sec.color, minWidth: "max-content", paddingTop: "0.05rem" }}>{accion}:</span>
+                        <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#6B7280", lineHeight: 1.5 }}>{detalle}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* Tip final */}
+              <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: "10px", padding: "0.8rem 1.1rem", display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
+                <span style={{ fontSize: "1.1rem" }}>💡</span>
+                <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", color: "#166534", lineHeight: 1.55 }}>
+                  <strong>Tip:</strong> Usa el botón <strong>🔄</strong> en el encabezado para obtener los datos más recientes sin recargar la página. El indicador de hora muestra cuándo fue la última actualización.
+                </p>
+              </div>
+
+                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setShowManual(false)}
+                  style={btnPrimary}
+                >
+                  Entendido ✓
+                </button>
+              </div>
+            </div>
+          </div>
   );
 }
 

@@ -196,7 +196,7 @@ export default function PerfilEspecialista() {
                 </div>
               )}
               <p style={{ fontSize: "0.72rem", color: "#C4C9D4", margin: "0.75rem 0 0", textAlign: "center" }}>
-                Asignados por el administrador del sistema
+                Asignados por el técnico del sistema
               </p>
             </div>
           </div>
@@ -260,17 +260,8 @@ export default function PerfilEspecialista() {
               </div>
             </div>
 
-            {/* ── ESTADÍSTICAS RÁPIDAS ── */}
-            <div style={S.panel}>
-              <h4 style={{ ...S.panelTitle, marginBottom: "1rem" }}>Resumen de Actividad</h4>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                <StatCard icon="🧪" label="Exámenes asignados" value={examenes.length} color="#8B5CF6" />
-                <StatCard icon="📋" label="Órdenes activas"    value="—"               color="#3B82F6" />
-              </div>
-              <p style={{ fontSize: "0.72rem", color: "#C4C9D4", margin: "0.75rem 0 0", textAlign: "center" }}>
-                Estadísticas de la sesión actual
-              </p>
-            </div>
+         
+            
 
             {/* ── SEGURIDAD ── */}
             <div style={S.panel}>

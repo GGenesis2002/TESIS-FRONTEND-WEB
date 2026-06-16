@@ -252,8 +252,8 @@ const handleEditarExamen = (examen) => {
       <div style={containerStyle}>
         <div style={{ marginBottom: "1.5rem" }}>
           <div style={tabRowStyle}>
-            <TabBtn active={tab === "listado"} onClick={() => setTab("listado")} label="☰ LISTADO" />
             <TabBtn active={tab === "categorias"} onClick={() => setTab("categorias")} label="⚙ CATEGORÍAS" />
+            <TabBtn active={tab === "listado"} onClick={() => setTab("listado")} label="☰ LISTADO" />
           </div>
           <button onClick={() => setExamenSeleccionado(null)} style={backBtnStyle}>
             ← VOLVER AL LISTADO

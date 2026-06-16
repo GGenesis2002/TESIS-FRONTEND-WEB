@@ -981,11 +981,7 @@ function PanelAccionesQR({ data, onEditar, onCancelar, onVerDetalle, onNuevoScan
             ✏️ Editar exámenes de la orden
           </button>
         )}
-        {puedeCancelar && (
-          <button onClick={() => onCancelar(o)} style={{ ...btnAccion, background: "#FEF2F2", color: "#DC2626", borderColor: "#FECACA" }}>
-            🚫 Cancelar esta orden
-          </button>
-        )}
+        
         {!puedeEditar && !puedeCancelar && (
           <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "0.75rem", border: "1px solid #E5E7EB", textAlign: "center" }}>
             <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#6B7280", margin: 0 }}>

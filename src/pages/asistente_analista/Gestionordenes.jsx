@@ -3,7 +3,7 @@ import API from "../../services/api";
 import jsQR from "jsqr";
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
-const ESTADOS = ["Generada", "Pagada", "En Proceso", "Por Validar", "Validado", "Cancelada"];
+const ESTADOS = ["Generada", "Pagada", "En Proceso", "Por Validar", "Validado"];
 
 const EC = {
   "Generada":    { bg: "rgba(59,130,246,0.12)",  color: "#3B82F6",  icon: "📋" },
@@ -11,7 +11,6 @@ const EC = {
   "En Proceso":  { bg: "rgba(139,92,246,0.12)",  color: "#8B5CF6",  icon: "🔬" },
   "Por Validar": { bg: "rgba(245,158,11,0.12)",  color: "#F59E0B",  icon: "⏳" },
   "Validado":    { bg: "rgba(16,185,129,0.12)",  color: "#059669",  icon: "✅" },
-  "Cancelada":   { bg: "rgba(239,68,68,0.12)",   color: "#EF4444",  icon: "🚫" },
 };
 
 const PUEDE_EDITAR   = ["Generada"];

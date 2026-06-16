@@ -774,11 +774,7 @@ export default function GestionOrdenes() {
                           ✏️ EDITAR ORDEN
                         </button>
                       )}
-                      {PUEDE_CANCELAR.includes(o.estado) && (
-                        <button onClick={() => { setShowDetalle(null); setShowConfirmCancel(o); setMotivoCancel(""); setMotivoError(""); }} style={{ ...s.btnFull, flex: 1, background: "#EF4444" }}>
-                          🚫 CANCELAR
-                        </button>
-                      )}
+                    
                       <button onClick={() => setShowDetalle(null)} style={s.btnCancel}>Cerrar</button>
                     </div>
                   </>

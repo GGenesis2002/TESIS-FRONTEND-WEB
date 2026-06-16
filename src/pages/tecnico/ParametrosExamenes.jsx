@@ -463,8 +463,9 @@ const handleEditarExamen = (examen) => {
           GESTIÓN DE <span style={{ color: "#E88B3A" }}>EXÁMENES</span>
         </h2>
         <div style={tabRowStyle}>
+            <TabBtn active={tab === "categorias"} onClick={() => setTab("categorias")} label="⚙ CATEGORÍAS" />
           <TabBtn active={tab === "listado"} onClick={() => setTab("listado")} label="☰ LISTADO" />
-          <TabBtn active={tab === "categorias"} onClick={() => setTab("categorias")} label="⚙ CATEGORÍAS" />
+        
         </div>
       </div>
 

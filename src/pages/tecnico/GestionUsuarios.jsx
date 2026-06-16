@@ -21,13 +21,16 @@ const validarCedula    = (v) => /^\d{10}$/.test((v || "").trim());
 const validarCorreo    = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || "").trim());
 const validarPassword  = (v) => (v || "").length >= 6;
 
-function camposExtraDeRol(id_rol) {
+function camposExtraDeRol(id_rol, id_roles = []) {
   const rolStr = String(id_rol || "");
+  // Unimos el rol principal + los roles adicionales marcados, para que
+  // los campos requeridos aparezcan sin importar si el rol es principal o adicional.
+  const todosLosRoles = [rolStr, ...(id_roles || []).map(String)];
   return {
-    needsEspecialidad: rolStr === "3",
-    needsTurno:        rolStr === "4",
-    needsCargo:        rolStr === "1",
-    needsNone:         rolStr === "2",
+    needsEspecialidad: todosLosRoles.includes("3"),
+    needsTurno:        todosLosRoles.includes("4"),
+    needsCargo:        todosLosRoles.includes("1"),
+    needsNone:         todosLosRoles.every(r => r === "2" || r === ""),
   };
 }
 
@@ -375,7 +378,7 @@ export default function GestionUsuarios() {
     }
   };
 
-  const { needsEspecialidad, needsTurno, needsCargo } = camposExtraDeRol(formData.id_rol);
+  const { needsEspecialidad, needsTurno, needsCargo } = camposExtraDeRol(formData.id_rol, formData.id_roles);
   const esEspecialistaEnForm = tieneRolEspecialista(formData.id_rol, formData.id_roles);
 
   const examenesFiltrados = examenesDisponibles.filter(ex => {

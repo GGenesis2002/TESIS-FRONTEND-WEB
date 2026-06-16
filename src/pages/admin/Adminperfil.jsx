@@ -83,6 +83,11 @@ export default function AdminPerfil() {
   const [fileThumb,    setFileThumb]    = useState(null);
   const [confirmDel,   setConfirmDel]   = useState(false);
 
+  /* ── Cambio de contraseña ── */
+  const [cambiandoPass, setCambiandoPass] = useState(false);
+  const [savingPass,    setSavingPass]    = useState(false);
+  const [passForm,      setPassForm]      = useState({ actual: "", nueva: "", confirmar: "" });
+
   const canvasRef = useRef(null);
   const fileRef   = useRef(null);
   const { start, move, stop, clear, isEmpty, toPng } = useSignaturePad(canvasRef);
@@ -193,6 +198,36 @@ export default function AdminPerfil() {
       showToast(false, `Error al guardar: ${msg}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* ── Cambiar contraseña: PUT /usuarios/update-password ──────────────────── */
+  const handleCambiarPass = async () => {
+    if (!passForm.actual) {
+      showToast(false, "Ingresa tu contraseña actual.");
+      return;
+    }
+    if (!passForm.nueva || passForm.nueva.length < 6) {
+      showToast(false, "La nueva contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+    if (passForm.nueva !== passForm.confirmar) {
+      showToast(false, "Las contraseñas nuevas no coinciden.");
+      return;
+    }
+
+    setSavingPass(true);
+    try {
+      await API.put("/usuarios/update-password", { actual: passForm.actual, nueva: passForm.nueva });
+      showToast(true, "Contraseña actualizada correctamente.");
+      setPassForm({ actual: "", nueva: "", confirmar: "" });
+      setCambiandoPass(false);
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 401) showToast(false, "Contraseña actual incorrecta.");
+      else showToast(false, err.response?.data?.msg || "Error al cambiar la contraseña.");
+    } finally {
+      setSavingPass(false);
     }
   };
 
@@ -397,6 +432,65 @@ export default function AdminPerfil() {
             Cada documento validado llevará esta firma junto a tus datos de identificación.
           </div>
         </section>
+
+        {/* ══ SEGURIDAD DE CUENTA ══ */}
+        <section style={{ ...S.card, gridColumn: "span 2" }}>
+          <div style={S.firmHeader}>
+            <div>
+              <p style={S.cardTitle}>🔒 Seguridad de Cuenta</p>
+              <p style={S.cardDesc}>
+                Cambia tu contraseña periódicamente para mantener tu cuenta protegida.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setCambiandoPass(c => !c);
+                setPassForm({ actual: "", nueva: "", confirmar: "" });
+              }}
+              style={S.btnSec}
+            >
+              {cambiandoPass ? "Cancelar" : "🔑 Cambiar contraseña"}
+            </button>
+          </div>
+
+          {cambiandoPass ? (
+            <div style={S.passGrid}>
+              <div style={{ gridColumn: "span 2" }}>
+                <PassField
+                  label="Contraseña actual"
+                  value={passForm.actual}
+                  onChange={v => setPassForm(f => ({ ...f, actual: v }))}
+                />
+              </div>
+              <PassField
+                label="Nueva contraseña"
+                value={passForm.nueva}
+                onChange={v => setPassForm(f => ({ ...f, nueva: v }))}
+              />
+              <PassField
+                label="Confirmar nueva contraseña"
+                value={passForm.confirmar}
+                onChange={v => setPassForm(f => ({ ...f, confirmar: v }))}
+              />
+              <div style={{ gridColumn: "span 2" }}>
+                <button
+                  onClick={handleCambiarPass}
+                  disabled={savingPass}
+                  style={{ ...S.btnPrimary, opacity: savingPass ? 0.65 : 1 }}
+                >
+                  {savingPass ? <><span style={S.spinSm} />&ensp;Actualizando…</> : <>🔒&ensp;Actualizar contraseña</>}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={S.secInfoBox}>
+              <span style={{ fontSize: "1.4rem" }}>🔐</span>
+              <p style={{ color: "#64748B", fontSize: "0.85rem", margin: 0, lineHeight: 1.55 }}>
+                Tu contraseña está protegida con cifrado. Te recomendamos cambiarla cada cierto tiempo.
+              </p>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -417,6 +511,27 @@ function Fld({ label, value, onChange, type = "text", wide, error }) {
           {error}
         </span>
       )}
+    </div>
+  );
+}
+
+/* ─── Campo de contraseña con botón mostrar/ocultar ──────────────────────── */
+function PassField({ label, value, onChange }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div>
+      <label style={S.label}>{label}</label>
+      <div style={{ position: "relative" }}>
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{ ...S.input, paddingRight: "2.5rem" }}
+        />
+        <button type="button" onClick={() => setShow(s => !s)} style={S.eyeBtn}>
+          {show ? "🙈" : "👁️"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -479,4 +594,9 @@ const S = {
   dropzone: { border: "1.5px dashed #CBD5E1", borderRadius: "10px", background: "#FAFBFC", minHeight: "120px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: "1rem" },
 
   legalNote: { marginTop: "1.25rem", padding: "0.8rem 1rem", background: "#FFF7ED", border: "1px solid #FDE68A", borderRadius: "9px", fontSize: "0.81rem", color: "#92400E", lineHeight: 1.55 },
+
+  // Seguridad de cuenta
+  passGrid:   { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "0.25rem" },
+  secInfoBox: { display: "flex", alignItems: "center", gap: "0.85rem", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "1rem", marginTop: "0.25rem" },
+  eyeBtn:     { position: "absolute", right: "0.7rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94A3B8", padding: "0.2rem" },
 };

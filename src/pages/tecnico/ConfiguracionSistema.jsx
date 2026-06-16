@@ -114,7 +114,7 @@ export default function ConfiguracionSistema() {
       <Section titulo="Seguridad">
         <Fila
           nombre="Intentos de inicio de sesion fallidos permitidos"
-          desc="Se registra una alerta si se supera este limite"
+          desc="Se registra una alerta si se supera este limite. El usuario que supere los intentos, deberá esperar 5 minutos para volver a ingresar."
         >
           <select value={config.reintentosLogin} onChange={e => handleChange('reintentosLogin', e.target.value)} style={S.select}>
             <option value="3">3 intentos</option>

@@ -64,9 +64,14 @@ export default function ModuloMuestra() {
     const [muestraEncontrada, setMuestraEncontrada] = useState(null);
     const [errorBusqueda, setErrorBusqueda]         = useState("");
 
-    // Modal — Lector QR / Ticket
-    const [showQR, setShowQR] = useState(false);
-    const [modoQR, setModoQR] = useState("camara"); // "camara" | "manual"
+    // Modal — Lector QR / Ticket (para validar y registrar la toma de muestra)
+    const [showQR, setShowQR]       = useState(false);
+    const [modoQR, setModoQR]       = useState("camara"); // "camara" | "manual"
+    const [qrLoading, setQrLoading] = useState(false);
+    const [qrError, setQrError]     = useState("");
+    const [qrInvalido, setQrInvalido] = useState(false);
+    const [ordenQR, setOrdenQR]     = useState(null); // { orden, examenes } devuelto por /ordenes/buscar
+    const [ticketQR, setTicketQR]   = useState("");
     const videoRef  = useRef(null);
     const streamRef = useRef(null);
 
@@ -207,9 +212,15 @@ export default function ModuloMuestra() {
         }
     };
 
-    // ── Cámara QR (búsqueda por código) ──────────────────────────────────────
-    const iniciarCamaraMuestra = async () => {
+    const reiniciarBusquedaCodigo = () => {
+        setMuestraEncontrada(null);
         setErrorBusqueda("");
+        setCodigoBuscar("");
+    };
+
+    // ── Cámara QR (validar/tomar muestra) ────────────────────────────────────
+    const iniciarCamaraMuestra = async () => {
+        setQrError(""); setQrInvalido(false);
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             streamRef.current = stream;
@@ -227,20 +238,14 @@ export default function ModuloMuestra() {
                         context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
                         const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
                         const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
-                        if (code && code.data) {
-                            detenerCamaraMuestra();
-                            const valor = code.data.trim().toUpperCase();
-                            setCodigoBuscar(valor);
-                            handleBuscarCodigo(valor);
-                            return;
-                        }
+                        if (code && code.data) { detenerCamaraMuestra(); buscarOrdenQR(code.data); return; }
                     }
                     requestAnimationFrame(scan);
                 };
                 requestAnimationFrame(scan);
             }
         } catch {
-            setErrorBusqueda("No se pudo acceder a la cámara. Verifica los permisos de tu navegador.");
+            setQrError("No se pudo acceder a la cámara. Verifica los permisos de tu navegador.");
         }
     };
 
@@ -249,27 +254,49 @@ export default function ModuloMuestra() {
     };
 
     useEffect(() => {
-        if (showQR && modoQR === "camara" && !muestraEncontrada) iniciarCamaraMuestra();
+        if (showQR && modoQR === "camara" && !ordenQR) iniciarCamaraMuestra();
         return () => detenerCamaraMuestra();
     }, [showQR, modoQR]);
 
-    const reiniciarBusquedaCodigo = () => {
-        setMuestraEncontrada(null);
-        setErrorBusqueda("");
-        setCodigoBuscar("");
+    // Busca la orden (por QR o ticket manual) para validar/registrar su toma de muestra
+    const buscarOrdenQR = async (valor) => {
+        setQrLoading(true); setQrError(""); setQrInvalido(false); setOrdenQR(null);
+        try {
+            const { data } = await API.post("/ordenes/buscar", { filtro: valor });
+            setOrdenQR(data);
+        } catch (err) {
+            const status = err.response?.status;
+            const mensaje = err.response?.data?.message || "";
+            if (status === 401 || status === 403 || status === 410 ||
+                mensaje.toLowerCase().includes("expir") ||
+                mensaje.toLowerCase().includes("inválido") ||
+                mensaje.toLowerCase().includes("invalido")) {
+                setQrInvalido(true);
+                setQrError(mensaje || "El código QR ha expirado o ya no es válido. Solicita uno nuevo.");
+            } else {
+                setQrError(mensaje || "No se encontró ninguna orden con ese código.");
+            }
+        } finally {
+            setQrLoading(false);
+        }
+    };
+
+    const buscarTicketManualQR = async () => {
+        if (!ticketQR.trim()) return;
+        await buscarOrdenQR(ticketQR.trim().toUpperCase());
     };
 
     const buscarOtroQR = () => {
-        setMuestraEncontrada(null);
-        setErrorBusqueda("");
-        setCodigoBuscar("");
+        setOrdenQR(null);
+        setQrError(""); setQrInvalido(false);
+        setTicketQR("");
         if (modoQR === "camara") iniciarCamaraMuestra();
     };
 
     const abrirLectorQR = () => {
-        setMuestraEncontrada(null);
-        setErrorBusqueda("");
-        setCodigoBuscar("");
+        setOrdenQR(null);
+        setQrError(""); setQrInvalido(false);
+        setTicketQR("");
         setModoQR("camara");
         setShowQR(true);
     };
@@ -277,6 +304,12 @@ export default function ModuloMuestra() {
     const cerrarLectorQR = () => {
         setShowQR(false);
         detenerCamaraMuestra();
+    };
+
+    // Desde el modal QR: confirma y abre el flujo normal de registrar la toma
+    const validarTomaQR = (orden) => {
+        cerrarLectorQR();
+        abrirToma(orden);
     };
 
     const ordenesFiltradas = ordenesPagadas.filter(o => {
@@ -789,25 +822,45 @@ export default function ModuloMuestra() {
                 </Overlay>
             )}
 
-            {/* ══ MODAL — LEER QR / TICKET ══ */}
+            {/* ══ MODAL — LEER QR / TICKET (validar toma de muestra) ══ */}
             {showQR && (
                 <Overlay onClose={cerrarLectorQR}>
-                    <ModalHeader title="LEER" titleOrange="QR / TICKET" subtitle="Escanea el código del recipiente o ingresa el ticket manual" onClose={cerrarLectorQR} />
+                    <ModalHeader title="VALIDAR" titleOrange="TOMA DE MUESTRA" subtitle="Escanea el QR del ticket o ingrésalo manualmente" onClose={cerrarLectorQR} />
                     <div style={S.modalBody}>
 
-                        {buscandoCodigo && (
+                        {qrLoading && (
                             <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
-                                <p style={{ color: "#6B7280", fontSize: "0.85rem" }}>Buscando muestra...</p>
+                                <p style={{ color: "#6B7280", fontSize: "0.85rem" }}>Buscando orden...</p>
                             </div>
                         )}
 
-                        {!buscandoCodigo && !muestraEncontrada && (
+                        {/* ── QR inválido / expirado ── */}
+                        {qrInvalido && !qrLoading && (
+                            <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: "12px", padding: "1.5rem 1.25rem", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>⛔</div>
+                                <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 800, color: "#991B1B", margin: "0 0 0.5rem", textAlign: "center" }}>
+                                    CÓDIGO QR NO VÁLIDO
+                                </p>
+                                <p style={{ fontSize: "0.85rem", color: "#B91C1C", textAlign: "center", margin: "0 0 1rem" }}>
+                                    Este código QR ya no es válido.
+                                </p>
+                                <button
+                                    onClick={() => { setQrInvalido(false); setQrError(""); setOrdenQR(null); setTicketQR(""); setModoQR("manual"); }}
+                                    style={{ ...S.btnFull, marginBottom: "0.5rem" }}
+                                >
+                                    ⌨️ BUSCAR POR NÚMERO DE TICKET
+                                </button>
+                                <button onClick={cerrarLectorQR} style={{ ...S.btnCancel, width: "100%" }}>Cerrar</button>
+                            </div>
+                        )}
+
+                        {!qrLoading && !qrInvalido && !ordenQR && (
                             <>
                                 <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
                                     {["camara", "manual"].map(m => (
                                         <button
                                             key={m}
-                                            onClick={() => { setModoQR(m); setErrorBusqueda(""); setCodigoBuscar(""); }}
+                                            onClick={() => { setModoQR(m); setQrError(""); setQrInvalido(false); setTicketQR(""); }}
                                             style={{
                                                 flex: 1, padding: "0.55rem", borderRadius: "8px", border: "1.5px solid",
                                                 fontFamily: FONTC, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", letterSpacing: "0.05em",
@@ -821,9 +874,9 @@ export default function ModuloMuestra() {
                                     ))}
                                 </div>
 
-                                {errorBusqueda && (
+                                {qrError && (
                                     <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "0.85rem 1rem", marginBottom: "1rem" }}>
-                                        <p style={{ fontFamily: FONT, fontSize: "0.85rem", color: "#DC2626", margin: 0 }}>⚠️ {errorBusqueda}</p>
+                                        <p style={{ fontFamily: FONT, fontSize: "0.85rem", color: "#DC2626", margin: 0 }}>⚠️ {qrError}</p>
                                     </div>
                                 )}
 
@@ -844,12 +897,12 @@ export default function ModuloMuestra() {
                                         <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
                                             <input
                                                 type="text" placeholder="LAB-XXXX"
-                                                value={codigoBuscar}
-                                                onChange={e => setCodigoBuscar(e.target.value.toUpperCase())}
-                                                onKeyDown={e => e.key === "Enter" && handleBuscarCodigo()}
+                                                value={ticketQR}
+                                                onChange={e => setTicketQR(e.target.value.toUpperCase())}
+                                                onKeyDown={e => e.key === "Enter" && buscarTicketManualQR()}
                                                 style={{ ...S.input, flex: 1, fontFamily: "'Courier New', monospace", fontWeight: 700, letterSpacing: "0.08em" }}
                                             />
-                                            <button onClick={() => handleBuscarCodigo()} disabled={!codigoBuscar.trim()} style={{ ...S.btnFull, width: "auto", padding: "0 1.25rem", opacity: !codigoBuscar.trim() ? 0.6 : 1 }}>BUSCAR</button>
+                                            <button onClick={buscarTicketManualQR} disabled={!ticketQR.trim()} style={{ ...S.btnFull, width: "auto", padding: "0 1.25rem", opacity: !ticketQR.trim() ? 0.6 : 1 }}>BUSCAR</button>
                                         </div>
                                         <button onClick={cerrarLectorQR} style={{ ...S.btnCancel, width: "100%" }}>Cerrar</button>
                                     </div>
@@ -857,15 +910,51 @@ export default function ModuloMuestra() {
                             </>
                         )}
 
-                        {!buscandoCodigo && muestraEncontrada && (
-                            <>
-                                <ResultadoMuestra data={muestraEncontrada} />
-                                <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-                                    <button onClick={buscarOtroQR} style={{ ...S.btnCancel, flex: 1, textAlign: "center" }}>🔄 Buscar otro</button>
-                                    <button onClick={cerrarLectorQR} style={{ ...S.btnFull, flex: 1, width: "auto" }}>Cerrar</button>
-                                </div>
-                            </>
-                        )}
+                        {/* ── Orden encontrada: validar / tomar muestra ── */}
+                        {!qrLoading && ordenQR && (() => {
+                            const o = ordenQR.orden || ordenQR;
+                            const pendienteToma = o.estado === "Pagada";
+                            const badge = ESTADO_BADGE[o.estado] || { bg: "#F3F4F6", color: "#374151", label: o.estado };
+                            return (
+                                <>
+                                    <div style={{ background: pendienteToma ? "#F0FDF4" : "#F8FAFC", border: `1.5px solid ${pendienteToma ? "#BBF7D0" : "#E5E7EB"}`, borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem" }}>
+                                        <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: pendienteToma ? "#16A34A" : "#6B7280", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.3rem" }}>
+                                            {pendienteToma ? "✓ ORDEN LISTA PARA TOMA" : "ORDEN ENCONTRADA"}
+                                        </p>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                            <div>
+                                                <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 700, color: DARK, margin: 0 }}>
+                                                    {o.nombres} {o.apellidos}
+                                                </p>
+                                                <p style={{ fontFamily: FONT, fontSize: "0.78rem", color: "#6B7280", margin: "0.1rem 0 0" }}>
+                                                    Cédula: {o.cedula || "—"} · Ticket: {o.numero_ticket}
+                                                </p>
+                                            </div>
+                                            <span style={{ background: badge.bg, color: badge.color, padding: "0.3rem 0.6rem", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, fontFamily: FONTC, textTransform: "uppercase" }}>
+                                                {badge.label}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {pendienteToma ? (
+                                        <button onClick={() => validarTomaQR(o)} style={{ ...S.btnFull, background: "#059669", marginBottom: "0.5rem" }}>
+                                            🧪 VALIDAR Y REGISTRAR TOMA
+                                        </button>
+                                    ) : (
+                                        <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "0.75rem", border: "1px solid #E5E7EB", textAlign: "center", marginBottom: "0.5rem" }}>
+                                            <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#6B7280", margin: 0 }}>
+                                                Esta orden está en estado <strong>{o.estado}</strong>, no está pendiente de toma de muestra.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                                        <button onClick={buscarOtroQR} style={{ ...S.btnCancel, flex: 1, textAlign: "center" }}>🔄 Buscar otro</button>
+                                        <button onClick={cerrarLectorQR} style={{ ...S.btnCancel, flex: 1, textAlign: "center" }}>Cerrar</button>
+                                    </div>
+                                </>
+                            );
+                        })()}
                     </div>
                 </Overlay>
             )}

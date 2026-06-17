@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import API from "../../services/api";
+import jsQR from "jsqr";
 
 // ─── MÉTODOS DE PAGO ──────────────────────────────────────────────────────────
 const METODOS = ["Efectivo", "Transferencia"];
@@ -49,6 +50,18 @@ export default function ModuloCaja() {
 
   // Modal detalle orden
   const [showDetalle, setShowDetalle] = useState(null);
+
+  // QR Lector
+  const videoRef  = useRef(null);
+  const streamRef = useRef(null);
+  const [showQR, setShowQR]         = useState(false);
+  const [qrError, setQrError]       = useState("");
+  const [qrInvalido, setQrInvalido] = useState(false);
+  const [qrLoading, setQrLoading]   = useState(false);
+  const [ordenEscaneada, setOrdenEscaneada] = useState(null);
+  const [ticketManual, setTicketManual]     = useState("");
+  const [modoQR, setModoQR]         = useState("camara");
+  const [showQRAcciones, setShowQRAcciones] = useState(false);
 
   // ── CARGA DE DATOS ────────────────────────────────────────────────────────
   const cargar = async () => {
@@ -101,6 +114,85 @@ export default function ModuloCaja() {
     }
   };
 
+  // ── QR CÁMARA ─────────────────────────────────────────────────────────────
+  const iniciarCamara = async () => {
+    setQrError(""); setQrInvalido(false);
+    setOrdenEscaneada(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute("playsinline", true);
+        videoRef.current.play();
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        const scan = () => {
+          if (!videoRef.current || !streamRef.current) return;
+          if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+            canvas.height = videoRef.current.videoHeight;
+            canvas.width  = videoRef.current.videoWidth;
+            context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+            if (code && code.data) { detenerCamara(); buscarOrdenQR(code.data); return; }
+          }
+          requestAnimationFrame(scan);
+        };
+        requestAnimationFrame(scan);
+      }
+    } catch { setQrError("No se pudo acceder a la cámara. Verifica los permisos de tu navegador."); }
+  };
+
+  const detenerCamara = () => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+  };
+
+  useEffect(() => {
+    if (showQR && modoQR === "camara" && !ordenEscaneada) iniciarCamara();
+    return () => detenerCamara();
+  }, [showQR, modoQR]);
+
+  const buscarOrdenQR = async (valor) => {
+    setQrLoading(true); setQrError(""); setQrInvalido(false); setOrdenEscaneada(null);
+    try {
+      const { data } = await API.post("/ordenes/buscar", { filtro: valor });
+      setOrdenEscaneada(data);
+      setShowQRAcciones(true);
+    } catch (err) {
+      const status = err.response?.status;
+      const mensaje = err.response?.data?.message || "";
+      if (status === 401 || status === 403 || status === 410 ||
+          mensaje.toLowerCase().includes("expir") ||
+          mensaje.toLowerCase().includes("inválido") ||
+          mensaje.toLowerCase().includes("invalido")) {
+        setQrInvalido(true);
+        setQrError(mensaje || "El código QR ha expirado o ya no es válido. Solicita uno nuevo.");
+      } else {
+        setQrError(mensaje || "No se encontró ninguna orden con ese código.");
+      }
+    } finally { setQrLoading(false); }
+  };
+
+  const buscarManual = async () => {
+    if (!ticketManual.trim()) return;
+    await buscarOrdenQR(ticketManual.trim().toUpperCase());
+  };
+
+  const abrirLectorQR = () => {
+    setShowQR(true); setOrdenEscaneada(null); setQrError(""); setQrInvalido(false);
+    setTicketManual(""); setModoQR("camara"); setShowQRAcciones(false);
+  };
+
+  const cerrarQR = () => {
+    setShowQR(false);
+    setShowQRAcciones(false);
+    setOrdenEscaneada(null);
+    setQrInvalido(false);
+    setQrError("");
+    detenerCamara();
+  };
+
   // ── FILTROS Y KPIs ────────────────────────────────────────────────────────
   const aplicarFiltros = (item, campoFecha) => {
     const valorFecha = item[campoFecha];
@@ -149,9 +241,14 @@ export default function ModuloCaja() {
             Procesamiento de cobros y reporte de pagos
           </p>
         </div>
-        <button onClick={cargar} disabled={loading} style={S.btnRefresh}>
-          {loading ? "…" : "↻ Actualizar"}
-        </button>
+        <div style={{ display: "flex", gap: "0.65rem" }}>
+          <button onClick={abrirLectorQR} style={S.btnQR}>
+            📷 LEER QR / TICKET
+          </button>
+          <button onClick={cargar} disabled={loading} style={S.btnRefresh}>
+            {loading ? "…" : "↻ Actualizar"}
+          </button>
+        </div>
       </div>
 
       {/* ── TABS ── */}
@@ -328,6 +425,122 @@ export default function ModuloCaja() {
           MODALES (Detalle de Orden y Cobro - Se mantienen igual)
       ══════════════════════════════════ */}
       
+      {/* ══════════════════════════════════
+          MODAL — LEER QR / TICKET
+      ══════════════════════════════════ */}
+      {showQR && (
+        <Overlay onClose={cerrarQR}>
+          <ModalHeader title="LEER" titleOrange="QR / TICKET" subtitle="Escanea el código del paciente o ingresa el ticket manual" onClose={cerrarQR} />
+          <div style={S.modalBody}>
+
+            {qrLoading && (
+              <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
+                <div style={S.spinner} />
+                <p style={{ color: "#6B7280", fontSize: "0.85rem", marginTop: "0.75rem" }}>Buscando orden...</p>
+              </div>
+            )}
+
+            {/* ── QR INVÁLIDO / EXPIRADO ── */}
+            {qrInvalido && !qrLoading && (
+              <div style={S.qrInvalidBox}>
+                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>⛔</div>
+                <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 800, color: "#991B1B", margin: "0 0 0.5rem", textAlign: "center" }}>
+                  CÓDIGO QR NO VÁLIDO
+                </p>
+                <p style={{ fontSize: "0.85rem", color: "#B91C1C", textAlign: "center", margin: "0 0 1rem", lineHeight: 1.6 }}>
+                  Este código QR ya no es válido.
+                </p>
+                <div style={{ background: "#FFF", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem", width: "100%", boxSizing: "border-box" }}>
+                  <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 0.35rem" }}>
+                    ¿Cómo continuar?
+                  </p>
+                  <p style={{ fontSize: "0.85rem", color: "#374151", margin: 0, lineHeight: 1.55 }}>
+                    Solicita al paciente su <strong>número de ticket</strong> (Ej: <span style={{ fontFamily: FONTC, color: ORANGE, fontWeight: 700 }}>LAB-XXXX</span>) e ingrésalo en la pestaña <strong>⌨️ Manual</strong>.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setQrInvalido(false); setQrError(""); setOrdenEscaneada(null);
+                    setTicketManual(""); setModoQR("manual");
+                  }}
+                  style={{ ...S.btnFull, marginBottom: "0.5rem" }}
+                >
+                  ⌨️ BUSCAR POR NÚMERO DE TICKET
+                </button>
+                <button onClick={cerrarQR} style={{ ...S.btnCancel, width: "100%" }}>
+                  Cerrar
+                </button>
+              </div>
+            )}
+
+            {/* ── ERROR NO EXPIRACIÓN ── */}
+            {qrError && !qrInvalido && !qrLoading && (
+              <div style={S.alertError}>
+                ⚠️ {qrError}
+              </div>
+            )}
+
+            {/* ── RESULTADO ENCONTRADO ── */}
+            {showQRAcciones && ordenEscaneada && !qrLoading && (
+              <PanelAccionesQR
+                data={ordenEscaneada}
+                onCobrar={(o) => { cerrarQR(); abrirCobro(o); }}
+                onVerDetalle={(o) => { cerrarQR(); setShowDetalle(o); }}
+                onNuevoScan={() => {
+                  setOrdenEscaneada(null);
+                  setShowQRAcciones(false);
+                  setQrError(""); setQrInvalido(false);
+                  setTicketManual("");
+                  if (modoQR === "camara") iniciarCamara();
+                }}
+                onCerrar={cerrarQR}
+              />
+            )}
+
+            {/* ── MODO ESCANEO ── */}
+            {!showQRAcciones && !qrInvalido && !qrLoading && (
+              <>
+                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+                  {["camara", "manual"].map(m => (
+                    <button key={m} onClick={() => { setModoQR(m); setOrdenEscaneada(null); setQrError(""); setQrInvalido(false); }} style={{ flex: 1, padding: "0.55rem", borderRadius: "8px", border: "1.5px solid", fontFamily: FONTC, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", letterSpacing: "0.05em", borderColor: modoQR === m ? ORANGE : "#E5E7EB", background: modoQR === m ? ORANGE : "#F8FAFC", color: modoQR === m ? "#FFF" : "#6B7280" }}>
+                      {m === "camara" ? "📷 CÁMARA" : "⌨️ MANUAL"}
+                    </button>
+                  ))}
+                </div>
+
+                {modoQR === "camara" ? (
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ position: "relative", background: "#0F172A", borderRadius: "12px", overflow: "hidden", aspectRatio: "1", maxWidth: "280px", margin: "0 auto 1rem" }}>
+                      <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                        <div style={{ width: "60%", height: "60%", border: `3px solid ${ORANGE}`, borderRadius: "10px", boxShadow: `0 0 0 2000px rgba(0,0,0,0.35)` }} />
+                      </div>
+                    </div>
+                    <p style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: "1rem" }}>Apunta la cámara al código QR</p>
+                    <button onClick={cerrarQR} style={S.btnCancel}>Cerrar Cámara</button>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={S.label}>Código de Ticket (Ej: LAB-XXXX)</label>
+                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+                      <input
+                        type="text" placeholder="LAB-XXXX"
+                        value={ticketManual}
+                        onChange={e => setTicketManual(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && buscarManual()}
+                        style={{ ...S.input, flex: 1 }}
+                      />
+                      <button onClick={buscarManual} style={S.btnFull2}>BUSCAR</button>
+                    </div>
+                    <button onClick={cerrarQR} style={{ ...S.btnCancel, width: "100%" }}>Cerrar</button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </Overlay>
+      )}
+
       {/* Modal Detalle */}
       {showDetalle && (
         <Overlay onClose={() => setShowDetalle(null)}>
@@ -425,6 +638,87 @@ export default function ModuloCaja() {
 }
 
 // ─── SUB-COMPONENTES Y ESTILOS (Sin cambios significativos, se omiten aquí para legibilidad pero debes mantenerlos igual que en tu código original) ────
+// ─── PANEL ACCIONES POST-ESCANEO QR ──────────────────────────────────────────
+function PanelAccionesQR({ data, onCobrar, onVerDetalle, onNuevoScan, onCerrar }) {
+  const o = data.orden || data;
+  const detalles = data.examenes || data.detalles || [];
+  const ec = estadoColor[o.estado] || { bg: "#F8FAFC", color: "#6B7280" };
+  const puedeCobrar = o.estado === "Generada";
+
+  return (
+    <div>
+      <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem" }}>
+        <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#16A34A", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.3rem" }}>
+          ✓ ORDEN ENCONTRADA
+        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 700, color: DARK, margin: 0 }}>
+              {o.nombres} {o.apellidos}
+            </p>
+            <p style={{ fontFamily: FONT, fontSize: "0.78rem", color: "#6B7280", margin: "0.1rem 0 0" }}>
+              Cédula: {o.cedula || "—"} · Ticket: {o.numero_ticket}
+            </p>
+          </div>
+          <span style={{ background: ec.bg, color: ec.color, padding: "0.3rem 0.6rem", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, fontFamily: FONTC, textTransform: "uppercase" }}>
+            {o.estado}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "0.85rem", border: "1px solid #E5E7EB", marginBottom: "1rem" }}>
+        <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
+          Exámenes en la orden
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "150px", overflowY: "auto" }}>
+          {detalles.map((d, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: DARK }}>
+              <span>• {d.nombre_examen}</span>
+              <span style={{ fontWeight: 600 }}>${parseFloat(d.subtotal || d.precio || 0).toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ borderTop: "1px dashed #E5E7EB", marginTop: "0.6rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontSize: "1rem", fontWeight: 700 }}>
+          <span>TOTAL:</span>
+          <span style={{ color: ORANGE }}>${parseFloat(o.total || 0).toFixed(2)}</span>
+        </div>
+      </div>
+
+      {puedeCobrar ? (
+        <button onClick={() => onCobrar(o)} style={{ ...btnAccionQR, background: "#10B981", color: "#FFF", borderColor: "#10B981", marginBottom: "0.5rem" }}>
+          💳 Proceder al cobro
+        </button>
+      ) : (
+        <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "0.75rem", border: "1px solid #E5E7EB", textAlign: "center", marginBottom: "0.5rem" }}>
+          <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#6B7280", margin: 0 }}>
+            Esta orden está en estado <strong>{o.estado}</strong>, no requiere cobro.
+          </p>
+        </div>
+      )}
+
+      <button onClick={() => onVerDetalle(o)} style={{ ...btnAccionQR, background: "#F3F4F6", color: DARK, borderColor: "#E5E7EB", marginBottom: "0.5rem" }}>
+        👁️ Ver detalle completo
+      </button>
+
+      <div style={{ display: "flex", gap: "0.5rem" }}>
+        <button onClick={onNuevoScan} style={{ ...btnAccionQR, flex: 1, textAlign: "center", background: "#F3F4F6", color: "#374151", borderColor: "#E5E7EB" }}>
+          🔄 Buscar otro
+        </button>
+        <button onClick={onCerrar} style={{ ...btnAccionQR, flex: 1, textAlign: "center", background: "#FFF", color: "#6B7280", borderColor: "#E5E7EB" }}>
+          Cerrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const btnAccionQR = {
+  padding: "0.7rem 1rem", borderRadius: "9px", border: "1.5px solid",
+  fontFamily: FONTC, fontWeight: 700, fontSize: "0.85rem",
+  letterSpacing: "0.04em", cursor: "pointer", transition: "opacity 0.15s",
+  width: "100%", boxSizing: "border-box",
+};
+
 function KpiBox({ icon, label, value, color }) {
   return (
     <div style={{ background: "#FFF", borderRadius: "10px", padding: "1rem 1.25rem", border: "1px solid #F1F5F9", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
@@ -455,6 +749,11 @@ function DetalleItem({ label, value }) {
 
 const S = {
   btnRefresh:  { background: "rgba(232,139,58,0.1)", border: "1px solid rgba(232,139,58,0.25)", color: "#E88B3A", padding: "0.5rem 1.1rem", borderRadius: "8px", fontFamily: FONTC, fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" },
+  btnQR:       { background: "#1F2937", border: "1px solid #1F2937", color: "#FFF", padding: "0.5rem 1.1rem", borderRadius: "8px", fontFamily: FONTC, fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" },
+  btnFull2:    { background: "#1F2937", color: "#FFF", border: "none", padding: "0.65rem 1.25rem", borderRadius: "8px", fontFamily: FONTC, fontWeight: 700, fontSize: "0.85rem", letterSpacing: "0.04em", cursor: "pointer" },
+  qrInvalidBox: { background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: "12px", padding: "1.5rem 1.25rem", display: "flex", flexDirection: "column", alignItems: "center" },
+  alertError:  { background: "#FEF2F2", color: "#EF4444", border: "1px solid #FCA5A5", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.85rem", marginBottom: "1rem", textAlign: "center" },
+  spinner:     { width: "32px", height: "32px", border: "3px solid #E5E7EB", borderTopColor: "#E88B3A", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto" },
   tabBtn:      { border: "none", borderRadius: "7px", padding: "0.45rem 1rem", fontFamily: FONTC, fontSize: "0.8rem", letterSpacing: "0.03em", cursor: "pointer", transition: "all 0.15s", whiteSpace: "nowrap" },
   searchWrap:  { display: "flex", alignItems: "center", gap: "0.6rem", background: "#FFF", border: "1.5px solid #E5E7EB", borderRadius: "8px", padding: "0.6rem 1rem", boxSizing: "border-box" },
   searchInput: { flex: 1, border: "none", outline: "none", fontFamily: FONT, fontSize: "0.875rem", background: "transparent" },

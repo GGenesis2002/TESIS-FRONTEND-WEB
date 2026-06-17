@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import API from "../../services/api";
+import jsQR from "jsqr";
 
 // ─── CONSTANTES DE DISEÑO ─────────────────────────────────────────────────────
 const FONT  = "'Barlow', sans-serif";
@@ -62,6 +63,9 @@ export default function ModuloMuestra() {
     const [buscandoCodigo, setBuscandoCodigo]       = useState(false);
     const [muestraEncontrada, setMuestraEncontrada] = useState(null);
     const [errorBusqueda, setErrorBusqueda]         = useState("");
+    const [modoQR, setModoQR]                       = useState("camara"); // "camara" | "manual"
+    const videoRef  = useRef(null);
+    const streamRef = useRef(null);
 
     // Historial
     const [historial, setHistorial]               = useState([]);
@@ -184,19 +188,73 @@ export default function ModuloMuestra() {
     };
 
     // ── Buscar por código ─────────────────────────────────────────────────────
-    const handleBuscarCodigo = async () => {
-        if (!codigoBuscar.trim()) return;
+    const handleBuscarCodigo = async (valorOverride) => {
+        const valor = (typeof valorOverride === "string" ? valorOverride : codigoBuscar).trim();
+        if (!valor) return;
         setBuscandoCodigo(true);
         setMuestraEncontrada(null);
         setErrorBusqueda("");
         try {
-            const { data } = await API.get(`/muestras/buscar/${codigoBuscar.trim().toUpperCase()}`);
+            const { data } = await API.get(`/muestras/buscar/${valor.toUpperCase()}`);
             setMuestraEncontrada(data);
         } catch {
             setErrorBusqueda("No se encontró ninguna muestra con ese código.");
         } finally {
             setBuscandoCodigo(false);
         }
+    };
+
+    // ── Cámara QR (búsqueda por código) ──────────────────────────────────────
+    const iniciarCamaraMuestra = async () => {
+        setErrorBusqueda("");
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            streamRef.current = stream;
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                videoRef.current.setAttribute("playsinline", true);
+                videoRef.current.play();
+                const canvas  = document.createElement("canvas");
+                const context = canvas.getContext("2d", { willReadFrequently: true });
+                const scan = () => {
+                    if (!videoRef.current || !streamRef.current) return;
+                    if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+                        canvas.height = videoRef.current.videoHeight;
+                        canvas.width  = videoRef.current.videoWidth;
+                        context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+                        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+                        if (code && code.data) {
+                            detenerCamaraMuestra();
+                            const valor = code.data.trim().toUpperCase();
+                            setCodigoBuscar(valor);
+                            handleBuscarCodigo(valor);
+                            return;
+                        }
+                    }
+                    requestAnimationFrame(scan);
+                };
+                requestAnimationFrame(scan);
+            }
+        } catch {
+            setErrorBusqueda("No se pudo acceder a la cámara. Verifica los permisos de tu navegador.");
+        }
+    };
+
+    const detenerCamaraMuestra = () => {
+        if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    };
+
+    useEffect(() => {
+        if (vistaTab === "buscar" && modoQR === "camara" && !muestraEncontrada) iniciarCamaraMuestra();
+        return () => detenerCamaraMuestra();
+    }, [vistaTab, modoQR]);
+
+    const reiniciarBusquedaCodigo = () => {
+        setMuestraEncontrada(null);
+        setErrorBusqueda("");
+        setCodigoBuscar("");
+        if (modoQR === "camara") iniciarCamaraMuestra();
     };
 
     const ordenesFiltradas = ordenesPagadas.filter(o => {
@@ -316,10 +374,51 @@ export default function ModuloMuestra() {
                     <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem", display: "flex", gap: "0.65rem" }}>
                         <span>💡</span>
                         <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#1D4ED8", margin: 0 }}>
-                            Ingresa el número de ticket del recipiente (ej: <strong>LAB-EBF6</strong>) para localizar la muestra.
+                            Escanea el código QR del ticket o ingresa el número manualmente (ej: <strong>LAB-EBF6</strong>) para localizar la muestra.
                         </p>
                     </div>
 
+                    {/* Toggle Cámara / Manual */}
+                    {!muestraEncontrada && (
+                        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+                            {["camara", "manual"].map(m => (
+                                <button
+                                    key={m}
+                                    onClick={() => {
+                                        setModoQR(m);
+                                        setMuestraEncontrada(null);
+                                        setErrorBusqueda("");
+                                        setCodigoBuscar("");
+                                    }}
+                                    style={{
+                                        flex: 1, padding: "0.55rem", borderRadius: "8px", border: "1.5px solid",
+                                        fontFamily: FONTC, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", letterSpacing: "0.05em",
+                                        borderColor: modoQR === m ? ORANGE : "#E5E7EB",
+                                        background:  modoQR === m ? ORANGE : "#F8FAFC",
+                                        color:       modoQR === m ? "#FFF" : "#6B7280",
+                                    }}
+                                >
+                                    {m === "camara" ? "📷 CÁMARA" : "⌨️ MANUAL"}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Vista cámara */}
+                    {modoQR === "camara" && !muestraEncontrada && (
+                        <div style={{ textAlign: "center", marginBottom: "1.25rem" }}>
+                            <div style={{ position: "relative", background: "#0F172A", borderRadius: "12px", overflow: "hidden", aspectRatio: "1", maxWidth: "280px", margin: "0 auto 1rem" }}>
+                                <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                                    <div style={{ width: "60%", height: "60%", border: `3px solid ${ORANGE}`, borderRadius: "10px", boxShadow: "0 0 0 2000px rgba(0,0,0,0.35)" }} />
+                                </div>
+                            </div>
+                            <p style={{ fontSize: "0.8rem", color: "#6B7280", margin: 0 }}>Apunta la cámara al código QR del ticket</p>
+                        </div>
+                    )}
+
+                    {/* Vista manual */}
+                    {modoQR === "manual" && !muestraEncontrada && (
                     <div style={{ display: "flex", gap: "0.6rem", marginBottom: "1.25rem" }}>
                         <input
                             placeholder="Ej: LAB-EBF6"
@@ -332,11 +431,12 @@ export default function ModuloMuestra() {
                             onKeyDown={e => e.key === "Enter" && handleBuscarCodigo()}
                             style={{ ...S.input, flex: 1, fontFamily: "'Courier New', monospace", fontSize: "1rem", fontWeight: 700, letterSpacing: "0.08em" }}
                         />
-                        <button onClick={handleBuscarCodigo} disabled={buscandoCodigo || !codigoBuscar.trim()}
+                        <button onClick={() => handleBuscarCodigo()} disabled={buscandoCodigo || !codigoBuscar.trim()}
                             style={{ ...S.btnFull, width: "auto", padding: "0 1.5rem", opacity: (!codigoBuscar.trim() || buscandoCodigo) ? 0.6 : 1 }}>
                             {buscandoCodigo ? "..." : "🔍 Buscar"}
                         </button>
                     </div>
+                    )}
 
                     {errorBusqueda && (
                         <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "0.85rem 1rem" }}>
@@ -385,6 +485,12 @@ export default function ModuloMuestra() {
                             </div>
                         );
                     })()}
+
+                    {muestraEncontrada && (
+                        <button onClick={reiniciarBusquedaCodigo} style={{ ...S.btnCancel, width: "100%", marginTop: "1rem", textAlign: "center" }}>
+                            🔄 Buscar otra muestra
+                        </button>
+                    )}
                 </div>
             )}
 

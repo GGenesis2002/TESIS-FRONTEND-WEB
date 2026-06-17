@@ -14,7 +14,6 @@ const EC = {
 };
 
 const PUEDE_EDITAR   = ["Generada"];
-const PUEDE_CANCELAR = ["Generada"];
 const PUEDE_ELIMINAR = ["Generada", "Cancelada"];
 
 const FONT  = "'Barlow', sans-serif";
@@ -71,12 +70,6 @@ export default function GestionOrdenes() {
   const [guardandoEdit, setGuardandoEdit]     = useState(false);
   const [msgEdit, setMsgEdit]                 = useState(null);
 
-  // Cancelar
-  const [showConfirmCancel, setShowConfirmCancel] = useState(null);
-  const [motivoCancel, setMotivoCancel]           = useState("");
-  const [cancelando, setCancelando]               = useState(false);
-  const [motivoError, setMotivoError]             = useState("");
-
   // Eliminar
   const [showConfirmEliminar, setShowConfirmEliminar] = useState(null);
   const [eliminando, setEliminando]                   = useState(false);
@@ -86,7 +79,7 @@ export default function GestionOrdenes() {
   const streamRef = useRef(null);
   const [showQR, setShowQR]         = useState(false);
   const [qrError, setQrError]       = useState("");
-  const [qrInvalido, setQrInvalido] = useState(false); // ← nuevo: QR expirado/inválido
+  const [qrInvalido, setQrInvalido] = useState(false);
   const [qrLoading, setQrLoading]   = useState(false);
   const [ordenEscaneada, setOrdenEscaneada] = useState(null);
   const [ticketManual, setTicketManual]     = useState("");
@@ -217,30 +210,6 @@ export default function GestionOrdenes() {
     } finally { setGuardandoEdit(false); }
   };
 
-  // ── CANCELAR ORDEN ────────────────────────────────────────────────────────────
-  const handleCancelar = async () => {
-    if (!showConfirmCancel) return;
-    // Validación: motivo obligatorio y no vacío
-    if (!motivoCancel.trim()) {
-      setMotivoError("El motivo de cancelación es obligatorio.");
-      return;
-    }
-    setCancelando(true); setMotivoError("");
-    try {
-      await API.patch(`/ordenes/${showConfirmCancel.id_orden}/cancelar`, {
-        motivo: motivoCancel.trim()
-      });
-      setOrdenes(prev => prev.map(o =>
-        o.id_orden === showConfirmCancel.id_orden ? { ...o, estado: "Cancelada" } : o
-      ));
-      showToast("success", `Orden ${showConfirmCancel.numero_ticket} cancelada.`);
-      setShowConfirmCancel(null);
-      setMotivoCancel("");
-    } catch (err) {
-      showToast("error", "Error al intentar cancelar la orden.");
-    } finally { setCancelando(false); }
-  };
-
   // ── ELIMINAR ORDEN ────────────────────────────────────────────────────────────
   const handleEliminar = async () => {
     if (!showConfirmEliminar) return;
@@ -303,7 +272,6 @@ export default function GestionOrdenes() {
     } catch (err) {
       const status = err.response?.status;
       const mensaje = err.response?.data?.message || "";
-      // 401/403/410 o mensajes de expiración → QR inválido/expirado
       if (status === 401 || status === 403 || status === 410 ||
           mensaje.toLowerCase().includes("expir") ||
           mensaje.toLowerCase().includes("inválido") ||
@@ -430,7 +398,6 @@ export default function GestionOrdenes() {
           filtradas.map((o, i) => {
             const ec = EC[o.estado] || { bg: "#F8FAFC", color: "#6B7280" };
             const puedeEditar   = PUEDE_EDITAR.includes(o.estado);
-            const puedeCancelar = PUEDE_CANCELAR.includes(o.estado);
             const puedeEliminar = PUEDE_ELIMINAR.includes(o.estado);
             return (
               <div
@@ -451,7 +418,6 @@ export default function GestionOrdenes() {
                 <span style={{ flex: "0 0 185px", display: "flex", gap: "0.35rem", justifyContent: "center" }}>
                   <button onClick={() => abrirDetalle(o)} style={{ ...s.btnIcon, background: "#F3F4F6", color: DARK }} title="Ver detalle">👁️</button>
                   {puedeEditar && <button onClick={() => abrirEditar(o)} style={{ ...s.btnIcon, background: "rgba(59,130,246,0.1)", color: "#3B82F6" }} title="Editar">✏️</button>}
-                  
                   {puedeEliminar && <button onClick={() => setShowConfirmEliminar(o)} style={{ ...s.btnIcon, background: "rgba(127,29,29,0.1)", color: "#7F1D1D" }} title="Eliminar permanentemente">🗑️</button>}
                 </span>
               </div>
@@ -486,7 +452,6 @@ export default function GestionOrdenes() {
                   <p style={{ fontSize: "0.85rem", color: "#B91C1C", textAlign: "center", margin: "0 0 1rem", lineHeight: 1.6 }}>
                     Este código QR ya no es válido.
                   </p>
-                  {/* Instrucción: buscar por número de ticket */}
                   <div style={{ background: "#FFF", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem", width: "100%", boxSizing: "border-box" }}>
                     <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 0.35rem" }}>
                       ¿Cómo continuar?
@@ -522,7 +487,6 @@ export default function GestionOrdenes() {
                 <PanelAccionesQR
                   data={ordenEscaneada}
                   onEditar={(o) => { cerrarQR(); abrirEditar(o); }}
-                  onCancelar={(o) => { setShowConfirmCancel(o); setMotivoCancel(""); setMotivoError(""); }}
                   onVerDetalle={(o) => { cerrarQR(); abrirDetalle(o); }}
                   onNuevoScan={() => {
                     setOrdenEscaneada(null);
@@ -550,7 +514,6 @@ export default function GestionOrdenes() {
                     <div style={{ textAlign: "center" }}>
                       <div style={{ position: "relative", background: "#0F172A", borderRadius: "12px", overflow: "hidden", aspectRatio: "1", maxWidth: "280px", margin: "0 auto 1rem" }}>
                         <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        {/* Marco de escaneo */}
                         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                           <div style={{ width: "60%", height: "60%", border: `3px solid ${ORANGE}`, borderRadius: "10px", boxShadow: `0 0 0 2000px rgba(0,0,0,0.35)` }} />
                         </div>
@@ -774,68 +737,11 @@ export default function GestionOrdenes() {
                           ✏️ EDITAR ORDEN
                         </button>
                       )}
-                    
                       <button onClick={() => setShowDetalle(null)} style={s.btnCancel}>Cerrar</button>
                     </div>
                   </>
                 );
               })()}
-            </div>
-          </div>
-        </Overlay>
-      )}
-
-      {/* ════════════════════════════════════════════════════════════
-          MODAL — CONFIRMAR CANCELACIÓN
-      ════════════════════════════════════════════════════════════ */}
-      {showConfirmCancel && (
-        <Overlay onClose={() => { setShowConfirmCancel(null); setMotivoError(""); }}>
-          <div style={s.modalContainer}>
-            <ModalHeader
-              title="CANCELAR"
-              titleOrange="ORDEN"
-              subtitle={`Ticket ${showConfirmCancel.numero_ticket}`}
-              onClose={() => { setShowConfirmCancel(null); setMotivoError(""); }}
-            />
-            <div style={s.modalBody}>
-              {/* Advertencia visual */}
-              <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1rem", display: "flex", alignItems: "flex-start", gap: "0.65rem" }}>
-                <span style={{ fontSize: "1.25rem", flexShrink: 0 }}>⚠️</span>
-                <p style={{ fontSize: "0.85rem", color: "#7F1D1D", margin: 0, lineHeight: 1.55 }}>
-                  Esta acción <strong>no se puede deshacer</strong>. La orden pasará al estado <strong>Cancelada</strong> de forma permanente.
-                </p>
-              </div>
-
-              <label style={s.label}>
-                Motivo de Cancelación *
-              </label>
-              <textarea
-                placeholder="Describe la razón de la cancelación..."
-                value={motivoCancel}
-                onChange={e => { setMotivoCancel(e.target.value); if (e.target.value.trim()) setMotivoError(""); }}
-                style={{
-                  ...s.input, width: "100%", height: "80px", resize: "none", marginBottom: "0.25rem",
-                  borderColor: motivoError ? "#EF4444" : "#E5E7EB",
-                }}
-              />
-              {motivoError && (
-                <p style={{ fontSize: "0.78rem", color: "#EF4444", margin: "0 0 0.75rem", fontFamily: FONT }}>
-                  {motivoError}
-                </p>
-              )}
-
-              <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.75rem" }}>
-                <button
-                  onClick={handleCancelar}
-                  disabled={cancelando}
-                  style={{ ...s.btnFull, flex: 1, background: "#EF4444", opacity: cancelando ? 0.6 : 1 }}
-                >
-                  {cancelando ? "Cancelando..." : "🚫 CONFIRMAR CANCELACIÓN"}
-                </button>
-                <button onClick={() => { setShowConfirmCancel(null); setMotivoError(""); }} style={s.btnCancel}>
-                  Atrás
-                </button>
-              </div>
             </div>
           </div>
         </Overlay>
@@ -854,7 +760,6 @@ export default function GestionOrdenes() {
               onClose={() => setShowConfirmEliminar(null)}
             />
             <div style={s.modalBody}>
-              {/* Advertencia visual fuerte */}
               <div style={{ background: "#450A0A", borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1.25rem", display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
                 <span style={{ fontSize: "1.5rem", flexShrink: 0 }}>🗑️</span>
                 <div>
@@ -909,16 +814,14 @@ export default function GestionOrdenes() {
 }
 
 // ─── PANEL ACCIONES POST-ESCANEO QR ──────────────────────────────────────────
-function PanelAccionesQR({ data, onEditar, onCancelar, onVerDetalle, onNuevoScan, onCerrar }) {
+function PanelAccionesQR({ data, onEditar, onVerDetalle, onNuevoScan, onCerrar }) {
   const o = data.orden || data;
   const detalles = data.examenes || data.detalles || [];
   const ec = EC[o.estado] || { bg: "#F8FAFC", color: "#6B7280", icon: "" };
-  const puedeEditar   = PUEDE_EDITAR.includes(o.estado);
-  const puedeCancelar = PUEDE_CANCELAR.includes(o.estado);
+  const puedeEditar = PUEDE_EDITAR.includes(o.estado);
 
   return (
     <div>
-      {/* Cabecera del paciente / estado */}
       <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem" }}>
         <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#16A34A", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.3rem" }}>
           ✓ COMPROBACIÓN COMPLETADA
@@ -938,7 +841,6 @@ function PanelAccionesQR({ data, onEditar, onCancelar, onVerDetalle, onNuevoScan
         </div>
       </div>
 
-      {/* Resumen de exámenes */}
       <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "0.85rem", border: "1px solid #E5E7EB", marginBottom: "1rem" }}>
         <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
           Exámenes en la orden
@@ -957,7 +859,6 @@ function PanelAccionesQR({ data, onEditar, onCancelar, onVerDetalle, onNuevoScan
         </div>
       </div>
 
-      {/* Aviso módulo de caja */}
       {o.estado === "Generada" && (
         <div style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.65rem" }}>
           <span style={{ fontSize: "1.2rem" }}>💳</span>
@@ -967,7 +868,6 @@ function PanelAccionesQR({ data, onEditar, onCancelar, onVerDetalle, onNuevoScan
         </div>
       )}
 
-      {/* Acciones */}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
         <button onClick={() => onVerDetalle(o)} style={{ ...btnAccion, background: "#F3F4F6", color: DARK, borderColor: "#E5E7EB" }}>
           👁️ Ver detalle completo
@@ -977,8 +877,7 @@ function PanelAccionesQR({ data, onEditar, onCancelar, onVerDetalle, onNuevoScan
             ✏️ Editar exámenes de la orden
           </button>
         )}
-        
-        {!puedeEditar && !puedeCancelar && (
+        {!puedeEditar && (
           <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "0.75rem", border: "1px solid #E5E7EB", textAlign: "center" }}>
             <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#6B7280", margin: 0 }}>
               Esta orden en estado <strong>{o.estado}</strong> no permite modificaciones.
@@ -1122,9 +1021,7 @@ const s = {
   modalBody:    { background: "#FFF", padding: "1.25rem", borderBottomLeftRadius: "14px", borderBottomRightRadius: "14px", boxSizing: "border-box", overflowY: "auto" },
   modalContainer: { background: "#FFF", borderRadius: "14px", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", width: "420px", maxWidth: "calc(100vw - 2rem)", maxHeight: "90vh", overflowY: "auto", display: "flex", flexDirection: "column" },
   alertError:   { background: "#FEF2F2", color: "#EF4444", border: "1px solid #FCA5A5", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.85rem", marginBottom: "1rem", textAlign: "center" },
-  // Panel QR inválido
   qrInvalidBox: { background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: "12px", padding: "1.5rem 1.25rem", display: "flex", flexDirection: "column", alignItems: "center" },
   qrInvalidIcon: { fontSize: "2.5rem", marginBottom: "0.75rem" },
-  // Spinner
   spinner: { width: "32px", height: "32px", border: "3px solid #E5E7EB", borderTopColor: ORANGE, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto" },
 };

@@ -58,12 +58,15 @@ export default function ModuloMuestra() {
     // Modal detalle orden
     const [showDetalle, setShowDetalle] = useState(null);
 
-    // Búsqueda por código
+    // Búsqueda por código (pestaña manual)
     const [codigoBuscar, setCodigoBuscar]           = useState("");
     const [buscandoCodigo, setBuscandoCodigo]       = useState(false);
     const [muestraEncontrada, setMuestraEncontrada] = useState(null);
     const [errorBusqueda, setErrorBusqueda]         = useState("");
-    const [modoQR, setModoQR]                       = useState("camara"); // "camara" | "manual"
+
+    // Modal — Lector QR / Ticket
+    const [showQR, setShowQR] = useState(false);
+    const [modoQR, setModoQR] = useState("camara"); // "camara" | "manual"
     const videoRef  = useRef(null);
     const streamRef = useRef(null);
 
@@ -246,15 +249,34 @@ export default function ModuloMuestra() {
     };
 
     useEffect(() => {
-        if (vistaTab === "buscar" && modoQR === "camara" && !muestraEncontrada) iniciarCamaraMuestra();
+        if (showQR && modoQR === "camara" && !muestraEncontrada) iniciarCamaraMuestra();
         return () => detenerCamaraMuestra();
-    }, [vistaTab, modoQR]);
+    }, [showQR, modoQR]);
 
     const reiniciarBusquedaCodigo = () => {
         setMuestraEncontrada(null);
         setErrorBusqueda("");
         setCodigoBuscar("");
+    };
+
+    const buscarOtroQR = () => {
+        setMuestraEncontrada(null);
+        setErrorBusqueda("");
+        setCodigoBuscar("");
         if (modoQR === "camara") iniciarCamaraMuestra();
+    };
+
+    const abrirLectorQR = () => {
+        setMuestraEncontrada(null);
+        setErrorBusqueda("");
+        setCodigoBuscar("");
+        setModoQR("camara");
+        setShowQR(true);
+    };
+
+    const cerrarLectorQR = () => {
+        setShowQR(false);
+        detenerCamaraMuestra();
     };
 
     const ordenesFiltradas = ordenesPagadas.filter(o => {
@@ -276,9 +298,14 @@ export default function ModuloMuestra() {
                         Al confirmar, la orden pasa a <strong>En Proceso</strong> y el inventario se descuenta automáticamente
                     </p>
                 </div>
-                <button onClick={cargar} disabled={loading} style={S.btnRefresh}>
-                    {loading ? "…" : "↻ Actualizar"}
-                </button>
+                <div style={{ display: "flex", gap: "0.65rem" }}>
+                    <button onClick={abrirLectorQR} style={S.btnQR}>
+                        📷 LEER QR / TICKET
+                    </button>
+                    <button onClick={cargar} disabled={loading} style={S.btnRefresh}>
+                        {loading ? "…" : "↻ Actualizar"}
+                    </button>
+                </div>
             </div>
 
             {/* TABS */}
@@ -374,51 +401,10 @@ export default function ModuloMuestra() {
                     <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem", display: "flex", gap: "0.65rem" }}>
                         <span>💡</span>
                         <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#1D4ED8", margin: 0 }}>
-                            Escanea el código QR del ticket o ingresa el número manualmente (ej: <strong>LAB-EBF6</strong>) para localizar la muestra.
+                            Ingresa el número de ticket del recipiente (ej: <strong>LAB-EBF6</strong>) para localizar la muestra, o usa el botón <strong>📷 LEER QR / TICKET</strong> arriba para escanearlo.
                         </p>
                     </div>
 
-                    {/* Toggle Cámara / Manual */}
-                    {!muestraEncontrada && (
-                        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-                            {["camara", "manual"].map(m => (
-                                <button
-                                    key={m}
-                                    onClick={() => {
-                                        setModoQR(m);
-                                        setMuestraEncontrada(null);
-                                        setErrorBusqueda("");
-                                        setCodigoBuscar("");
-                                    }}
-                                    style={{
-                                        flex: 1, padding: "0.55rem", borderRadius: "8px", border: "1.5px solid",
-                                        fontFamily: FONTC, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", letterSpacing: "0.05em",
-                                        borderColor: modoQR === m ? ORANGE : "#E5E7EB",
-                                        background:  modoQR === m ? ORANGE : "#F8FAFC",
-                                        color:       modoQR === m ? "#FFF" : "#6B7280",
-                                    }}
-                                >
-                                    {m === "camara" ? "📷 CÁMARA" : "⌨️ MANUAL"}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Vista cámara */}
-                    {modoQR === "camara" && !muestraEncontrada && (
-                        <div style={{ textAlign: "center", marginBottom: "1.25rem" }}>
-                            <div style={{ position: "relative", background: "#0F172A", borderRadius: "12px", overflow: "hidden", aspectRatio: "1", maxWidth: "280px", margin: "0 auto 1rem" }}>
-                                <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                                    <div style={{ width: "60%", height: "60%", border: `3px solid ${ORANGE}`, borderRadius: "10px", boxShadow: "0 0 0 2000px rgba(0,0,0,0.35)" }} />
-                                </div>
-                            </div>
-                            <p style={{ fontSize: "0.8rem", color: "#6B7280", margin: 0 }}>Apunta la cámara al código QR del ticket</p>
-                        </div>
-                    )}
-
-                    {/* Vista manual */}
-                    {modoQR === "manual" && !muestraEncontrada && (
                     <div style={{ display: "flex", gap: "0.6rem", marginBottom: "1.25rem" }}>
                         <input
                             placeholder="Ej: LAB-EBF6"
@@ -436,7 +422,6 @@ export default function ModuloMuestra() {
                             {buscandoCodigo ? "..." : "🔍 Buscar"}
                         </button>
                     </div>
-                    )}
 
                     {errorBusqueda && (
                         <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "0.85rem 1rem" }}>
@@ -444,47 +429,7 @@ export default function ModuloMuestra() {
                         </div>
                     )}
 
-                    {muestraEncontrada && Array.isArray(muestraEncontrada) && (() => {
-                        const primera = muestraEncontrada[0];
-                        return (
-                            <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "12px", padding: "1.25rem", marginTop: "0.75rem" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
-                                    <div>
-                                        <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#16A34A", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.2rem" }}>✓ MUESTRA ENCONTRADA</p>
-                                        <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 700, color: DARK, margin: 0 }}>
-                                            {primera.paciente_nombres ? `${primera.paciente_nombres} ${primera.paciente_apellidos}` : "—"}
-                                        </p>
-                                    </div>
-                                    <div style={{ background: "#FFF", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "0.4rem 0.75rem", textAlign: "center" }}>
-                                        <p style={{ fontFamily: "'Courier New', monospace", fontSize: "1rem", fontWeight: 700, color: DARK, margin: 0 }}>{primera.codigo_muestra}</p>
-                                        <p style={{ fontFamily: FONTC, fontSize: "0.65rem", color: "#16A34A", margin: 0, textTransform: "uppercase" }}>Código / Ticket</p>
-                                    </div>
-                                </div>
-
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem", marginBottom: "1rem" }}>
-                                    <DetalleItem label="Estado orden" value={primera.estado_orden} />
-                                    <DetalleItem label="Fecha / Hora" value={primera.fecha_recoleccion ? `${primera.fecha_recoleccion} ${primera.hora_recoleccion || ""}`.trim() : "—"} />
-                                </div>
-
-                                <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
-                                    🧪 INSUMOS REGISTRADOS ({muestraEncontrada.length})
-                                </p>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                                    {muestraEncontrada.map((m, i) => (
-                                        <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.6rem", background: "#FFF", borderRadius: "8px", padding: "0.5rem 0.75rem", border: "1px solid #D1FAE5" }}>
-                                            <div style={{ width: "10px", height: "22px", borderRadius: "2px", background: getColorTubo(m.tipo_recipiente), flexShrink: 0, border: "1px solid rgba(0,0,0,0.1)" }} />
-                                            <div style={{ flex: 1 }}>
-                                                <p style={{ fontFamily: FONT, fontSize: "0.82rem", fontWeight: 700, color: DARK, margin: 0 }}>{m.tipo_recipiente || "No especificado"}</p>
-                                                {m.tipo_muestra_nombre && (
-                                                <p style={{ fontFamily: FONT, fontSize: "0.72rem", color: "#6B7280", margin: 0 }}>{m.tipo_muestra_nombre}</p>
-                                            )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        );
-                    })()}
+                    {muestraEncontrada && <ResultadoMuestra data={muestraEncontrada} />}
 
                     {muestraEncontrada && (
                         <button onClick={reiniciarBusquedaCodigo} style={{ ...S.btnCancel, width: "100%", marginTop: "1rem", textAlign: "center" }}>
@@ -843,6 +788,87 @@ export default function ModuloMuestra() {
                     </div>
                 </Overlay>
             )}
+
+            {/* ══ MODAL — LEER QR / TICKET ══ */}
+            {showQR && (
+                <Overlay onClose={cerrarLectorQR}>
+                    <ModalHeader title="LEER" titleOrange="QR / TICKET" subtitle="Escanea el código del recipiente o ingresa el ticket manual" onClose={cerrarLectorQR} />
+                    <div style={S.modalBody}>
+
+                        {buscandoCodigo && (
+                            <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
+                                <p style={{ color: "#6B7280", fontSize: "0.85rem" }}>Buscando muestra...</p>
+                            </div>
+                        )}
+
+                        {!buscandoCodigo && !muestraEncontrada && (
+                            <>
+                                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+                                    {["camara", "manual"].map(m => (
+                                        <button
+                                            key={m}
+                                            onClick={() => { setModoQR(m); setErrorBusqueda(""); setCodigoBuscar(""); }}
+                                            style={{
+                                                flex: 1, padding: "0.55rem", borderRadius: "8px", border: "1.5px solid",
+                                                fontFamily: FONTC, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", letterSpacing: "0.05em",
+                                                borderColor: modoQR === m ? ORANGE : "#E5E7EB",
+                                                background:  modoQR === m ? ORANGE : "#F8FAFC",
+                                                color:       modoQR === m ? "#FFF" : "#6B7280",
+                                            }}
+                                        >
+                                            {m === "camara" ? "📷 CÁMARA" : "⌨️ MANUAL"}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {errorBusqueda && (
+                                    <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "0.85rem 1rem", marginBottom: "1rem" }}>
+                                        <p style={{ fontFamily: FONT, fontSize: "0.85rem", color: "#DC2626", margin: 0 }}>⚠️ {errorBusqueda}</p>
+                                    </div>
+                                )}
+
+                                {modoQR === "camara" ? (
+                                    <div style={{ textAlign: "center" }}>
+                                        <div style={{ position: "relative", background: "#0F172A", borderRadius: "12px", overflow: "hidden", aspectRatio: "1", maxWidth: "280px", margin: "0 auto 1rem" }}>
+                                            <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                                                <div style={{ width: "60%", height: "60%", border: `3px solid ${ORANGE}`, borderRadius: "10px", boxShadow: "0 0 0 2000px rgba(0,0,0,0.35)" }} />
+                                            </div>
+                                        </div>
+                                        <p style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: "1rem" }}>Apunta la cámara al código QR del ticket</p>
+                                        <button onClick={cerrarLectorQR} style={S.btnCancel}>Cerrar</button>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <label style={S.label}>Código de Ticket (Ej: LAB-XXXX)</label>
+                                        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+                                            <input
+                                                type="text" placeholder="LAB-XXXX"
+                                                value={codigoBuscar}
+                                                onChange={e => setCodigoBuscar(e.target.value.toUpperCase())}
+                                                onKeyDown={e => e.key === "Enter" && handleBuscarCodigo()}
+                                                style={{ ...S.input, flex: 1, fontFamily: "'Courier New', monospace", fontWeight: 700, letterSpacing: "0.08em" }}
+                                            />
+                                            <button onClick={() => handleBuscarCodigo()} disabled={!codigoBuscar.trim()} style={{ ...S.btnFull, width: "auto", padding: "0 1.25rem", opacity: !codigoBuscar.trim() ? 0.6 : 1 }}>BUSCAR</button>
+                                        </div>
+                                        <button onClick={cerrarLectorQR} style={{ ...S.btnCancel, width: "100%" }}>Cerrar</button>
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+                        {!buscandoCodigo && muestraEncontrada && (
+                            <>
+                                <ResultadoMuestra data={muestraEncontrada} />
+                                <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                                    <button onClick={buscarOtroQR} style={{ ...S.btnCancel, flex: 1, textAlign: "center" }}>🔄 Buscar otro</button>
+                                    <button onClick={cerrarLectorQR} style={{ ...S.btnFull, flex: 1, width: "auto" }}>Cerrar</button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </Overlay>
+            )}
         </div>
     );
 }
@@ -898,9 +924,54 @@ function DetalleItem({ label, value }) {
     );
 }
 
+// Tarjeta de resultado al buscar/escanear una muestra (reutilizada en la pestaña y en el modal QR)
+function ResultadoMuestra({ data }) {
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const primera = data[0];
+    return (
+        <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "12px", padding: "1.25rem", marginTop: "0.75rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
+                <div>
+                    <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#16A34A", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.2rem" }}>✓ MUESTRA ENCONTRADA</p>
+                    <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 700, color: DARK, margin: 0 }}>
+                        {primera.paciente_nombres ? `${primera.paciente_nombres} ${primera.paciente_apellidos}` : "—"}
+                    </p>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "0.4rem 0.75rem", textAlign: "center" }}>
+                    <p style={{ fontFamily: "'Courier New', monospace", fontSize: "1rem", fontWeight: 700, color: DARK, margin: 0 }}>{primera.codigo_muestra}</p>
+                    <p style={{ fontFamily: FONTC, fontSize: "0.65rem", color: "#16A34A", margin: 0, textTransform: "uppercase" }}>Código / Ticket</p>
+                </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem", marginBottom: "1rem" }}>
+                <DetalleItem label="Estado orden" value={primera.estado_orden} />
+                <DetalleItem label="Fecha / Hora" value={primera.fecha_recoleccion ? `${primera.fecha_recoleccion} ${primera.hora_recoleccion || ""}`.trim() : "—"} />
+            </div>
+
+            <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
+                🧪 INSUMOS REGISTRADOS ({data.length})
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                {data.map((m, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.6rem", background: "#FFF", borderRadius: "8px", padding: "0.5rem 0.75rem", border: "1px solid #D1FAE5" }}>
+                        <div style={{ width: "10px", height: "22px", borderRadius: "2px", background: getColorTubo(m.tipo_recipiente), flexShrink: 0, border: "1px solid rgba(0,0,0,0.1)" }} />
+                        <div style={{ flex: 1 }}>
+                            <p style={{ fontFamily: FONT, fontSize: "0.82rem", fontWeight: 700, color: DARK, margin: 0 }}>{m.tipo_recipiente || "No especificado"}</p>
+                            {m.tipo_muestra_nombre && (
+                                <p style={{ fontFamily: FONT, fontSize: "0.72rem", color: "#6B7280", margin: 0 }}>{m.tipo_muestra_nombre}</p>
+                            )}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // ─── ESTILOS ──────────────────────────────────────────────────────────────────
 const S = {
     btnRefresh:  { background: "rgba(232,139,58,0.1)", border: "1px solid rgba(232,139,58,0.25)", color: "#E88B3A", padding: "0.5rem 1.1rem", borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" },
+    btnQR:       { background: "#1F2937", border: "1px solid #1F2937", color: "#FFF", padding: "0.5rem 1.1rem", borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" },
     tabBtn:      { border: "none", borderRadius: "7px", padding: "0.45rem 1rem", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.8rem", letterSpacing: "0.03em", cursor: "pointer", transition: "all 0.15s", whiteSpace: "nowrap" },
     searchWrap:  { display: "flex", alignItems: "center", gap: "0.6rem", background: "#FFF", border: "1.5px solid #E5E7EB", borderRadius: "8px", padding: "0.6rem 1rem" },
     searchInput: { flex: 1, border: "none", outline: "none", fontFamily: "'Barlow', sans-serif", fontSize: "0.875rem", background: "transparent" },

@@ -60,6 +60,7 @@ export default function PerfilTecnico() {
       // Recuperamos el id_rol del perfil que ya cargaste anteriormente
       id_rol: perfil ? perfil.id_rol : null, 
       // Si el usuario tiene cargo/especialidad/turno, los enviamos también
+      username: userLocal.username,
       cargo: perfil?.cargo || null,
       especialidad: perfil?.especialidad || null,
       turno: perfil?.turno || null,

@@ -1227,46 +1227,48 @@ export default function AdminResultados() {
   const [pdfVisor, setPdfVisor] = useState(null); // { url, nombre } para visor standalone
 
   const abrirSoloPDF = async (orden) => {
-    try {
-      const detalle = await api.getDetalleOrden(orden.id_orden);
-      const user    = JSON.parse(localStorage.getItem("user") || "{}");
-      const rolActivo = user.rol || (Array.isArray(user.roles) ? user.roles[0] : null) || "Responsable Técnico";
-     const admin = {
+  try {
+    const detalle = await api.getDetalleOrden(orden.id_orden);
+    
+    // Si ya existe un PDF guardado en el servidor, abrirlo directamente
+    if (detalle?.pdf_url) {
+      const url = toBackendUrl(detalle.pdf_url);
+      setPdfVisor({ url, nombre: `Resultado_${orden.numero_ticket || orden.id_orden}` });
+      return;
+    }
+
+    // Solo regenerar si no hay PDF guardado
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const rolActivo = user.rol || (Array.isArray(user.roles) ? user.roles[0] : null) || "Responsable Técnico";
+    const admin = {
       nombre: detalle?.admin_nombre || `${user.nombres || ""} ${user.apellidos || ""}`.trim() || "Administrador",
       cargo:  detalle?.admin_cargo  || user.cargo || rolActivo,
       firma:  detalle?.admin_firma_url || detalle?.admin_firma || user.firma_digital || null,
     };
-      const resultados = detalle?.resultados || [];
+    const resultados = detalle?.resultados || [];
+    const doc = await generarPDFResultado(detalle, resultados, admin);
+    const todosExamenes = resultados.flatMap(r => (r.examenes || []).map(ex => ({ ...ex })));
+    const pdfUrlsAdjuntos = todosExamenes
+      .filter(ex => !!ex.archivo_pdf && (ex.parametros || []).length === 0)
+      .map(ex => toBackendUrl(ex.archivo_pdf));
 
-      // Generar PDF base con los resultados de parámetros
-      const doc = await generarPDFResultado(detalle, resultados, admin);
-
-      // Recolectar URLs de PDFs adjuntos de exámenes tipo PDF (igual que en handleConfirmar)
-      const todosExamenes = resultados.flatMap(r => (r.examenes || []).map(ex => ({ ...ex })));
-      const pdfUrlsAdjuntos = todosExamenes
-        .filter(ex => !!ex.archivo_pdf && (ex.parametros || []).length === 0)
-        .map(ex => toBackendUrl(ex.archivo_pdf));
-
-      let blobUrl;
-      if (pdfUrlsAdjuntos.length > 0) {
-        // Fusionar el PDF generado con los PDFs adjuntos
-        const mergedBytes = await fusionarPDFs(doc, pdfUrlsAdjuntos);
-        if (mergedBytes instanceof Uint8Array) {
-          const blob = new Blob([mergedBytes], { type: "application/pdf" });
-          blobUrl = URL.createObjectURL(blob);
-        } else {
-          // fallback si la fusión falla
-          blobUrl = URL.createObjectURL(doc.output("blob"));
-        }
+    let blobUrl;
+    if (pdfUrlsAdjuntos.length > 0) {
+      const mergedBytes = await fusionarPDFs(doc, pdfUrlsAdjuntos);
+      if (mergedBytes instanceof Uint8Array) {
+        blobUrl = URL.createObjectURL(new Blob([mergedBytes], { type: "application/pdf" }));
       } else {
         blobUrl = URL.createObjectURL(doc.output("blob"));
       }
-
-      setPdfVisor({ url: blobUrl, nombre: `Resultado_${orden.numero_ticket || orden.id_orden}` });
-    } catch {
-      mostrarMsg("err", "Error al generar el PDF.");
+    } else {
+      blobUrl = URL.createObjectURL(doc.output("blob"));
     }
-  };
+
+    setPdfVisor({ url: blobUrl, nombre: `Resultado_${orden.numero_ticket || orden.id_orden}` });
+  } catch {
+    mostrarMsg("err", "Error al generar el PDF.");
+  }
+};
 
   const handleDevolver = async (motivo) => {
     try {

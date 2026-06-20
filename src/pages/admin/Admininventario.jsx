@@ -347,6 +347,11 @@ function FormReceta({ insumos, examenes, recetas = [], onSave, onClose, onAlert 
   const [saving,   setSaving]   = useState(false);
   const [progreso, setProgreso] = useState(null);
 
+  // Edición inline de un insumo ya vinculado
+  const [editandoId, setEditandoId] = useState(null); // id_examen_insumo en edición
+  const [cantEdit,   setCantEdit]   = useState(1);
+  const [guardandoEdit, setGuardandoEdit] = useState(false);
+
   // Insumos que el examen seleccionado YA tiene vinculados (vienen de la BD)
   const yaVinculados = idExamen
     ? recetas.filter(r => String(r.id_examen) === String(idExamen))
@@ -358,6 +363,27 @@ function FormReceta({ insumos, examenes, recetas = [], onSave, onClose, onAlert 
   const handleCambiarExamen = (valor) => {
     setIdExamen(valor);
     setFilas([{ id_insumo: "", cantidad_usada: 1 }]);
+    setEditandoId(null);
+  };
+
+  const empezarEdicion = (receta) => {
+    setEditandoId(receta.id_examen_insumo);
+    setCantEdit(receta.cantidad_usada);
+  };
+
+  const guardarEdicion = async (receta) => {
+    if (!cantEdit || cantEdit <= 0) return onAlert?.("Cantidad inválida", "Ingresa una cantidad mayor a 0.");
+    setGuardandoEdit(true);
+    try {
+      await onSave({ id_examen: receta.id_examen, id_insumo: receta.id_insumo, cantidad_usada: cantEdit });
+      receta.cantidad_usada = cantEdit; // refleja el cambio al instante en el resumen
+      setEditandoId(null);
+      onAlert?.("Cantidad actualizada", `Ahora se vincula con ${cantEdit} unidad(es).`, "ok");
+    } catch {
+      onAlert?.("Error", "No se pudo actualizar la cantidad.");
+    } finally {
+      setGuardandoEdit(false);
+    }
   };
 
   const elegidos = filas.map(f => String(f.id_insumo)).filter(Boolean);
@@ -416,25 +442,62 @@ function FormReceta({ insumos, examenes, recetas = [], onSave, onClose, onAlert 
         </select>
       </div>
 
-      {/* Resumen de insumos ya vinculados a este examen */}
+      {/* Resumen de insumos ya vinculados a este examen — editable */}
       {idExamen && (
         yaVinculados.length > 0 ? (
           <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: "8px", padding: "0.65rem 0.9rem" }}>
             <p style={{ margin: "0 0 0.4rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.04em" }}>
               ✓ Este examen ya tiene {yaVinculados.length} insumo{yaVinculados.length !== 1 ? "s" : ""} vinculado{yaVinculados.length !== 1 ? "s" : ""}
             </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
               {yaVinculados.map(r => (
-                <span key={r.id_examen_insumo} style={{
-                  fontFamily: "'Barlow', sans-serif", fontSize: "0.74rem", fontWeight: 600,
-                  background: "#DCFCE7", color: "#166534", padding: "0.2rem 0.6rem", borderRadius: "20px",
+                <div key={r.id_examen_insumo} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem",
+                  background: "#DCFCE7", borderRadius: "8px", padding: "0.3rem 0.4rem 0.3rem 0.7rem",
                 }}>
-                  {r.nombre_insumo || `Insumo #${r.id_insumo}`} · {r.cantidad_usada}
-                </span>
+                  <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", fontWeight: 600, color: "#166534" }}>
+                    {r.nombre_insumo || `Insumo #${r.id_insumo}`}
+                  </span>
+
+                  {editandoId === r.id_examen_insumo ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                      <input
+                        type="number" min="1" autoFocus value={cantEdit}
+                        onChange={e => setCantEdit(+e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && guardarEdicion(r)}
+                        style={{ ...finput, width: "64px", fontSize: "0.78rem", padding: "0.25rem 0.4rem", textAlign: "center" }}
+                      />
+                      <button
+                        onClick={() => guardarEdicion(r)} disabled={guardandoEdit}
+                        title="Guardar cantidad"
+                        style={{ background: "#166534", color: "#FFF", border: "none", borderRadius: "5px", width: "26px", height: "26px", cursor: "pointer", fontSize: "0.75rem" }}
+                      >✓</button>
+                      <button
+                        onClick={() => setEditandoId(null)} disabled={guardandoEdit}
+                        title="Cancelar"
+                        style={{ background: "#FFF", color: "#6B7280", border: "1px solid #D1D5DB", borderRadius: "5px", width: "26px", height: "26px", cursor: "pointer", fontSize: "0.75rem" }}
+                      >✕</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <span style={{
+                        fontFamily: "'Barlow', sans-serif", fontSize: "0.74rem", fontWeight: 700,
+                        background: "#166534", color: "#FFF", padding: "0.15rem 0.55rem", borderRadius: "20px",
+                      }}>
+                        {r.cantidad_usada}
+                      </span>
+                      <button
+                        onClick={() => empezarEdicion(r)}
+                        title="Editar cantidad"
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.8rem", color: "#166534", padding: "0.1rem 0.2rem" }}
+                      >✏️</button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
             <p style={{ margin: "0.5rem 0 0", fontFamily: "'Barlow', sans-serif", fontSize: "0.72rem", color: "#15803D" }}>
-              No aparecen en la lista de abajo. Si quieres cambiar su cantidad, cierra este formulario y edita la vinculación desde la tabla de Recetas.
+              No aparecen en la lista de abajo. Usa ✏️ para cambiar la cantidad de un insumo ya vinculado.
             </p>
           </div>
         ) : (

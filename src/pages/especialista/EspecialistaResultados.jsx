@@ -18,6 +18,19 @@ const ESTADO_META = {
 };
 const getMeta = (estado) => ESTADO_META[estado] || { color: "#6B7280", bg: "rgba(107,114,128,0.1)" };
 
+// Parsea valor_referencia (string JSON guardado por la pantalla de configuración)
+// a { tipo, opciones }. Si no es JSON válido o viene vacío, se asume NUMÉRICO
+// (compatibilidad con parámetros creados antes de este cambio).
+function parseTipoDato(valor_referencia) {
+  if (!valor_referencia) return { tipo: "NUMERICO", opciones: [] };
+  try {
+    const parsed = JSON.parse(valor_referencia);
+    return { tipo: parsed.tipo || "NUMERICO", opciones: parsed.opciones || [] };
+  } catch {
+    return { tipo: "NUMERICO", opciones: [] };
+  }
+}
+
 /* ══════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
 ══════════════════════════════════════════════════════════ */
@@ -497,8 +510,9 @@ function ExamenEditable({ examen, editable, onGuardar, guardando }) {
               <div style={S.parametrosGrid}>
                 {(examen.parametros || []).map(p => {
                   const v          = valores[p.id_parametro] || { valor: "", obs: "" };
+                  const { tipo, opciones } = parseTipoDato(p.valor_referencia);
                   const valorNum   = parseFloat(v.valor);
-                  const fuera      = v.valor && !isNaN(valorNum) && (valorNum > p.rango_max || valorNum < p.rango_min);
+                  const fuera      = tipo === "NUMERICO" && v.valor && !isNaN(valorNum) && (valorNum > p.rango_max || valorNum < p.rango_min);
                   const lleno      = !!p.valor_obtenido || !!v.valor;
                   // Parámetro devuelto por admin: se puede editar aunque el resto esté bloqueado
                   const devuelto   = p.estado === "Devuelto";
@@ -528,22 +542,53 @@ function ExamenEditable({ examen, editable, onGuardar, guardando }) {
                           </p>
                         )}
                         <p style={{ fontSize: "0.7rem", color: "#9CA3AF", margin: "0.1rem 0 0" }}>
-                          Rango: {p.rango_min ?? "—"} – {p.rango_max ?? "—"} {p.unidad || ""}
+                          {tipo === "NUMERICO" ? (
+                            <>Rango: {p.rango_min ?? "—"} – {p.rango_max ?? "—"} {p.unidad || ""}</>
+                          ) : tipo === "OPCIONES" ? (
+                            <>Opciones: {opciones.join(" / ")}</>
+                          ) : (
+                            <>Resultado de texto libre</>
+                          )}
                           {p.descripcion_rango && p.descripcion_rango !== "General · 0-120 años" && (
                             <span style={{ marginLeft: "0.4rem", color: "#8B5CF6", fontWeight: 600 }}>({p.descripcion_rango})</span>
                           )}
                         </p>
                       </div>
                       <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-                        <input type="number" step="any" placeholder="Valor…" value={v.valor} disabled={!campoEditable}
-                          onChange={e => setValores(prev => ({ ...prev, [p.id_parametro]: { ...prev[p.id_parametro], valor: e.target.value } }))}
-                          style={{
-                            ...S.valorInput,
-                            borderColor: devuelto ? "#EF4444" : fuera ? "#EF4444" : lleno ? "#10B981" : "#E5E7EB",
-                            background:  !campoEditable ? "#F8FAFC" : devuelto ? "#FFF5F5" : "#FFF",
-                            cursor:      !campoEditable ? "not-allowed" : "text",
-                          }} />
-                        <span style={{ fontSize: "0.75rem", color: "#9CA3AF", whiteSpace: "nowrap" }}>{p.unidad || ""}</span>
+                        {tipo === "OPCIONES" ? (
+                          <select value={v.valor} disabled={!campoEditable}
+                            onChange={e => setValores(prev => ({ ...prev, [p.id_parametro]: { ...prev[p.id_parametro], valor: e.target.value } }))}
+                            style={{
+                              ...S.valorInput,
+                              borderColor: devuelto ? "#EF4444" : lleno ? "#10B981" : "#E5E7EB",
+                              background:  !campoEditable ? "#F8FAFC" : devuelto ? "#FFF5F5" : "#FFF",
+                              cursor:      !campoEditable ? "not-allowed" : "pointer",
+                            }}>
+                            <option value="">Selecciona…</option>
+                            {opciones.map(op => <option key={op} value={op}>{op}</option>)}
+                          </select>
+                        ) : tipo === "TEXTO" ? (
+                          <input type="text" placeholder="Escribe el resultado…" value={v.valor} disabled={!campoEditable}
+                            onChange={e => setValores(prev => ({ ...prev, [p.id_parametro]: { ...prev[p.id_parametro], valor: e.target.value } }))}
+                            style={{
+                              ...S.valorInput,
+                              borderColor: devuelto ? "#EF4444" : lleno ? "#10B981" : "#E5E7EB",
+                              background:  !campoEditable ? "#F8FAFC" : devuelto ? "#FFF5F5" : "#FFF",
+                              cursor:      !campoEditable ? "not-allowed" : "text",
+                            }} />
+                        ) : (
+                          <>
+                            <input type="number" step="any" placeholder="Valor…" value={v.valor} disabled={!campoEditable}
+                              onChange={e => setValores(prev => ({ ...prev, [p.id_parametro]: { ...prev[p.id_parametro], valor: e.target.value } }))}
+                              style={{
+                                ...S.valorInput,
+                                borderColor: devuelto ? "#EF4444" : fuera ? "#EF4444" : lleno ? "#10B981" : "#E5E7EB",
+                                background:  !campoEditable ? "#F8FAFC" : devuelto ? "#FFF5F5" : "#FFF",
+                                cursor:      !campoEditable ? "not-allowed" : "text",
+                              }} />
+                            <span style={{ fontSize: "0.75rem", color: "#9CA3AF", whiteSpace: "nowrap" }}>{p.unidad || ""}</span>
+                          </>
+                        )}
                       </div>
                       {fuera && <p style={{ fontSize: "0.68rem", color: "#DC2626", margin: "0.35rem 0 0", fontWeight: 600 }}>⚠️ Fuera de rango referencial</p>}
                       {campoEditable && (
@@ -731,21 +776,30 @@ function ExamenSoloLectura({ examen }) {
             )
           ) : (
             <div style={S.parametrosGrid}>
-              {(examen.parametros || []).map(p => (
+              {(examen.parametros || []).map(p => {
+                const { tipo, opciones } = parseTipoDato(p.valor_referencia);
+                return (
                 <div key={p.id_parametro} style={{ ...S.parametroCard, borderColor: "#F1F5F9", background: "#FAFAFA" }}>
                   <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.78rem", fontWeight: 700, color: "#6B7280", margin: "0 0 0.25rem", textTransform: "uppercase" }}>{p.nombre_parametro}</p>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <span style={{ fontSize: "1rem", fontWeight: 700, color: p.valor_obtenido ? "#1F2937" : "#D1D5DB" }}>{p.valor_obtenido || "Sin resultado aún"}</span>
-                    <span style={{ fontSize: "0.72rem", color: "#9CA3AF" }}>{p.unidad || ""}</span>
+                    {tipo === "NUMERICO" && <span style={{ fontSize: "0.72rem", color: "#9CA3AF" }}>{p.unidad || ""}</span>}
                   </div>
                   <p style={{ fontSize: "0.68rem", color: "#B0B7C3", margin: "0.2rem 0 0" }}>
-                    Rango: {p.rango_min ?? "—"} – {p.rango_max ?? "—"}
+                    {tipo === "NUMERICO" ? (
+                      <>Rango: {p.rango_min ?? "—"} – {p.rango_max ?? "—"}</>
+                    ) : tipo === "OPCIONES" ? (
+                      <>Opciones: {opciones.join(" / ")}</>
+                    ) : (
+                      <>Texto libre</>
+                    )}
                     {p.descripcion_rango && p.descripcion_rango !== "General · 0-120 años" && (
                       <span style={{ marginLeft: "0.3rem", color: "#8B5CF6" }}>({p.descripcion_rango})</span>
                     )}
                   </p>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

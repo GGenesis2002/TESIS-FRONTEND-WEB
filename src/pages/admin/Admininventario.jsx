@@ -1304,7 +1304,7 @@ export default function AdminInventario() {
                         {alertas.map((a, i) => {
                           const deficit = Math.max(0, a.stock_minimo - a.stock_actual);
                           return (
-                            <tr key={a.id_reporte || i} style={{ borderBottom: "1px solid #FEF3C7" }}>
+                            <tr key={a.id_insumo ?? a.id_reporte ?? i} style={{ borderBottom: "1px solid #FEF3C7" }}>
                               <td style={td}><span style={{ fontWeight: 700, color: "#92400E" }}>{a.insumo}</span></td>
                               <td style={{ ...td, color: "#EF4444", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.05rem" }}>
                                 {a.stock_actual}
@@ -1312,9 +1312,9 @@ export default function AdminInventario() {
                               <td style={td}>{a.stock_minimo}</td>
                               <td style={td}><Chip bg="#FEE2E2" color="#991B1B">Necesita {deficit} más</Chip></td>
                               <td style={{ ...td, fontSize: "0.78rem", color: "#9CA3AF" }}>
-                                {new Date(a.fecha_reporte).toLocaleDateString()}
+                                {a.fecha_reporte ? new Date(a.fecha_reporte).toLocaleDateString() : "—"}
                               </td>
-                              <td style={td}><Chip bg="#FEF3C7" color="#92400E">{a.estado}</Chip></td>
+                              <td style={td}><Chip bg="#FEF3C7" color="#92400E">{a.estado || "PENDIENTE"}</Chip></td>
                             </tr>
                           );
                         })}

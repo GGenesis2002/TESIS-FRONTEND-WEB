@@ -341,11 +341,24 @@ function FormMovimiento({ insumo, onSave, onClose, onAlert }) {
 }
 
 // ─── FORMULARIO RECETA (multi-insumo) ────────────────────────────────────────
-function FormReceta({ insumos, examenes, onSave, onClose, onAlert }) {
+function FormReceta({ insumos, examenes, recetas = [], onSave, onClose, onAlert }) {
   const [idExamen, setIdExamen] = useState("");
   const [filas,    setFilas]    = useState([{ id_insumo: "", cantidad_usada: 1 }]);
   const [saving,   setSaving]   = useState(false);
   const [progreso, setProgreso] = useState(null);
+
+  // Insumos que el examen seleccionado YA tiene vinculados (vienen de la BD)
+  const yaVinculados = idExamen
+    ? recetas.filter(r => String(r.id_examen) === String(idExamen))
+    : [];
+  const idsYaVinculados = yaVinculados.map(r => String(r.id_insumo));
+
+  // Al cambiar de examen, limpiamos las filas para evitar dejar seleccionado
+  // un insumo que en realidad pertenece a otro examen
+  const handleCambiarExamen = (valor) => {
+    setIdExamen(valor);
+    setFilas([{ id_insumo: "", cantidad_usada: 1 }]);
+  };
 
   const elegidos = filas.map(f => String(f.id_insumo)).filter(Boolean);
   const setFila  = (idx, campo, valor) =>
@@ -371,10 +384,15 @@ function FormReceta({ insumos, examenes, onSave, onClose, onAlert }) {
     if (errores === 0) setTimeout(onClose, 900);
   };
 
+  // Un insumo NO debe aparecer en el dropdown si:
+  //  - ya está elegido en otra fila de este mismo formulario, o
+  //  - ya está vinculado a este examen en la base de datos (receta existente)
   const disponibles = (idxActual) =>
     insumos.filter(i => {
       const id = String(i.id_insumo);
-      return id === String(filas[idxActual].id_insumo) || !elegidos.includes(id);
+      if (id === String(filas[idxActual].id_insumo)) return true;
+      if (idsYaVinculados.includes(id)) return false;
+      return !elegidos.includes(id);
     });
 
   return (
@@ -390,13 +408,43 @@ function FormReceta({ insumos, examenes, onSave, onClose, onAlert }) {
       {/* Selector de examen */}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
         <label style={flabel}>Examen *</label>
-        <select style={finput} value={idExamen} onChange={e => setIdExamen(e.target.value)}>
+        <select style={finput} value={idExamen} onChange={e => handleCambiarExamen(e.target.value)}>
           <option value="">-- Seleccionar examen --</option>
           {examenes.map(e => (
             <option key={e.id_examen} value={e.id_examen}>{e.nombre_examen}</option>
           ))}
         </select>
       </div>
+
+      {/* Resumen de insumos ya vinculados a este examen */}
+      {idExamen && (
+        yaVinculados.length > 0 ? (
+          <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: "8px", padding: "0.65rem 0.9rem" }}>
+            <p style={{ margin: "0 0 0.4rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              ✓ Este examen ya tiene {yaVinculados.length} insumo{yaVinculados.length !== 1 ? "s" : ""} vinculado{yaVinculados.length !== 1 ? "s" : ""}
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+              {yaVinculados.map(r => (
+                <span key={r.id_examen_insumo} style={{
+                  fontFamily: "'Barlow', sans-serif", fontSize: "0.74rem", fontWeight: 600,
+                  background: "#DCFCE7", color: "#166534", padding: "0.2rem 0.6rem", borderRadius: "20px",
+                }}>
+                  {r.nombre_insumo || `Insumo #${r.id_insumo}`} · {r.cantidad_usada}
+                </span>
+              ))}
+            </div>
+            <p style={{ margin: "0.5rem 0 0", fontFamily: "'Barlow', sans-serif", fontSize: "0.72rem", color: "#15803D" }}>
+              No aparecen en la lista de abajo. Si quieres cambiar su cantidad, cierra este formulario y edita la vinculación desde la tabla de Recetas.
+            </p>
+          </div>
+        ) : (
+          <div style={{ background: "#FFFBEB", border: "1px solid #FCD34D", borderRadius: "8px", padding: "0.6rem 0.9rem" }}>
+            <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#92400E" }}>
+              Este examen todavía no tiene insumos vinculados.
+            </p>
+          </div>
+        )
+      )}
 
       {/* Filas de insumos */}
       <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: "0.75rem" }}>
@@ -1346,7 +1394,7 @@ export default function AdminInventario() {
       )}
       {modal === "receta" && (
         <Modal title="🔗 Configurar Receta de Insumos" onClose={handleRecetaClose} width="620px">
-          <FormReceta insumos={insumos} examenes={examenes} onSave={handleReceta} onClose={handleRecetaClose} onAlert={showNotif} />
+          <FormReceta insumos={insumos} examenes={examenes} recetas={recetas} onSave={handleReceta} onClose={handleRecetaClose} onAlert={showNotif} />
         </Modal>
       )}
       {modal === "crearCat" && (

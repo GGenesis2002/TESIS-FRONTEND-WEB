@@ -4,37 +4,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PDFDocument } from "pdf-lib";
 
-// Parsea valor_referencia (string JSON guardado por la pantalla de configuración
-// de parámetros) a { tipo, opciones }. Si no es JSON válido o viene vacío, se
-// asume NUMÉRICO (compatibilidad con parámetros creados antes de este cambio).
-function parseTipoDato(valor_referencia) {
-  if (!valor_referencia) return { tipo: "NUMERICO", opciones: [] };
-  try {
-    const parsed = JSON.parse(valor_referencia);
-    return { tipo: parsed.tipo || "NUMERICO", opciones: parsed.opciones || [] };
-  } catch {
-    return { tipo: "NUMERICO", opciones: [] };
-  }
-}
-
-// Texto legible del rango/referencia de un parámetro según su tipo.
-function descripcionReferencia(p) {
-  const { tipo, opciones } = parseTipoDato(p.valor_referencia);
-  if (tipo === "OPCIONES") return opciones.join(" / ") || "—";
-  if (tipo === "TEXTO")    return "Texto libre";
-  return p.rango_min != null ? `${p.rango_min} – ${p.rango_max}` : "—";
-}
-
-// Determina si un parámetro está fuera de rango. Solo aplica a parámetros
-// NUMÉRICOS — los de tipo TEXTO/OPCIONES nunca se marcan fuera de rango.
-function estaFueraDeRango(p) {
-  const { tipo } = parseTipoDato(p.valor_referencia);
-  if (tipo !== "NUMERICO") return false;
-  const num = parseFloat(p.valor_obtenido);
-  return !isNaN(num) && p.rango_min != null && p.rango_max != null
-         && (num < p.rango_min || num > p.rango_max);
-}
-
 /* ══════════════════════════════════════════════════════════
    FUSIONAR PDF GENERADO + PDFs ADJUNTOS DE EXÁMENES PDF
 ══════════════════════════════════════════════════════════ */
@@ -269,13 +238,15 @@ async function generarPDFResultado(orden, resultados, admin) {
 
      // Tabla de parámetros
       const tableData = params.map(p => {
-        const fuera = estaFueraDeRango(p);
+        const num   = parseFloat(p.valor_obtenido);
+        const fuera = !isNaN(num) && p.rango_min != null && p.rango_max != null
+                      && (num < p.rango_min || num > p.rango_max);
         return {
           // Aplicamos st() a todas las cadenas de texto
           parametro: st(p.nombre_parametro || "—"),
           valor:     st(p.valor_obtenido  || "—"),
           unidad:    st(p.unidad          || "—"),
-          rango:     st(descripcionReferencia(p)),
+          rango:     st(p.rango_min != null ? `${p.rango_min} – ${p.rango_max}` : (p.valor_referencia || "—")),
           fuera,
           obs:       st(p.observacion || ""),
         };
@@ -504,12 +475,11 @@ function Badge({ estado }) {
 /* ══════════════════════════════════════════════════════════
    INDICADOR VALOR FUERA/DENTRO DE RANGO
 ══════════════════════════════════════════════════════════ */
-function ValorCell({ parametro }) {
-  const valor = parametro.valor_obtenido;
+function ValorCell({ valor, min, max }) {
   if (valor == null || valor === "") return <span style={{ color: "#9CA3AF" }}>—</span>;
-  const outRange = estaFueraDeRango(parametro);
   const num = parseFloat(valor);
-  const flecha = outRange ? (num > parametro.rango_max ? " ↑" : " ↓") : "";
+  const outRange = !isNaN(num) && min != null && max != null && (num < min || num > max);
+  const flecha = outRange ? (num > max ? " ↑" : " ↓") : "";
   return (
     <span style={{ fontWeight: outRange ? 700 : 400, color: outRange ? "#EF4444" : "#374151" }}>
       {valor}<span style={{ fontSize: "0.85em" }}>{flecha}</span>
@@ -645,7 +615,11 @@ function ModalPublicar({ orden, onConfirm, onClose }) {
   const todosValidados  = totalValidados === totalExamenes && totalExamenes > 0;
 
   const hayFueraRango = todosExamenes.some(ex =>
-    (ex.parametros || []).some(estaFueraDeRango)
+    (ex.parametros || []).some(p => {
+      const num = parseFloat(p.valor_obtenido);
+      return !isNaN(num) && p.rango_min != null && p.rango_max != null
+             && (num < p.rango_min || num > p.rango_max);
+    })
   );
 
   const handlePreviewPDF = async () => {
@@ -853,7 +827,11 @@ function ModalPublicar({ orden, onConfirm, onClose }) {
                 const tienePDF    = !!ex.archivo_pdf;
                 const expandido   = expandidos[ex.key] !== false; // por defecto expandido
 
-                const fueraRango  = (ex.parametros || []).some(estaFueraDeRango);
+                const fueraRango  = (ex.parametros || []).some(p => {
+                  const num = parseFloat(p.valor_obtenido);
+                  return !isNaN(num) && p.rango_min != null && p.rango_max != null
+                         && (num < p.rango_min || num > p.rango_max);
+                });
 
                 // Color de borde según decisión
                 const borderColor = decision === "validado" ? "#10B981"
@@ -1007,15 +985,17 @@ function ModalPublicar({ orden, onConfirm, onClose }) {
                                 </thead>
                                 <tbody>
                                   {(ex.parametros || []).map((p, pi) => {
-                                    const fuera = estaFueraDeRango(p);
+                                    const num = parseFloat(p.valor_obtenido);
+                                    const fuera = !isNaN(num) && p.rango_min != null && p.rango_max != null
+                                                 && (num < p.rango_min || num > p.rango_max);
                                     return (
                                       <tr key={pi} style={{ borderBottom: "1px solid #F8FAFC", background: fuera ? "#FFF8F8" : "transparent" }}>
                                         <td style={{ ...td, padding: "0.45rem 0.75rem", fontWeight: fuera ? 600 : 400 }}>{p.nombre_parametro}</td>
                                         <td style={{ ...td, padding: "0.45rem 0.75rem" }}>
-                                          <ValorCell parametro={p} />
+                                          <ValorCell valor={p.valor_obtenido} min={p.rango_min} max={p.rango_max} />
                                         </td>
                                         <td style={{ ...td, padding: "0.45rem 0.75rem", color: "#9CA3AF", fontSize: "0.73rem" }}>
-                                          {descripcionReferencia(p)}
+                                          {p.rango_min != null ? `${p.rango_min} – ${p.rango_max}` : p.valor_referencia || "—"}
                                         </td>
                                         <td style={{ ...td, padding: "0.45rem 0.75rem", color: "#9CA3AF" }}>{p.unidad || "—"}</td>
                                       </tr>

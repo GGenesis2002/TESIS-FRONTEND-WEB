@@ -1273,8 +1273,8 @@ export default function AdminResultados() {
   const handleDevolver = async (motivo) => {
     try {
       await api.devolver(seleccionado.id_resultado, motivo);
-      const tecnico = seleccionado?.tecnico_nombre || seleccionado?.especialista_nombre || "el técnico responsable";
-      mostrarMsg("ok", `Examen devuelto correctamente. Se ha notificado a ${tecnico} para que realice las correcciones correspondientes.`);
+      const especialista = seleccionado?.tecnico_nombre || seleccionado?.especialista_nombre || "el Especialista responsable";
+      mostrarMsg("ok", `Examen devuelto correctamente. Se ha notificado a ${especialista} para que realice las correcciones correspondientes.`);
       setModal(null);
       await cargar();
     } catch { mostrarMsg("err", "Error al devolver el resultado."); }
@@ -1282,9 +1282,9 @@ export default function AdminResultados() {
 
   const handlePublicar = async ({ soloDevueltos, mixto } = {}) => {
     if (soloDevueltos) {
-      mostrarMsg("ok", "Examen devuelto correctamente. Se notificará al técnico para que realice las correcciones.");
+      mostrarMsg("ok", "Examen devuelto correctamente. Se notificará al Especialista para que realice las correcciones.");
     } else if (mixto) {
-      mostrarMsg("ok", "Orden procesada: exámenes validados publicados y devueltos al técnico para corrección.");
+      mostrarMsg("ok", "Orden procesada: exámenes validados publicados y devueltos al Especialista para corrección.");
     } else {
       mostrarMsg("ok", "Orden validada correctamente. El paciente será notificado con sus resultados.");
     }

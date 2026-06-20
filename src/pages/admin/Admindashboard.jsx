@@ -51,12 +51,17 @@ export default function AdminDashboard() {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
+  const [alertas, setAlertas] = useState([]);
 
   useEffect(() => {
     fetchAdmin()
       .then(setData)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
+
+    API.get("/insumos/alertas")
+      .then(r => setAlertas(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setAlertas([]));
   }, []);
 
   if (loading) return <Loader />;
@@ -94,6 +99,51 @@ export default function AdminDashboard() {
       <div style={kpiGrid}>
         {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
       </div>
+
+      {/* ── ALERTAS DE INVENTARIO ── */}
+      {alertas.length > 0 && (
+        <div style={{ ...card, borderLeft: "4px solid #EF4444", marginBottom: "1.25rem", borderRadius: 0 }}>
+          <div style={cardHeader}>
+            <span style={{ ...cardTitle, color: "#EF4444" }}>
+              ⚠️ Insumos con Stock Crítico ({alertas.length})
+            </span>
+            <button style={linkBtn} onClick={() => navigate("/admin/inventario")}>
+              Ver inventario →
+            </button>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["Insumo", "Stock Actual", "Stock Mínimo", "Necesita Reponer"].map(h => (
+                  <th key={h} style={th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {alertas.map((a, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #F1F5F9", background: i % 2 === 0 ? "#FFF" : "#FFFBEB" }}>
+                  <td style={td}>
+                    <span style={{ fontWeight: 700, color: "#1F2937" }}>{a.insumo}</span>
+                  </td>
+                  <td style={td}>
+                    <span style={{ color: "#EF4444", fontWeight: 700 }}>
+                      {a.stock_actual} {a.unidad_medida}
+                    </span>
+                  </td>
+                  <td style={{ ...td, color: "#9CA3AF" }}>
+                    {a.stock_minimo} {a.unidad_medida}
+                  </td>
+                  <td style={td}>
+                    <span style={{ background: "#FEE2E2", color: "#991B1B", padding: "0.15rem 0.6rem", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700 }}>
+                      +{a.stock_minimo - a.stock_actual} {a.unidad_medida}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* ── BLOQUE INFERIOR ── */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.25rem" }}>

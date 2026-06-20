@@ -3,6 +3,34 @@ import API from "../../services/api";
 
 const SEXOS = ["General", "Masculino", "Femenino"];
 
+// ── Tipos de resultado que puede tener un parámetro ──
+const TIPOS_DATO = [
+  { value: "NUMERICO", label: "Numérico (min - max)" },
+  { value: "TEXTO",    label: "Texto libre" },
+  { value: "OPCIONES", label: "Opciones (selección)" },
+];
+
+// ── Plantillas rápidas de opciones para el tipo OPCIONES ──
+const PLANTILLAS_OPCIONES = [
+  { label: "Positivo / Negativo", opciones: ["Positivo", "Negativo"] },
+  { label: "Sí / No",             opciones: ["Sí", "No"] },
+  { label: "Reactivo / No Reactivo", opciones: ["Reactivo", "No Reactivo"] },
+  { label: "Turbio / Claro",      opciones: ["Turbio", "Claro"] },
+  { label: "Color orina",         opciones: ["Amarillo", "Amarillo claro", "Ámbar", "Rojizo"] },
+];
+
+// Parsea valor_referencia (string JSON) a { tipo, opciones }. Si no es JSON
+// válido o viene vacío, se asume parámetro NUMÉRICO (compatibilidad con datos viejos).
+function parseTipoDato(valor_referencia) {
+  if (!valor_referencia) return { tipo: "NUMERICO", opciones: [] };
+  try {
+    const parsed = JSON.parse(valor_referencia);
+    return { tipo: parsed.tipo || "NUMERICO", opciones: parsed.opciones || [] };
+  } catch {
+    return { tipo: "NUMERICO", opciones: [] };
+  }
+}
+
 export default function ParametrosExamenes() {
   const [tab, setTab] = useState("listado");
   const [examenes, setExamenes] = useState([]);
@@ -32,7 +60,10 @@ export default function ParametrosExamenes() {
     sexo_referencia: "General",
     edad_min: "0",
     edad_max: "120",
+    tipo_dato: "NUMERICO",   // NUMERICO | TEXTO | OPCIONES
+    opciones: [],            // solo aplica si tipo_dato === "OPCIONES"
   });
+  const [opcionNueva, setOpcionNueva] = useState(""); // input para escribir una opción propia
   const [guardandoParam, setGuardandoParam] = useState(false);
 
   const [nuevaCat, setNuevaCat] = useState({ nombre_categoria: "", descripcion: "" });
@@ -112,24 +143,48 @@ export default function ParametrosExamenes() {
   const handleGuardarParam = async () => {
     const errores = [];
     if (!nuevoParam.nombre_parametro?.trim())                                      errores.push("El nombre del parámetro es obligatorio.");
-    if (nuevoParam.rango_min === "" || nuevoParam.rango_min === null)               errores.push("El valor mínimo es obligatorio.");
-    else if (isNaN(Number(nuevoParam.rango_min)))                                   errores.push("El valor mínimo debe ser numérico.");
-    if (nuevoParam.rango_max === "" || nuevoParam.rango_max === null)               errores.push("El valor máximo es obligatorio.");
-    else if (isNaN(Number(nuevoParam.rango_max)))                                   errores.push("El valor máximo debe ser numérico.");
-    if (nuevoParam.rango_min !== "" && nuevoParam.rango_max !== "" &&
-        Number(nuevoParam.rango_min) > Number(nuevoParam.rango_max))               errores.push("El mínimo no puede ser mayor que el máximo.");
-    if (!nuevoParam.unidad?.trim())                                                 errores.push("La unidad de medida es obligatoria (ej: mg/dL).");
+
+    if (nuevoParam.tipo_dato === "NUMERICO") {
+      if (nuevoParam.rango_min === "" || nuevoParam.rango_min === null)               errores.push("El valor mínimo es obligatorio.");
+      else if (isNaN(Number(nuevoParam.rango_min)))                                   errores.push("El valor mínimo debe ser numérico.");
+      if (nuevoParam.rango_max === "" || nuevoParam.rango_max === null)               errores.push("El valor máximo es obligatorio.");
+      else if (isNaN(Number(nuevoParam.rango_max)))                                   errores.push("El valor máximo debe ser numérico.");
+      if (nuevoParam.rango_min !== "" && nuevoParam.rango_max !== "" &&
+          Number(nuevoParam.rango_min) > Number(nuevoParam.rango_max))               errores.push("El mínimo no puede ser mayor que el máximo.");
+      if (!nuevoParam.unidad?.trim())                                                 errores.push("La unidad de medida es obligatoria (ej: mg/dL).");
+    }
+
+    if (nuevoParam.tipo_dato === "OPCIONES" && nuevoParam.opciones.length < 2) {
+      errores.push("Agrega al menos 2 opciones para este tipo de parámetro.");
+    }
+
     if (nuevoParam.edad_min === "" || isNaN(Number(nuevoParam.edad_min)))           errores.push("La edad mínima debe ser un número.");
     if (nuevoParam.edad_max === "" || isNaN(Number(nuevoParam.edad_max)))           errores.push("La edad máxima debe ser un número.");
     if (Number(nuevoParam.edad_min) > Number(nuevoParam.edad_max))                 errores.push("La edad mínima no puede superar la máxima.");
     if (errores.length > 0) { showError("Campos incompletos", errores); return; }
 
+    // Payload final: lo que no aplica al tipo elegido se rellena en blanco/0
+    // y el tipo+opciones se serializan dentro de valor_referencia (sin tocar el schema).
+    const payload = {
+      nombre_parametro: nuevoParam.nombre_parametro,
+      sexo_referencia: nuevoParam.sexo_referencia,
+      edad_min: nuevoParam.edad_min,
+      edad_max: nuevoParam.edad_max,
+      rango_min: nuevoParam.tipo_dato === "NUMERICO" ? nuevoParam.rango_min : 0,
+      rango_max: nuevoParam.tipo_dato === "NUMERICO" ? nuevoParam.rango_max : 0,
+      unidad: nuevoParam.tipo_dato === "NUMERICO" ? nuevoParam.unidad : "",
+      valor_referencia: JSON.stringify({
+        tipo: nuevoParam.tipo_dato,
+        ...(nuevoParam.tipo_dato === "OPCIONES" ? { opciones: nuevoParam.opciones } : {}),
+      }),
+    };
+
     setGuardandoParam(true);
     try {
       if (paramEditando) {
-        await API.put(`/parametros/${paramEditando.id_parametro}`, nuevoParam);
+        await API.put(`/parametros/${paramEditando.id_parametro}`, payload);
       } else {
-        await API.post("/parametros", { ...nuevoParam, id_examen: examenSeleccionado.id_examen });
+        await API.post("/parametros", { ...payload, id_examen: examenSeleccionado.id_examen });
       }
       resetParamForm();
       cargarParametros(examenSeleccionado.id_examen);
@@ -154,7 +209,8 @@ const handleEditarExamen = (examen) => {
 };
 
   const resetParamForm = () => {
-    setNuevoParam({ nombre_parametro: "", rango_min: "", rango_max: "", unidad: "", sexo_referencia: "General", edad_min: "0", edad_max: "120" });
+    setNuevoParam({ nombre_parametro: "", rango_min: "", rango_max: "", unidad: "", sexo_referencia: "General", edad_min: "0", edad_max: "120", tipo_dato: "NUMERICO", opciones: [] });
+    setOpcionNueva("");
     setParamEditando(null);
     setModoEdicion(false);
   };
@@ -199,6 +255,7 @@ const handleEditarExamen = (examen) => {
 
   // ── Editar parámetro ──
   const handleEditarParam = (p) => {
+    const { tipo, opciones } = parseTipoDato(p.valor_referencia);
     setParamEditando(p);
     setNuevoParam({
       nombre_parametro: p.nombre_parametro,
@@ -208,7 +265,10 @@ const handleEditarExamen = (examen) => {
       sexo_referencia: p.sexo_referencia || "General",
       edad_min: p.edad_min || "0",
       edad_max: p.edad_max || "120",
+      tipo_dato: tipo,
+      opciones,
     });
+    setOpcionNueva("");
     setModoEdicion(true);
   };
 
@@ -314,21 +374,139 @@ const handleEditarExamen = (examen) => {
                 </select>
               </div>
 
-              {/* Fila 2: Rangos + Unidad */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                <input placeholder="Mín 0.00" type="number" step="0.01"
-                  value={nuevoParam.rango_min}
-                  onChange={e => setNuevoParam(f => ({ ...f, rango_min: e.target.value }))}
-                  style={paramInputStyle} />
-                <input placeholder="Máx 0.00" type="number" step="0.01"
-                  value={nuevoParam.rango_max}
-                  onChange={e => setNuevoParam(f => ({ ...f, rango_max: e.target.value }))}
-                  style={paramInputStyle} />
-                <input placeholder="mg/dL"
-                  value={nuevoParam.unidad}
-                  onChange={e => setNuevoParam(f => ({ ...f, unidad: e.target.value }))}
-                  style={paramInputStyle} />
+              {/* Fila 1.5: Tipo de dato del parámetro */}
+              <div style={{ marginBottom: "0.75rem" }}>
+                <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.35rem" }}>TIPO DE RESULTADO</label>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {TIPOS_DATO.map(t => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setNuevoParam(f => ({ ...f, tipo_dato: t.value }))}
+                      style={{
+                        padding: "0.5rem 0.9rem",
+                        borderRadius: "8px",
+                        border: nuevoParam.tipo_dato === t.value ? "1.5px solid #E88B3A" : "1.5px solid #E5E7EB",
+                        background: nuevoParam.tipo_dato === t.value ? "rgba(232,139,58,0.1)" : "#FAFAFA",
+                        color: nuevoParam.tipo_dato === t.value ? "#E88B3A" : "#6B7280",
+                        fontFamily: "'Barlow Condensed', sans-serif",
+                        fontWeight: 700,
+                        fontSize: "0.78rem",
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Fila 2: Rangos + Unidad — SOLO si es NUMÉRICO */}
+              {nuevoParam.tipo_dato === "NUMERICO" && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                  <input placeholder="Mín 0.00" type="number" step="0.01"
+                    value={nuevoParam.rango_min}
+                    onChange={e => setNuevoParam(f => ({ ...f, rango_min: e.target.value }))}
+                    style={paramInputStyle} />
+                  <input placeholder="Máx 0.00" type="number" step="0.01"
+                    value={nuevoParam.rango_max}
+                    onChange={e => setNuevoParam(f => ({ ...f, rango_max: e.target.value }))}
+                    style={paramInputStyle} />
+                  <input placeholder="mg/dL"
+                    value={nuevoParam.unidad}
+                    onChange={e => setNuevoParam(f => ({ ...f, unidad: e.target.value }))}
+                    style={paramInputStyle} />
+                </div>
+              )}
+
+              {/* Aviso para TEXTO LIBRE */}
+              {nuevoParam.tipo_dato === "TEXTO" && (
+                <div style={{
+                  marginBottom: "0.75rem", padding: "0.75rem 1rem",
+                  background: "#F8FAFC", border: "1px dashed #E5E7EB", borderRadius: "8px",
+                  fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", color: "#6B7280",
+                }}>
+                  El técnico escribirá libremente el resultado (ej: "Amarillo claro", "Densa con sedimento").
+                </div>
+              )}
+
+              {/* Bloque OPCIONES */}
+              {nuevoParam.tipo_dato === "OPCIONES" && (
+                <div style={{ marginBottom: "0.75rem" }}>
+                  {/* Plantillas rápidas */}
+                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
+                    {PLANTILLAS_OPCIONES.map(p => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => setNuevoParam(f => ({ ...f, opciones: [...new Set([...f.opciones, ...p.opciones])] }))}
+                        style={{
+                          padding: "0.35rem 0.7rem", borderRadius: "20px",
+                          border: "1px solid #E5E7EB", background: "#FFF", color: "#374151",
+                          fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", cursor: "pointer",
+                        }}
+                      >
+                        + {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Input para opción propia */}
+                  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.6rem" }}>
+                    <input
+                      placeholder="Escribe una opción y presiona Enter (ej: Turbio)"
+                      value={opcionNueva}
+                      onChange={e => setOpcionNueva(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && opcionNueva.trim()) {
+                          e.preventDefault();
+                          setNuevoParam(f => ({ ...f, opciones: [...new Set([...f.opciones, opcionNueva.trim()])] }));
+                          setOpcionNueva("");
+                        }
+                      }}
+                      style={{ ...paramInputStyle, flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!opcionNueva.trim()) return;
+                        setNuevoParam(f => ({ ...f, opciones: [...new Set([...f.opciones, opcionNueva.trim()])] }));
+                        setOpcionNueva("");
+                      }}
+                      style={{ ...guardarBtnStyle, background: "#1F2937", color: "#FFF" }}
+                    >
+                      Agregar
+                    </button>
+                  </div>
+
+                  {/* Chips de opciones ya agregadas */}
+                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                    {nuevoParam.opciones.length === 0 ? (
+                      <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
+                        Aún no hay opciones agregadas.
+                      </span>
+                    ) : nuevoParam.opciones.map(op => (
+                      <span key={op} style={{
+                        display: "flex", alignItems: "center", gap: "0.35rem",
+                        padding: "0.3rem 0.6rem", borderRadius: "20px",
+                        background: "rgba(232,139,58,0.1)", color: "#E88B3A",
+                        fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.78rem",
+                      }}>
+                        {op}
+                        <button
+                          type="button"
+                          onClick={() => setNuevoParam(f => ({ ...f, opciones: f.opciones.filter(o => o !== op) }))}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "#E88B3A", fontWeight: 700, lineHeight: 1, padding: 0 }}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Fila 3: Edad Min + Edad Max + Botón */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0.75rem", alignItems: "center" }}>
@@ -377,7 +555,9 @@ const handleEditarExamen = (examen) => {
                   Sin parámetros registrados
                 </p>
               ) : (
-                parametros.map(p => (
+                parametros.map(p => {
+                  const { tipo, opciones } = parseTipoDato(p.valor_referencia);
+                  return (
                   <div key={p.id_parametro} style={paramRowStyle}>
                     <div style={{ flex: 2, display: "flex", alignItems: "center", gap: "0.5rem" }}>
                       <div style={paramAccentBarStyle} />
@@ -397,12 +577,26 @@ const handleEditarExamen = (examen) => {
                       </span>
                     </div>
                     <div style={{ flex: 1, textAlign: "center" }}>
-                      <span style={rangoStyle}>
-                        {parseFloat(p.rango_min).toFixed(2)} — {parseFloat(p.rango_max).toFixed(2)}
-                      </span>
+                      {tipo === "NUMERICO" ? (
+                        <span style={rangoStyle}>
+                          {parseFloat(p.rango_min).toFixed(2)} — {parseFloat(p.rango_max).toFixed(2)}
+                        </span>
+                      ) : tipo === "OPCIONES" ? (
+                        <span style={{ ...rangoStyle, fontSize: "0.75rem" }} title={opciones.join(", ")}>
+                          {opciones.join(" / ")}
+                        </span>
+                      ) : (
+                        <span style={{ ...rangoStyle, fontStyle: "italic", color: "#9CA3AF" }}>Texto libre</span>
+                      )}
                     </div>
                     <div style={{ flex: 1, textAlign: "center" }}>
-                      <span style={unidadBadgeStyle}>{p.unidad}</span>
+                      {tipo === "NUMERICO" ? (
+                        <span style={unidadBadgeStyle}>{p.unidad}</span>
+                      ) : (
+                        <span style={{ ...unidadBadgeStyle, background: "rgba(107,114,128,0.1)", color: "#6B7280" }}>
+                          {tipo === "OPCIONES" ? "Opciones" : "Texto"}
+                        </span>
+                      )}
                     </div>
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <span style={edadBadgeStyle}>{p.edad_min}-{p.edad_max} años</span>
@@ -412,7 +606,8 @@ const handleEditarExamen = (examen) => {
                       <button onClick={() => setConfirmarEliminar(p.id_parametro)} style={iconActionBtn("#DC2626")}>🗑️</button>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </>

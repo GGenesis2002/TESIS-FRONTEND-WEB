@@ -593,7 +593,7 @@ function ModalPublicar({ orden, onConfirm, onClose }) {
   nombre: orden?.admin_nombre || `${user.nombres || ""} ${user.apellidos || ""}`.trim() || "Administrador",
   cargo:  orden?.admin_cargo  || user.cargo || rolActivo,
   // Prioridad: URL firmada del backend → fallback a nada (nunca el path raw)
-  firma:  orden?.admin_firma_url || null,
+firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || null,
 };
 
   const resultados = orden?.resultados || [];
@@ -1234,7 +1234,7 @@ export default function AdminResultados() {
      const admin = {
       nombre: detalle?.admin_nombre || `${user.nombres || ""} ${user.apellidos || ""}`.trim() || "Administrador",
       cargo:  detalle?.admin_cargo  || user.cargo || rolActivo,
-      firma:  detalle?.admin_firma  || user.firma_digital || null,  // ← agrega el fallback
+      firma:  detalle?.admin_firma_url || detalle?.admin_firma || user.firma_digital || null,
     };
       const resultados = detalle?.resultados || [];
 

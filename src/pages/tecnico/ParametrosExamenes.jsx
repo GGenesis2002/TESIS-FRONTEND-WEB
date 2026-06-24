@@ -32,7 +32,7 @@ function parseTipoDato(valor_referencia) {
 }
 
 export default function ParametrosExamenes() {
-  const [tab, setTab] = useState("listado");
+  const [tab, setTab] = useState("categorias");
   const [examenes, setExamenes] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [buscar, setBuscar] = useState("");
@@ -353,30 +353,39 @@ const handleEditarExamen = (examen) => {
               border: modoEdicion ? "2px solid #E88B3A" : "1px solid #F1F5F9",
               background: modoEdicion ? "#FFFBF7" : "#FFF",
             }}>
-              <p style={formSectionTitleStyle}>
-                {modoEdicion ? "Editando Parámetro" : "Nuevo Parámetro"}
+              <p style={{ ...formSectionTitleStyle, marginBottom: "1rem", fontSize: "0.85rem", color: modoEdicion ? "#E88B3A" : "#374151" }}>
+                {modoEdicion ? "✏️ EDITANDO PARÁMETRO" : "➕ NUEVO PARÁMETRO"}
               </p>
 
-              {/* Fila 1: Nombre + Sexo */}
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                <input
-                  placeholder="Ej: Glucosa en ayunas"
-                  value={nuevoParam.nombre_parametro}
-                  onChange={e => setNuevoParam(f => ({ ...f, nombre_parametro: e.target.value }))}
-                  style={paramInputStyle}
-                />
-                <select
-                  value={nuevoParam.sexo_referencia}
-                  onChange={e => setNuevoParam(f => ({ ...f, sexo_referencia: e.target.value }))}
-                  style={paramSelectStyle}
-                >
-                  {SEXOS.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                {/* ── SECCIÓN 1: Identificación ── */}
+              <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "1rem", marginBottom: "1rem", border: "1px solid #F1F5F9" }}>
+                <p style={{ ...formSectionTitleStyle, marginBottom: "0.6rem", color: "#374151" }}>① IDENTIFICACIÓN</p>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
+                  <div>
+                    <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.3rem", display: "block" }}>NOMBRE DEL PARÁMETRO</label>
+                    <input
+                      placeholder="Ej: Glucosa en ayunas"
+                      value={nuevoParam.nombre_parametro}
+                      onChange={e => setNuevoParam(f => ({ ...f, nombre_parametro: e.target.value }))}
+                      style={{ ...paramInputStyle, width: "100%", boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.3rem", display: "block" }}>APLICA PARA</label>
+                    <select
+                      value={nuevoParam.sexo_referencia}
+                      onChange={e => setNuevoParam(f => ({ ...f, sexo_referencia: e.target.value }))}
+                      style={{ ...paramSelectStyle, width: "100%", boxSizing: "border-box" }}
+                    >
+                      {SEXOS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              {/* Fila 1.5: Tipo de dato del parámetro */}
-              <div style={{ marginBottom: "0.75rem" }}>
-                <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.35rem" }}>TIPO DE RESULTADO</label>
+              {/* ── SECCIÓN 2: Tipo de resultado ── */}
+              <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "1rem", marginBottom: "1rem", border: "1px solid #F1F5F9" }}>
+                <p style={{ ...formSectionTitleStyle, marginBottom: "0.6rem", color: "#374151" }}>② TIPO DE RESULTADO</p>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                   {TIPOS_DATO.map(t => (
                     <button
@@ -387,7 +396,7 @@ const handleEditarExamen = (examen) => {
                         padding: "0.5rem 0.9rem",
                         borderRadius: "8px",
                         border: nuevoParam.tipo_dato === t.value ? "1.5px solid #E88B3A" : "1.5px solid #E5E7EB",
-                        background: nuevoParam.tipo_dato === t.value ? "rgba(232,139,58,0.1)" : "#FAFAFA",
+                        background: nuevoParam.tipo_dato === t.value ? "rgba(232,139,58,0.1)" : "#FFF",
                         color: nuevoParam.tipo_dato === t.value ? "#E88B3A" : "#6B7280",
                         fontFamily: "'Barlow Condensed', sans-serif",
                         fontWeight: 700,
@@ -401,141 +410,127 @@ const handleEditarExamen = (examen) => {
                     </button>
                   ))}
                 </div>
-              </div>
 
-              {/* Fila 2: Rangos + Unidad — SOLO si es NUMÉRICO */}
-              {nuevoParam.tipo_dato === "NUMERICO" && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                  <input placeholder="Mín 0.00" type="number" step="0.01"
-                    value={nuevoParam.rango_min}
-                    onChange={e => setNuevoParam(f => ({ ...f, rango_min: e.target.value }))}
-                    style={paramInputStyle} />
-                  <input placeholder="Máx 0.00" type="number" step="0.01"
-                    value={nuevoParam.rango_max}
-                    onChange={e => setNuevoParam(f => ({ ...f, rango_max: e.target.value }))}
-                    style={paramInputStyle} />
-                  <input placeholder="mg/dL"
-                    value={nuevoParam.unidad}
-                    onChange={e => setNuevoParam(f => ({ ...f, unidad: e.target.value }))}
-                    style={paramInputStyle} />
-                </div>
-              )}
-
-              {/* Aviso para TEXTO LIBRE */}
-              {nuevoParam.tipo_dato === "TEXTO" && (
-                <div style={{
-                  marginBottom: "0.75rem", padding: "0.75rem 1rem",
-                  background: "#F8FAFC", border: "1px dashed #E5E7EB", borderRadius: "8px",
-                  fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", color: "#6B7280",
-                }}>
-                  El técnico escribirá libremente el resultado (ej: "Amarillo claro", "Densa con sedimento").
-                </div>
-              )}
-
-              {/* Bloque OPCIONES */}
-              {nuevoParam.tipo_dato === "OPCIONES" && (
-                <div style={{ marginBottom: "0.75rem" }}>
-                  {/* Plantillas rápidas */}
-                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
-                    {PLANTILLAS_OPCIONES.map(p => (
-                      <button
-                        key={p.label}
-                        type="button"
-                        onClick={() => setNuevoParam(f => ({ ...f, opciones: [...new Set([...f.opciones, ...p.opciones])] }))}
-                        style={{
-                          padding: "0.35rem 0.7rem", borderRadius: "20px",
-                          border: "1px solid #E5E7EB", background: "#FFF", color: "#374151",
-                          fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", cursor: "pointer",
-                        }}
-                      >
-                        + {p.label}
-                      </button>
-                    ))}
+                {/* Sub-sección condicional según tipo */}
+                {nuevoParam.tipo_dato === "NUMERICO" && (
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                      <div>
+                        <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.3rem", display: "block" }}>VALOR MÍNIMO</label>
+                        <input placeholder="0.00" type="number" step="0.01"
+                          value={nuevoParam.rango_min}
+                          onChange={e => setNuevoParam(f => ({ ...f, rango_min: e.target.value }))}
+                          style={{ ...paramInputStyle, width: "100%", boxSizing: "border-box" }} />
+                      </div>
+                      <div>
+                        <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.3rem", display: "block" }}>VALOR MÁXIMO</label>
+                        <input placeholder="0.00" type="number" step="0.01"
+                          value={nuevoParam.rango_max}
+                          onChange={e => setNuevoParam(f => ({ ...f, rango_max: e.target.value }))}
+                          style={{ ...paramInputStyle, width: "100%", boxSizing: "border-box" }} />
+                      </div>
+                      <div>
+                        <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.3rem", display: "block" }}>UNIDAD (ej: mg/dL)</label>
+                        <input placeholder="mg/dL"
+                          value={nuevoParam.unidad}
+                          onChange={e => setNuevoParam(f => ({ ...f, unidad: e.target.value }))}
+                          style={{ ...paramInputStyle, width: "100%", boxSizing: "border-box" }} />
+                      </div>
+                    </div>
                   </div>
+                )}
 
-                  {/* Input para opción propia */}
-                  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.6rem" }}>
-                    <input
-                      placeholder="Escribe una opción y presiona Enter (ej: Turbio)"
-                      value={opcionNueva}
-                      onChange={e => setOpcionNueva(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === "Enter" && opcionNueva.trim()) {
-                          e.preventDefault();
+                {nuevoParam.tipo_dato === "TEXTO" && (
+                  <div style={{ marginTop: "0.75rem", padding: "0.65rem 0.9rem", background: "#FFF", border: "1px dashed #E5E7EB", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", color: "#6B7280" }}>
+                    ℹ️ El técnico escribirá libremente el resultado (ej: "Amarillo claro", "Densa con sedimento").
+                  </div>
+                )}
+
+                {nuevoParam.tipo_dato === "OPCIONES" && (
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.4rem", display: "block" }}>PLANTILLAS RÁPIDAS</label>
+                    <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+                      {PLANTILLAS_OPCIONES.map(p => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => setNuevoParam(f => ({ ...f, opciones: [...new Set([...f.opciones, ...p.opciones])] }))}
+                          style={{ padding: "0.35rem 0.7rem", borderRadius: "20px", border: "1px solid #E5E7EB", background: "#FFF", color: "#374151", fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", cursor: "pointer" }}
+                        >
+                          + {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.4rem", display: "block" }}>AGREGAR OPCIÓN PROPIA</label>
+                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.6rem" }}>
+                      <input
+                        placeholder="Escribe una opción y presiona Enter (ej: Turbio)"
+                        value={opcionNueva}
+                        onChange={e => setOpcionNueva(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && opcionNueva.trim()) {
+                            e.preventDefault();
+                            setNuevoParam(f => ({ ...f, opciones: [...new Set([...f.opciones, opcionNueva.trim()])] }));
+                            setOpcionNueva("");
+                          }
+                        }}
+                        style={{ ...paramInputStyle, flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!opcionNueva.trim()) return;
                           setNuevoParam(f => ({ ...f, opciones: [...new Set([...f.opciones, opcionNueva.trim()])] }));
                           setOpcionNueva("");
-                        }
-                      }}
-                      style={{ ...paramInputStyle, flex: 1 }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!opcionNueva.trim()) return;
-                        setNuevoParam(f => ({ ...f, opciones: [...new Set([...f.opciones, opcionNueva.trim()])] }));
-                        setOpcionNueva("");
-                      }}
-                      style={{ ...guardarBtnStyle, background: "#1F2937", color: "#FFF" }}
-                    >
-                      Agregar
-                    </button>
+                        }}
+                        style={{ ...guardarBtnStyle, background: "#1F2937", color: "#FFF" }}
+                      >
+                        Agregar
+                      </button>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                      {nuevoParam.opciones.length === 0 ? (
+                        <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>Aún no hay opciones agregadas.</span>
+                      ) : nuevoParam.opciones.map(op => (
+                        <span key={op} style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.3rem 0.6rem", borderRadius: "20px", background: "rgba(232,139,58,0.1)", color: "#E88B3A", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.78rem" }}>
+                          {op}
+                          <button type="button" onClick={() => setNuevoParam(f => ({ ...f, opciones: f.opciones.filter(o => o !== op) }))} style={{ background: "none", border: "none", cursor: "pointer", color: "#E88B3A", fontWeight: 700, lineHeight: 1, padding: 0 }}>✕</button>
+                        </span>
+                      ))}
+                    </div>
                   </div>
-
-                  {/* Chips de opciones ya agregadas */}
-                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                    {nuevoParam.opciones.length === 0 ? (
-                      <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
-                        Aún no hay opciones agregadas.
-                      </span>
-                    ) : nuevoParam.opciones.map(op => (
-                      <span key={op} style={{
-                        display: "flex", alignItems: "center", gap: "0.35rem",
-                        padding: "0.3rem 0.6rem", borderRadius: "20px",
-                        background: "rgba(232,139,58,0.1)", color: "#E88B3A",
-                        fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.78rem",
-                      }}>
-                        {op}
-                        <button
-                          type="button"
-                          onClick={() => setNuevoParam(f => ({ ...f, opciones: f.opciones.filter(o => o !== op) }))}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: "#E88B3A", fontWeight: 700, lineHeight: 1, padding: 0 }}
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Fila 3: Edad Min + Edad Max + Botón */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0.75rem", alignItems: "center" }}>
-                <input placeholder="Edad mín (años)" type="number"
-                  value={nuevoParam.edad_min}
-                  onChange={e => setNuevoParam(f => ({ ...f, edad_min: e.target.value }))}
-                  style={paramInputStyle} />
-                <input placeholder="Edad máx (años)" type="number"
-                  value={nuevoParam.edad_max}
-                  onChange={e => setNuevoParam(f => ({ ...f, edad_max: e.target.value }))}
-                  style={paramInputStyle} />
-                {modoEdicion ? (
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
-                    <button onClick={handleGuardarParam} style={circleOrangeBtn}>✓</button>
-                    <button onClick={resetParamForm} style={circleRedBtn}>✕</button>
-                  </div>
-                ) : (
-                  <button onClick={handleGuardarParam} disabled={guardandoParam} style={circleDarkBtn}>
-                    {guardandoParam ? "..." : "+"}
-                  </button>
                 )}
               </div>
 
-              <div style={paramLabelsStyle}>
-                <span style={{ flex: 2 }}>NOMBRE PARÁMETRO</span>
-                <span style={{ flex: 1 }}>SEXO</span>
-                <span style={{ flex: 1 }}>MIN - MAX</span>
-                <span style={{ flex: 1 }}>UNIDAD</span>
-                <span style={{ flex: 1 }}>EDAD (años)</span>
+              {/* ── SECCIÓN 3: Rango de edad + Acción ── */}
+              <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "1rem", border: "1px solid #F1F5F9" }}>
+                <p style={{ ...formSectionTitleStyle, marginBottom: "0.6rem", color: "#374151" }}>③ RANGO DE EDAD DE REFERENCIA</p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0.75rem", alignItems: "flex-end" }}>
+                  <div>
+                    <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.3rem", display: "block" }}>EDAD MÍNIMA (años)</label>
+                    <input placeholder="0" type="number"
+                      value={nuevoParam.edad_min}
+                      onChange={e => setNuevoParam(f => ({ ...f, edad_min: e.target.value }))}
+                      style={{ ...paramInputStyle, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ ...paramLabelsStyle, marginTop: 0, marginBottom: "0.3rem", display: "block" }}>EDAD MÁXIMA (años)</label>
+                    <input placeholder="120" type="number"
+                      value={nuevoParam.edad_max}
+                      onChange={e => setNuevoParam(f => ({ ...f, edad_max: e.target.value }))}
+                      style={{ ...paramInputStyle, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  {modoEdicion ? (
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <button onClick={handleGuardarParam} style={circleOrangeBtn} title="Guardar cambios">✓</button>
+                      <button onClick={resetParamForm} style={circleRedBtn} title="Cancelar edición">✕</button>
+                    </div>
+                  ) : (
+                    <button onClick={handleGuardarParam} disabled={guardandoParam} style={{ ...circleDarkBtn, width: "auto", borderRadius: "8px", padding: "0 1.25rem", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.82rem", letterSpacing: "0.06em" }}>
+                      {guardandoParam ? "..." : "+ AGREGAR"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

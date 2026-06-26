@@ -64,6 +64,66 @@ export default function ModuloMuestra() {
     const [muestraEncontrada, setMuestraEncontrada] = useState(null);
     const [errorBusqueda, setErrorBusqueda]         = useState("");
 
+    // Modal — Usos adicionales de insumos
+    const [showUsoAdicional, setShowUsoAdicional] = useState(false);
+    const [insumosTodos,     setInsumosTodos]     = useState([]);
+    const [usoForm, setUsoForm] = useState({ id_orden: "", id_insumo: "", cantidad: 1, motivo: "" });
+    const [usoGuardando, setUsoGuardando] = useState(false);
+    const [usoExito,     setUsoExito]     = useState(null);
+    const [usoError,     setUsoError]     = useState("");
+    const [usoHistorial, setUsoHistorial] = useState([]);
+    const [usoVistaTab,  setUsoVistaTab]  = useState("form");
+    const [usoLoadingH,  setUsoLoadingH]  = useState(false);
+    const [ordenesActivas, setOrdenesActivas] = useState([]);
+
+    const abrirUsoAdicional = async () => {
+        setShowUsoAdicional(true);
+        setUsoExito(null); setUsoError(""); setUsoVistaTab("form");
+        setUsoForm({ id_orden: "", id_insumo: "", cantidad: 1, motivo: "" });
+        try {
+            const [resIns, resOrd] = await Promise.allSettled([
+                API.get("/insumos"),
+                API.get("/ordenes?estado=Pagada"),
+            ]);
+            if (resIns.status === "fulfilled") setInsumosTodos(Array.isArray(resIns.value.data) ? resIns.value.data : []);
+            if (resOrd.status === "fulfilled") {
+                const d = resOrd.value.data;
+                const lista = Array.isArray(d) ? d : (d?.ordenes ?? []);
+                setOrdenesActivas(lista.filter(o => ["Pagada","En Proceso","Por Validar","Muestra Tomada"].includes(o.estado)));
+            }
+        } catch(e) { console.error(e); }
+    };
+
+    const cargarUsoHistorial = async () => {
+        setUsoLoadingH(true);
+        try {
+            const { data } = await API.get("/usos-adicionales");
+            setUsoHistorial(Array.isArray(data) ? data : []);
+        } catch(e) { console.error(e); }
+        finally { setUsoLoadingH(false); }
+    };
+
+    const handleEnviarUso = async () => {
+        setUsoError("");
+        if (!usoForm.id_orden)   return setUsoError("Selecciona una orden.");
+        if (!usoForm.id_insumo)  return setUsoError("Selecciona el insumo utilizado.");
+        if (!usoForm.cantidad || usoForm.cantidad <= 0) return setUsoError("La cantidad debe ser mayor a 0.");
+        if (!usoForm.motivo.trim()) return setUsoError("Describe el motivo (ej: jeringa tapada).");
+        setUsoGuardando(true);
+        try {
+            const { data } = await API.post("/usos-adicionales", {
+                id_orden:  parseInt(usoForm.id_orden),
+                id_insumo: parseInt(usoForm.id_insumo),
+                cantidad:  parseInt(usoForm.cantidad),
+                motivo:    usoForm.motivo.trim(),
+            });
+            setUsoExito(data.msg);
+            setUsoForm({ id_orden: "", id_insumo: "", cantidad: 1, motivo: "" });
+        } catch(e) {
+            setUsoError(e.response?.data?.error || "Error al registrar. Intenta de nuevo.");
+        } finally { setUsoGuardando(false); }
+    };
+
     // Modal — Lector QR / Ticket (para validar y registrar la toma de muestra)
     const [showQR, setShowQR]       = useState(false);
     const [modoQR, setModoQR]       = useState("camara"); // "camara" | "manual"
@@ -332,6 +392,13 @@ export default function ModuloMuestra() {
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: "0.65rem" }}>
+                    <button onClick={abrirUsoAdicional} style={{
+                        ...S.btnRefresh,
+                        background: "#FFF7ED", color: "#C2410C",
+                        border: "1px solid #FED7AA",
+                    }}>
+                        ➕ Usos Adicionales
+                    </button>
                     <button onClick={abrirLectorQR} style={S.btnQR}>
                         📷 LEER QR / TICKET
                     </button>
@@ -818,6 +885,191 @@ export default function ModuloMuestra() {
                         <button onClick={() => { setShowToma(null); setResultadoToma(null); }} style={S.btnFull}>
                             ✓ LISTO — CONTINUAR
                         </button>
+                    </div>
+                </Overlay>
+            )}
+
+            {/* ══ MODAL — USOS ADICIONALES ══ */}
+            {showUsoAdicional && (
+                <Overlay onClose={() => setShowUsoAdicional(false)}>
+                    {/* Cabecera */}
+                    <div style={{ background: "#FFF7ED", padding: "1.1rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid #FED7AA" }}>
+                        <div>
+                            <h3 style={{ fontFamily: FONTC, fontWeight: 800, fontSize: "1.25rem", color: "#C2410C", margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                                ➕ USOS <span style={{ color: DARK }}>ADICIONALES</span>
+                            </h3>
+                            <p style={{ fontFamily: FONT, fontSize: "0.75rem", color: "#92400E", margin: "0.2rem 0 0" }}>
+                                Insumos extra usados fuera de la receta automática
+                            </p>
+                        </div>
+                        <button onClick={() => setShowUsoAdicional(false)} style={{ background: "none", border: "none", color: "#9CA3AF", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+                    </div>
+
+                    {/* Tabs internos */}
+                    <div style={{ display: "flex", borderBottom: "1px solid #F3F4F6", padding: "0 1.5rem", background: "#FFF" }}>
+                        {[
+                            { key: "form",      label: "📝 Nuevo Registro" },
+                            { key: "historial", label: "📋 Mis Registros" },
+                        ].map(t => (
+                            <button key={t.key} onClick={() => { setUsoVistaTab(t.key); if (t.key === "historial") cargarUsoHistorial(); }} style={{
+                                padding: "0.75rem 1rem", border: "none", background: "none", cursor: "pointer",
+                                fontFamily: FONT, fontSize: "0.84rem", fontWeight: 700,
+                                color: usoVistaTab === t.key ? "#C2410C" : "#6B7280",
+                                borderBottom: usoVistaTab === t.key ? "2.5px solid #C2410C" : "2.5px solid transparent",
+                                marginBottom: "-1px", transition: "all 0.15s",
+                            }}>
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div style={S.modalBody}>
+                        {/* ─ FORMULARIO ─ */}
+                        {usoVistaTab === "form" && (
+                            <>
+                                {usoExito ? (
+                                    <div style={{ textAlign: "center", padding: "2rem 1rem" }}>
+                                        <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>✅</div>
+                                        <p style={{ fontWeight: 700, color: "#065F46", fontSize: "0.95rem", marginBottom: "0.5rem" }}>{usoExito}</p>
+                                        <p style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: "1.5rem" }}>
+                                            El administrador recibirá una notificación para revisar y aprobar o rechazar el descuento del inventario.
+                                        </p>
+                                        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
+                                            <button onClick={() => { setUsoExito(null); }} style={S.btnFull}>Registrar otro</button>
+                                            <button onClick={() => { setUsoExito(null); setUsoVistaTab("historial"); cargarUsoHistorial(); }} style={S.btnCancel}>Ver mis registros</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div style={{ background: "#FFF7ED", borderRadius: "8px", padding: "0.75rem 1rem", border: "1px solid #FED7AA", marginBottom: "1.25rem", fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
+                                            <strong>¿Cuándo usar esto?</strong> Cuando uses un insumo extra no incluido en la receta: tubo roto, jeringa tapada, muestra repetida, etc. El administrador aprobará para que se descuente del inventario.
+                                        </div>
+
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                                            {/* Orden */}
+                                            <div>
+                                                <label style={S.label}>Orden médica *</label>
+                                                {ordenesActivas.length === 0 ? (
+                                                    <div style={{ padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.85rem", color: "#9CA3AF", background: "#F9FAFB" }}>
+                                                        No hay órdenes activas en este momento
+                                                    </div>
+                                                ) : (
+                                                    <select value={usoForm.id_orden} onChange={e => setUsoForm(f => ({ ...f, id_orden: e.target.value }))}
+                                                        style={{ ...S.input, width: "100%", cursor: "pointer" }}>
+                                                        <option value="">— Selecciona la orden —</option>
+                                                        {ordenesActivas.map(o => (
+                                                            <option key={o.id_orden} value={o.id_orden}>
+                                                                {o.numero_ticket} — {o.nombres} {o.apellidos} ({o.estado})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                            </div>
+
+                                            {/* Insumo */}
+                                            <div>
+                                                <label style={S.label}>Insumo utilizado *</label>
+                                                <select value={usoForm.id_insumo} onChange={e => setUsoForm(f => ({ ...f, id_insumo: e.target.value }))}
+                                                    style={{ ...S.input, width: "100%", cursor: "pointer" }}>
+                                                    <option value="">— Selecciona el insumo —</option>
+                                                    {insumosTodos.map(i => (
+                                                        <option key={i.id_insumo} value={i.id_insumo}>
+                                                            {i.nombre} ({i.stock_actual} {i.unidad_medida} disponibles)
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Cantidad */}
+                                            <div>
+                                                <label style={S.label}>Cantidad adicional usada *</label>
+                                                <input type="number" min="1" max="999"
+                                                    value={usoForm.cantidad}
+                                                    onChange={e => setUsoForm(f => ({ ...f, cantidad: e.target.value }))}
+                                                    style={{ ...S.input, width: "140px" }} />
+                                            </div>
+
+                                            {/* Motivo */}
+                                            <div>
+                                                <label style={S.label}>Motivo del uso adicional *</label>
+                                                <textarea rows={3} value={usoForm.motivo}
+                                                    onChange={e => setUsoForm(f => ({ ...f, motivo: e.target.value }))}
+                                                    placeholder="Ej: La jeringa se tapó al momento de la extracción. Se utilizó una de reemplazo."
+                                                    style={{ ...S.input, width: "100%", resize: "vertical", lineHeight: 1.5, boxSizing: "border-box" }} />
+                                                <span style={{ fontSize: "0.74rem", color: "#9CA3AF" }}>
+                                                    El administrador verá esta descripción al revisar el reporte.
+                                                </span>
+                                            </div>
+
+                                            {usoError && (
+                                                <div style={{ background: "#FEE2E2", border: "1px solid #FCA5A5", borderRadius: "8px", padding: "0.65rem 1rem", fontSize: "0.83rem", color: "#991B1B", fontWeight: 600 }}>
+                                                    ❌ {usoError}
+                                                </div>
+                                            )}
+
+                                            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+                                                <button onClick={() => setShowUsoAdicional(false)} style={S.btnCancel}>Cancelar</button>
+                                                <button onClick={handleEnviarUso} disabled={usoGuardando}
+                                                    style={{ ...S.btnFull, width: "auto", padding: "0.65rem 1.4rem", opacity: usoGuardando ? 0.6 : 1 }}>
+                                                    {usoGuardando ? "Enviando…" : "📤 Enviar Reporte"}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </>
+                        )}
+
+                        {/* ─ HISTORIAL ─ */}
+                        {usoVistaTab === "historial" && (
+                            <>
+                                {usoLoadingH ? (
+                                    <div style={{ textAlign: "center", padding: "2rem", color: "#9CA3AF" }}>Cargando historial…</div>
+                                ) : usoHistorial.length === 0 ? (
+                                    <div style={{ textAlign: "center", padding: "2rem", color: "#9CA3AF" }}>
+                                        <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📋</div>
+                                        No hay registros de usos adicionales todavía.
+                                    </div>
+                                ) : (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                                        {usoHistorial.map(r => {
+                                            const estadoMap = {
+                                                USO_ADICIONAL_PENDIENTE:  { bg: "#FEF3C7", color: "#92400E", label: "⏳ Pendiente" },
+                                                USO_ADICIONAL_APROBADO:   { bg: "#D1FAE5", color: "#065F46", label: "✅ Aprobado" },
+                                                USO_ADICIONAL_RECHAZADO:  { bg: "#FEE2E2", color: "#991B1B", label: "❌ Rechazado" },
+                                            };
+                                            const badge = estadoMap[r.estado] || { bg: "#F3F4F6", color: "#374151", label: r.estado };
+                                            return (
+                                                <div key={r.id_reporte} style={{ background: "#F9FAFB", borderRadius: "10px", padding: "0.9rem 1rem", border: "1.5px solid #E5E7EB" }}>
+                                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                                                        <div>
+                                                            <span style={{ fontWeight: 700, fontSize: "0.9rem", fontFamily: FONT }}>{r.insumo_nombre}</span>
+                                                            <span style={{ fontSize: "0.82rem", color: "#6B7280", marginLeft: "0.5rem", fontFamily: FONT }}>× {r.cantidad} {r.unidad_medida}</span>
+                                                        </div>
+                                                        <span style={{ padding: "0.15rem 0.6rem", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700, background: badge.bg, color: badge.color, whiteSpace: "nowrap" }}>
+                                                            {badge.label}
+                                                        </span>
+                                                    </div>
+                                                    {r.numero_ticket && (
+                                                        <div style={{ fontSize: "0.78rem", color: "#6B7280", marginTop: "0.25rem", fontFamily: FONT }}>
+                                                            Orden: <strong>{r.numero_ticket}</strong>
+                                                        </div>
+                                                    )}
+                                                    {r.motivo && (
+                                                        <div style={{ fontSize: "0.8rem", color: "#374151", marginTop: "0.4rem", lineHeight: 1.4, background: "#FFF", padding: "0.4rem 0.65rem", borderRadius: "6px", border: "1px solid #E5E7EB", fontFamily: FONT }}>
+                                                            💬 {r.motivo}
+                                                        </div>
+                                                    )}
+                                                    <div style={{ fontSize: "0.73rem", color: "#9CA3AF", marginTop: "0.4rem", fontFamily: FONT }}>
+                                                        {new Date(r.fecha_reporte).toLocaleString("es-EC", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
                 </Overlay>
             )}

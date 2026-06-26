@@ -18,6 +18,8 @@ const api = {
   movimiento:        (body)     => API.post("/insumos/movimiento", body).then(r => r.data),
   // Alertas
   getAlertas:        ()         => API.get("/insumos/alertas").then(r => r.data),
+  // Usos adicionales
+  getUsosAdicionales: ()        => API.get("/usos-adicionales").then(r => r.data),
   // Recetas
   getExamenes:       ()         => API.get("/examenes").then(r => {
     const d = r.data;
@@ -630,7 +632,12 @@ export default function AdminInventario() {
   const [nuevoTipo,    setNuevoTipo]    = useState("");
   const [savingTipo,   setSavingTipo]   = useState(false);
 
-  const [loading,   setLoading]   = useState(true);
+  const [usosAdicionales, setUsosAdicionales] = useState([]);
+  const [pendientesUA,    setPendientesUA]    = useState(0);
+  const [uaProcesando,    setUaProcesando]    = useState(null);
+  const [uaModalRechazo,  setUaModalRechazo]  = useState(null);  // reporte seleccionado
+  const [uaMotivoRechazo, setUaMotivoRechazo] = useState("");
+  const [uaFiltro,        setUaFiltro]        = useState("todos");
   const [tab,       setTab]       = useState("insumos");
   const [buscar,    setBuscar]    = useState({ insumos: "", categorias: "", recetas: "", movimientos: "" });
   const [modal,     setModal]     = useState(null);
@@ -655,10 +662,10 @@ export default function AdminInventario() {
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      const [ins, cats, alts, movs, exs, recs, tipos] = await Promise.allSettled([
+      const [ins, cats, alts, movs, exs, recs, tipos, uas] = await Promise.allSettled([
         api.getInsumos(), api.getCategorias(), api.getAlertas(),
         api.getMovimientos(), api.getExamenes(), api.getRecetas(),
-        api.getTiposMuestra(),
+        api.getTiposMuestra(), api.getUsosAdicionales(),
       ]);
       if (ins.status   === "fulfilled") setInsumos(Array.isArray(ins.value)    ? ins.value   : []);
       if (cats.status  === "fulfilled") setCategorias(Array.isArray(cats.value)? cats.value  : []);
@@ -667,6 +674,11 @@ export default function AdminInventario() {
       if (exs.status   === "fulfilled") setExamenes(Array.isArray(exs.value)   ? exs.value   : []);
       if (recs.status  === "fulfilled") setRecetas(Array.isArray(recs.value)   ? recs.value  : []);
       if (tipos.status === "fulfilled") setTiposMuestra(Array.isArray(tipos.value) ? tipos.value : []);
+      if (uas.status   === "fulfilled") {
+        const listaUA = Array.isArray(uas.value) ? uas.value : [];
+        setUsosAdicionales(listaUA);
+        setPendientesUA(listaUA.filter(u => u.estado === "USO_ADICIONAL_PENDIENTE").length);
+      }
       setUltimaActualizacion(new Date());
     } finally { setLoading(false); }
   }, []);
@@ -817,6 +829,7 @@ export default function AdminInventario() {
     ["recetas",       `🔗 Recetas (${recetas.length})`],
     ["movimientos",   `📋 Movimientos (${movimientos.length})`],
     ["alertas",       alertas.length > 0 ? `⚠️ Alertas (${alertas.length})` : "⚠️ Alertas"],
+    ["usos",          pendientesUA > 0 ? `📋 Usos Adicionales (${pendientesUA} ⚠️)` : "📋 Usos Adicionales"],
   ];
 
   return (
@@ -882,6 +895,9 @@ export default function AdminInventario() {
               // Alerta roja en tab Alertas si hay pendientes
               ...(key === "alertas" && alertas.length > 0 && tab !== key
                 ? { borderColor: "#FCA5A5", color: "#991B1B", background: "#FEF2F2" }
+                : {}),
+              ...(key === "usos" && pendientesUA > 0 && tab !== key
+                ? { borderColor: "#FED7AA", color: "#C2410C", background: "#FFF7ED" }
                 : {}),
             }}>
             {lbl}

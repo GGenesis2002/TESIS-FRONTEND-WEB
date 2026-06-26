@@ -1452,7 +1452,184 @@ export default function AdminInventario() {
               )}
             </>
           )}
+          {/* ═══ PESTAÑA — USOS ADICIONALES ══════════════════════════════════ */}
+          {tab === "usos" && (
+            <>
+              <div style={{ marginBottom: "1.25rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                  <div>
+                    <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.1rem", color: "#1F2937", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Informes de Usos Adicionales
+                    </h3>
+                    <p style={{ fontSize: "0.8rem", color: "#6B7280", margin: "0.2rem 0 0", fontFamily: "'Barlow', sans-serif" }}>
+                      Insumos extra reportados por la analista fuera de la receta automática.
+                      {pendientesUA > 0
+                        ? <strong style={{ color: "#C2410C" }}> {pendientesUA} pendiente{pendientesUA > 1 ? "s" : ""} de revisión.</strong>
+                        : " Todo al día ✅"}
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", background: "#F3F4F6", borderRadius: "8px", padding: "0.2rem", gap: "0.2rem" }}>
+                    {[
+                      { key: "todos",      label: `Todos (${usosAdicionales.length})` },
+                      { key: "pendientes", label: `⏳ Pendientes (${pendientesUA})` },
+                    ].map(f => (
+                      <button key={f.key} onClick={() => setUaFiltro(f.key)} style={{
+                        padding: "0.4rem 0.85rem", border: "none", borderRadius: "6px", cursor: "pointer",
+                        fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", fontWeight: 700,
+                        background: uaFiltro === f.key ? "#FFF" : "transparent",
+                        color: uaFiltro === f.key ? (f.key === "pendientes" ? "#C2410C" : "#1F2937") : "#6B7280",
+                        boxShadow: uaFiltro === f.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                        transition: "all 0.15s",
+                      }}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {pendientesUA > 0 && (
+                  <div style={{ marginTop: "0.85rem", background: "#FFF7ED", border: "1.5px solid #FED7AA", borderRadius: "10px", padding: "0.75rem 1.1rem", fontSize: "0.83rem", color: "#92400E", fontFamily: "'Barlow', sans-serif", display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                    <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+                    <span>Hay <strong>{pendientesUA}</strong> uso{pendientesUA > 1 ? "s" : ""} adicional{pendientesUA > 1 ? "es" : ""} esperando revisión. Si <strong>apruebas</strong>, el stock se descuenta automáticamente. Si <strong>rechazas</strong>, el inventario no cambia.</span>
+                  </div>
+                )}
+              </div>
+
+              {(() => {
+                const listaUA = uaFiltro === "pendientes"
+                  ? usosAdicionales.filter(u => u.estado === "USO_ADICIONAL_PENDIENTE")
+                  : usosAdicionales;
+                if (listaUA.length === 0) return (
+                  <div style={{ ...tableWrap, padding: "3.5rem", textAlign: "center" }}>
+                    <p style={{ fontSize: "2rem", margin: "0 0 0.5rem" }}>📋</p>
+                    <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", color: "#9CA3AF" }}>
+                      {uaFiltro === "pendientes" ? "No hay usos adicionales pendientes." : "Aún no se han registrado usos adicionales."}
+                    </p>
+                  </div>
+                );
+                return (
+                  <div style={tableWrap}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ background: "#F8FAFC" }}>
+                          {["Insumo", "Cantidad", "Orden", "Motivo", "Reportado por", "Fecha", "Estado", "Acciones"].map(c => (
+                            <th key={c} style={{ ...th, textAlign: c === "Acciones" ? "center" : "left" }}>{c}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {listaUA.map((r, i) => {
+                          const isPend = r.estado === "USO_ADICIONAL_PENDIENTE";
+                          const enProc = uaProcesando === r.id_reporte;
+                          const badgeMap = {
+                            USO_ADICIONAL_PENDIENTE: { bg: "#FEF3C7", color: "#92400E", label: "⏳ Pendiente" },
+                            USO_ADICIONAL_APROBADO:  { bg: "#D1FAE5", color: "#065F46", label: "✅ Aprobado" },
+                            USO_ADICIONAL_RECHAZADO: { bg: "#FEE2E2", color: "#991B1B", label: "❌ Rechazado" },
+                          };
+                          const badge = badgeMap[r.estado] || { bg: "#F3F4F6", color: "#374151", label: r.estado };
+                          return (
+                            <tr key={r.id_reporte} style={{ background: i % 2 === 0 ? "#FFF" : "#FAFAFA", borderTop: "1px solid #F1F5F9", opacity: enProc ? 0.6 : 1 }}>
+                              <td style={{ ...td, fontWeight: 700 }}>
+                                {r.insumo_nombre}
+                                <div style={{ fontSize: "0.72rem", color: "#9CA3AF", fontWeight: 400 }}>Stock: {r.stock_actual} {r.unidad_medida}</div>
+                              </td>
+                              <td style={td}>
+                                <span style={{ fontWeight: 700, color: isPend ? "#C2410C" : "#374151", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "1rem" }}>{r.cantidad}</span>
+                                <span style={{ fontSize: "0.75rem", color: "#9CA3AF", marginLeft: "0.25rem" }}>{r.unidad_medida}</span>
+                              </td>
+                              <td style={td}>{r.numero_ticket ? <span style={{ fontWeight: 600 }}>{r.numero_ticket}</span> : <span style={{ color: "#D1D5DB" }}>—</span>}</td>
+                              <td style={{ ...td, maxWidth: "180px" }}>
+                                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "180px" }} title={r.motivo}>{r.motivo || "—"}</span>
+                              </td>
+                              <td style={{ ...td, fontSize: "0.8rem" }}>{r.reportado_por || r.username_reporta || "—"}</td>
+                              <td style={{ ...td, fontSize: "0.76rem", color: "#6B7280", whiteSpace: "nowrap" }}>
+                                {new Date(r.fecha_reporte).toLocaleDateString("es-EC", { day: "2-digit", month: "short", year: "numeric" })}
+                                <br /><span style={{ color: "#9CA3AF" }}>{new Date(r.fecha_reporte).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })}</span>
+                              </td>
+                              <td style={td}>
+                                <span style={{ padding: "0.2rem 0.7rem", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700, background: badge.bg, color: badge.color, display: "inline-block", whiteSpace: "nowrap" }}>
+                                  {badge.label}
+                                </span>
+                              </td>
+                              <td style={{ ...td, textAlign: "center" }}>
+                                {isPend ? (
+                                  <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
+                                    <button disabled={enProc}
+                                      onClick={async () => {
+                                        if (!window.confirm(`¿Aprobar el uso de ${r.cantidad} ${r.unidad_medida} de "${r.insumo_nombre}"?\nEsto descontará esa cantidad del inventario.`)) return;
+                                        setUaProcesando(r.id_reporte);
+                                        try {
+                                          const { data } = await API.post(`/usos-adicionales/${r.id_reporte}/aprobar`);
+                                          toastOk(data.msg || "Aprobado correctamente.");
+                                          cargar();
+                                        } catch(e) { toastErr(e.response?.data?.error || "No se pudo aprobar."); }
+                                        finally { setUaProcesando(null); }
+                                      }}
+                                      style={{ padding: "0.35rem 0.75rem", borderRadius: "7px", background: "#D1FAE5", color: "#065F46", border: "1.5px solid #6EE7B7", cursor: "pointer", fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.78rem", opacity: enProc ? 0.5 : 1 }}>
+                                      {enProc ? "…" : "✅ Aprobar"}
+                                    </button>
+                                    <button disabled={enProc}
+                                      onClick={() => { setUaModalRechazo(r); setUaMotivoRechazo(""); }}
+                                      style={{ padding: "0.35rem 0.75rem", borderRadius: "7px", background: "#FEE2E2", color: "#991B1B", border: "1.5px solid #FCA5A5", cursor: "pointer", fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.78rem", opacity: enProc ? 0.5 : 1 }}>
+                                      ❌ Rechazar
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span style={{ fontSize: "0.78rem", color: "#9CA3AF" }}>
+                                    {r.estado === "USO_ADICIONAL_APROBADO" ? "Stock descontado" : "Sin efecto"}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </>
+          )}
         </>
+      )}
+
+      {/* ── MODAL DE RECHAZO — USO ADICIONAL ── */}
+      {uaModalRechazo && (
+        <Modal title="❌ Rechazar Uso Adicional" onClose={() => setUaModalRechazo(null)} width="460px">
+          <div style={{ padding: "1.25rem" }}>
+            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.87rem", color: "#374151", marginBottom: "1rem" }}>
+              Vas a rechazar el uso adicional de <strong>{uaModalRechazo.cantidad} {uaModalRechazo.unidad_medida}</strong> de <strong>"{uaModalRechazo.insumo_nombre}"</strong>.
+              El stock <strong>NO</strong> será descontado.
+            </p>
+            <label style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.7rem", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: "0.35rem" }}>
+              Motivo del rechazo (opcional)
+            </label>
+            <textarea rows={3} value={uaMotivoRechazo} onChange={e => setUaMotivoRechazo(e.target.value)}
+              placeholder="Ej: El uso no fue autorizado, no corresponde a la receta estándar…"
+              style={{ width: "100%", padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.87rem", fontFamily: "'Barlow', sans-serif", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", marginTop: "1.1rem" }}>
+              <button onClick={() => setUaModalRechazo(null)}
+                style={{ padding: "0.55rem 1.1rem", borderRadius: "8px", background: "#F3F4F6", color: "#374151", border: "1.5px solid #E5E7EB", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.9rem" }}>
+                Cancelar
+              </button>
+              <button
+                disabled={uaProcesando === uaModalRechazo.id_reporte}
+                onClick={async () => {
+                  const id = uaModalRechazo.id_reporte;
+                  setUaProcesando(id);
+                  try {
+                    const { data } = await API.post(`/usos-adicionales/${id}/rechazar`, { motivo_rechazo: uaMotivoRechazo });
+                    setUaModalRechazo(null);
+                    toastOk(data.msg || "Uso adicional rechazado.");
+                    cargar();
+                  } catch(e) { toastErr(e.response?.data?.error || "No se pudo rechazar."); }
+                  finally { setUaProcesando(null); }
+                }}
+                style={{ padding: "0.55rem 1.25rem", borderRadius: "8px", background: "#DC2626", color: "#FFF", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.95rem", opacity: uaProcesando === uaModalRechazo.id_reporte ? 0.6 : 1 }}>
+                {uaProcesando === uaModalRechazo.id_reporte ? "Rechazando…" : "Confirmar Rechazo"}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* ── MODALES ── */}

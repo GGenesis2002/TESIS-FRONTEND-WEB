@@ -64,27 +64,26 @@ export default function ModuloMuestra() {
     const [muestraEncontrada, setMuestraEncontrada] = useState(null);
     const [errorBusqueda, setErrorBusqueda]         = useState("");
 
-    // Modal — Usos adicionales de insumos (multi-insumo)
-    const [showUsoAdicional, setShowUsoAdicional] = useState(false);
-    const [insumosTodos,     setInsumosTodos]     = useState([]);
-    const [ordenesActivas,   setOrdenesActivas]   = useState([]);
-    const [usoIdOrden,       setUsoIdOrden]       = useState("");
-    const [usoMotivo,        setUsoMotivo]        = useState("");
-    // Lista de líneas: [{ id_insumo, cantidad }]
+    // ── USOS ADICIONALES ──────────────────────────────────────────────────────
+    const [showUsoAdicional,  setShowUsoAdicional]  = useState(false);
+    const [insumosTodos,      setInsumosTodos]      = useState([]);
+    const [ordenesActivas,    setOrdenesActivas]    = useState([]);
+    const [usoIdOrden,        setUsoIdOrden]        = useState("");
+    const [usoMotivo,         setUsoMotivo]         = useState("");
     const LINEA_VACIA = { id_insumo: "", cantidad: 1 };
-    const [usoLineas,    setUsoLineas]    = useState([{ ...LINEA_VACIA }]);
-    const [usoGuardando, setUsoGuardando] = useState(false);
-    const [usoExito,     setUsoExito]     = useState(null);
-    const [usoError,     setUsoError]     = useState("");
-    const [usoHistorial, setUsoHistorial] = useState([]);
-    const [usoVistaTab,  setUsoVistaTab]  = useState("form");
-    const [usoLoadingH,  setUsoLoadingH]  = useState(false);
-    const [usoLoadingData, setUsoLoadingData] = useState(false);
+    const [usoLineas,         setUsoLineas]         = useState([{ ...LINEA_VACIA }]);
+    const [usoGuardando,      setUsoGuardando]      = useState(false);
+    const [usoExito,          setUsoExito]          = useState(null);
+    const [usoError,          setUsoError]          = useState("");
+    const [usoHistorial,      setUsoHistorial]      = useState([]);
+    const [usoVistaTab,       setUsoVistaTab]       = useState("form");
+    const [usoLoadingH,       setUsoLoadingH]       = useState(false);
+    const [usoLoadingData,    setUsoLoadingData]    = useState(false);
 
     const abrirUsoAdicional = async () => {
         setShowUsoAdicional(true);
         setUsoExito(null); setUsoError(""); setUsoVistaTab("form");
-        setUsoIdOrden(""); setUsoMotivo(""); setUsoLineas([{ ...LINEA_VACIA }]);
+        setUsoIdOrden(""); setUsoMotivo(""); setUsoLineas([{ id_insumo: "", cantidad: 1 }]);
         setUsoLoadingData(true);
         try {
             const [resIns, resOrd] = await Promise.allSettled([
@@ -93,17 +92,16 @@ export default function ModuloMuestra() {
             ]);
             if (resIns.status === "fulfilled") setInsumosTodos(Array.isArray(resIns.value.data) ? resIns.value.data : []);
             if (resOrd.status === "fulfilled") {
-                const d = resOrd.value.data;
-                const lista = Array.isArray(d) ? d : [];
+                const lista = Array.isArray(resOrd.value.data) ? resOrd.value.data : [];
                 setOrdenesActivas(lista.filter(o => ["Pagada","En Proceso","Por Validar","Muestra Tomada"].includes(o.estado)));
             }
         } catch(e) { console.error(e); }
         finally { setUsoLoadingData(false); }
     };
 
-    const agregarLinea = () => setUsoLineas(l => [...l, { ...LINEA_VACIA }]);
-    const quitarLinea  = (i) => setUsoLineas(l => l.filter((_, idx) => idx !== i));
-    const cambiarLinea = (i, campo, valor) => setUsoLineas(l => l.map((ln, idx) => idx === i ? { ...ln, [campo]: valor } : ln));
+    const agregarLineaUso = () => setUsoLineas(l => [...l, { id_insumo: "", cantidad: 1 }]);
+    const quitarLineaUso  = (i) => setUsoLineas(l => l.filter((_, idx) => idx !== i));
+    const cambiarLineaUso = (i, campo, valor) => setUsoLineas(l => l.map((ln, idx) => idx === i ? { ...ln, [campo]: valor } : ln));
 
     const cargarUsoHistorial = async () => {
         setUsoLoadingH(true);
@@ -122,30 +120,26 @@ export default function ModuloMuestra() {
             if (!usoLineas[i].id_insumo) return setUsoError(`Selecciona el insumo en la línea ${i + 1}.`);
             if (!usoLineas[i].cantidad || usoLineas[i].cantidad <= 0) return setUsoError(`La cantidad en la línea ${i + 1} debe ser mayor a 0.`);
         }
-        // Verificar duplicados
         const ids = usoLineas.map(l => l.id_insumo);
         if (new Set(ids).size !== ids.length) return setUsoError("Hay insumos repetidos. Combínalos en una sola línea.");
-
         setUsoGuardando(true);
         try {
-            // Enviar un POST por cada línea (el backend ya existe y acepta uno por uno)
-            const promesas = usoLineas.map(ln =>
+            await Promise.all(usoLineas.map(ln =>
                 API.post("/usos-adicionales", {
                     id_orden:  parseInt(usoIdOrden),
                     id_insumo: parseInt(ln.id_insumo),
                     cantidad:  parseInt(ln.cantidad),
                     motivo:    usoMotivo.trim(),
                 })
-            );
-            await Promise.all(promesas);
+            ));
             setUsoExito(`Informe enviado con ${usoLineas.length} insumo${usoLineas.length > 1 ? "s" : ""}. El administrador recibirá la notificación.`);
-            setUsoIdOrden(""); setUsoMotivo(""); setUsoLineas([{ ...LINEA_VACIA }]);
+            setUsoIdOrden(""); setUsoMotivo(""); setUsoLineas([{ id_insumo: "", cantidad: 1 }]);
         } catch(e) {
             setUsoError(e.response?.data?.error || "Error al registrar. Intenta de nuevo.");
         } finally { setUsoGuardando(false); }
     };
 
-    // Modal — Lector QR / Ticket (para validar y registrar la toma de muestra)
+    // Modal — Lector QR / Ticket
     const [showQR, setShowQR]       = useState(false);
     const [modoQR, setModoQR]       = useState("camara"); // "camara" | "manual"
     const [qrLoading, setQrLoading] = useState(false);
@@ -415,8 +409,7 @@ export default function ModuloMuestra() {
                 <div style={{ display: "flex", gap: "0.65rem" }}>
                     <button onClick={abrirUsoAdicional} style={{
                         ...S.btnRefresh,
-                        background: "#FFF7ED", color: "#C2410C",
-                        border: "1px solid #FED7AA",
+                        background: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA",
                     }}>
                         ➕ Usos Adicionales
                     </button>
@@ -910,37 +903,36 @@ export default function ModuloMuestra() {
                 </Overlay>
             )}
 
-            {/* ══ MODAL — USOS ADICIONALES ══ */}
+            {/* ══ MODAL — LEER QR / TICKET (validar toma de muestra) ══ */}
+            {/* ══ MODAL — USOS ADICIONALES ══════════════════════════════════ */}
             {showUsoAdicional && (
                 <Overlay onClose={() => setShowUsoAdicional(false)}>
                     {/* Cabecera */}
-                    <div style={{ background: "#FFF7ED", padding: "1.1rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid #FED7AA" }}>
+                    <div style={{ background: "#FFF7ED", padding: "1.1rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid #FED7AA", borderRadius: "14px 14px 0 0" }}>
                         <div>
-                            <h3 style={{ fontFamily: FONTC, fontWeight: 800, fontSize: "1.25rem", color: "#C2410C", margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                                ➕ USOS <span style={{ color: DARK }}>ADICIONALES</span>
+                            <h3 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.25rem", color: "#C2410C", margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                                ➕ USOS ADICIONALES DE INSUMOS
                             </h3>
-                            <p style={{ fontFamily: FONT, fontSize: "0.75rem", color: "#92400E", margin: "0.2rem 0 0" }}>
+                            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#92400E", margin: "0.2rem 0 0" }}>
                                 Insumos extra usados fuera de la receta automática
                             </p>
                         </div>
                         <button onClick={() => setShowUsoAdicional(false)} style={{ background: "none", border: "none", color: "#9CA3AF", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
                     </div>
 
-                    {/* Tabs internos */}
+                    {/* Tabs */}
                     <div style={{ display: "flex", borderBottom: "1px solid #F3F4F6", padding: "0 1.5rem", background: "#FFF" }}>
                         {[
-                            { key: "form",      label: "📝 Nuevo Registro" },
+                            { key: "form",      label: "📝 Nuevo Informe" },
                             { key: "historial", label: "📋 Mis Registros" },
                         ].map(t => (
                             <button key={t.key} onClick={() => { setUsoVistaTab(t.key); if (t.key === "historial") cargarUsoHistorial(); }} style={{
                                 padding: "0.75rem 1rem", border: "none", background: "none", cursor: "pointer",
-                                fontFamily: FONT, fontSize: "0.84rem", fontWeight: 700,
+                                fontFamily: "'Barlow', sans-serif", fontSize: "0.84rem", fontWeight: 700,
                                 color: usoVistaTab === t.key ? "#C2410C" : "#6B7280",
                                 borderBottom: usoVistaTab === t.key ? "2.5px solid #C2410C" : "2.5px solid transparent",
                                 marginBottom: "-1px", transition: "all 0.15s",
-                            }}>
-                                {t.label}
-                            </button>
+                            }}>{t.label}</button>
                         ))}
                     </div>
 
@@ -951,19 +943,19 @@ export default function ModuloMuestra() {
                                 {usoExito ? (
                                     <div style={{ textAlign: "center", padding: "2rem 1rem" }}>
                                         <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>✅</div>
-                                        <p style={{ fontWeight: 700, color: "#065F46", fontSize: "0.95rem", marginBottom: "0.5rem" }}>{usoExito}</p>
-                                        <p style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: "1.5rem" }}>
-                                            El administrador recibirá una notificación para revisar y aprobar o rechazar el descuento del inventario.
+                                        <p style={{ fontWeight: 700, color: "#065F46", fontSize: "0.95rem", marginBottom: "0.5rem", fontFamily: "'Barlow', sans-serif" }}>{usoExito}</p>
+                                        <p style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: "1.5rem", fontFamily: "'Barlow', sans-serif" }}>
+                                            El administrador revisará el informe y aprobará o rechazará el descuento del inventario.
                                         </p>
                                         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
-                                            <button onClick={() => { setUsoExito(null); }} style={S.btnFull}>Registrar otro</button>
+                                            <button onClick={() => setUsoExito(null)} style={S.btnFull}>Registrar otro</button>
                                             <button onClick={() => { setUsoExito(null); setUsoVistaTab("historial"); cargarUsoHistorial(); }} style={S.btnCancel}>Ver mis registros</button>
                                         </div>
                                     </div>
                                 ) : (
                                     <>
-                                        <div style={{ background: "#FFF7ED", borderRadius: "8px", padding: "0.75rem 1rem", border: "1px solid #FED7AA", marginBottom: "1.25rem", fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
-                                            <strong>¿Cuándo usar esto?</strong> Cuando uses insumos extra no incluidos en la receta: tubo roto, jeringa tapada, muestra repetida, etc. Puedes añadir varios insumos en un solo informe.
+                                        <div style={{ background: "#FFF7ED", borderRadius: "8px", padding: "0.75rem 1rem", border: "1px solid #FED7AA", marginBottom: "1.25rem", fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5, fontFamily: "'Barlow', sans-serif" }}>
+                                            <strong>¿Cuándo usar esto?</strong> Cuando uses insumos extra no incluidos en la receta: tubo roto, jeringa tapada, muestra repetida, etc. Puedes añadir <strong>varios insumos en un solo informe</strong>.
                                         </div>
 
                                         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -971,9 +963,9 @@ export default function ModuloMuestra() {
                                             <div>
                                                 <label style={S.label}>Orden médica *</label>
                                                 {usoLoadingData ? (
-                                                    <div style={{ padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.85rem", color: "#9CA3AF", background: "#F9FAFB" }}>Cargando órdenes…</div>
+                                                    <div style={{ padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.85rem", color: "#9CA3AF", background: "#F9FAFB", fontFamily: "'Barlow', sans-serif" }}>Cargando órdenes…</div>
                                                 ) : ordenesActivas.length === 0 ? (
-                                                    <div style={{ padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.85rem", color: "#9CA3AF", background: "#F9FAFB" }}>No hay órdenes activas en este momento</div>
+                                                    <div style={{ padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.85rem", color: "#9CA3AF", background: "#F9FAFB", fontFamily: "'Barlow', sans-serif" }}>No hay órdenes activas en este momento</div>
                                                 ) : (
                                                     <select value={usoIdOrden} onChange={e => setUsoIdOrden(e.target.value)}
                                                         style={{ ...S.input, width: "100%", cursor: "pointer" }}>
@@ -990,9 +982,8 @@ export default function ModuloMuestra() {
                                             {/* Motivo general */}
                                             <div>
                                                 <label style={S.label}>Motivo general del informe *</label>
-                                                <textarea rows={2} value={usoMotivo}
-                                                    onChange={e => setUsoMotivo(e.target.value)}
-                                                    placeholder="Ej: Jeringa tapada, tubo roto durante la extracción. Se reemplazaron los insumos necesarios."
+                                                <textarea rows={2} value={usoMotivo} onChange={e => setUsoMotivo(e.target.value)}
+                                                    placeholder="Ej: Jeringa tapada y tubo roto durante la extracción. Se reemplazaron los insumos necesarios."
                                                     style={{ ...S.input, width: "100%", resize: "vertical", lineHeight: 1.5, boxSizing: "border-box" }} />
                                             </div>
 
@@ -1000,22 +991,18 @@ export default function ModuloMuestra() {
                                             <div>
                                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                                                     <label style={S.label}>Insumos utilizados *</label>
-                                                    <button onClick={agregarLinea} style={{
+                                                    <button onClick={agregarLineaUso} style={{
                                                         padding: "0.3rem 0.75rem", borderRadius: "6px",
                                                         background: "#EFF6FF", color: "#1D4ED8",
                                                         border: "1.5px solid #BFDBFE", cursor: "pointer",
                                                         fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.78rem",
-                                                    }}>
-                                                        + Añadir insumo
-                                                    </button>
+                                                    }}>+ Añadir insumo</button>
                                                 </div>
-
                                                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                                                     {usoLineas.map((ln, i) => (
                                                         <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "center", background: "#F9FAFB", borderRadius: "8px", padding: "0.6rem 0.75rem", border: "1.5px solid #E5E7EB" }}>
                                                             <span style={{ fontSize: "0.75rem", color: "#9CA3AF", fontWeight: 700, minWidth: "18px" }}>{i + 1}.</span>
-                                                            <select value={ln.id_insumo}
-                                                                onChange={e => cambiarLinea(i, "id_insumo", e.target.value)}
+                                                            <select value={ln.id_insumo} onChange={e => cambiarLineaUso(i, "id_insumo", e.target.value)}
                                                                 style={{ ...S.input, flex: 1, cursor: "pointer", padding: "0.45rem 0.65rem" }}>
                                                                 <option value="">— Insumo —</option>
                                                                 {insumosTodos.map(ins => (
@@ -1025,27 +1012,22 @@ export default function ModuloMuestra() {
                                                                 ))}
                                                             </select>
                                                             <input type="number" min="1" max="999"
-                                                                value={ln.cantidad}
-                                                                onChange={e => cambiarLinea(i, "cantidad", e.target.value)}
+                                                                value={ln.cantidad} onChange={e => cambiarLineaUso(i, "cantidad", e.target.value)}
                                                                 placeholder="Cant."
                                                                 style={{ ...S.input, width: "70px", padding: "0.45rem 0.5rem", textAlign: "center" }} />
                                                             {usoLineas.length > 1 && (
-                                                                <button onClick={() => quitarLinea(i)} style={{
-                                                                    background: "none", border: "none", cursor: "pointer",
-                                                                    color: "#EF4444", fontSize: "1rem", padding: "0.2rem 0.3rem",
-                                                                    borderRadius: "4px", lineHeight: 1,
-                                                                }} title="Quitar esta línea">✕</button>
+                                                                <button onClick={() => quitarLineaUso(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", fontSize: "1rem", padding: "0.2rem 0.3rem", borderRadius: "4px", lineHeight: 1 }} title="Quitar">✕</button>
                                                             )}
                                                         </div>
                                                     ))}
                                                 </div>
-                                                <span style={{ fontSize: "0.74rem", color: "#9CA3AF", marginTop: "0.3rem", display: "block" }}>
-                                                    El administrador verá este informe completo al revisar la solicitud.
+                                                <span style={{ fontSize: "0.74rem", color: "#9CA3AF", marginTop: "0.3rem", display: "block", fontFamily: "'Barlow', sans-serif" }}>
+                                                    El administrador verá este informe completo al revisarlo.
                                                 </span>
                                             </div>
 
                                             {usoError && (
-                                                <div style={{ background: "#FEE2E2", border: "1px solid #FCA5A5", borderRadius: "8px", padding: "0.65rem 1rem", fontSize: "0.83rem", color: "#991B1B", fontWeight: 600 }}>
+                                                <div style={{ background: "#FEE2E2", border: "1px solid #FCA5A5", borderRadius: "8px", padding: "0.65rem 1rem", fontSize: "0.83rem", color: "#991B1B", fontWeight: 600, fontFamily: "'Barlow', sans-serif" }}>
                                                     ❌ {usoError}
                                                 </div>
                                             )}
@@ -1067,43 +1049,36 @@ export default function ModuloMuestra() {
                         {usoVistaTab === "historial" && (
                             <>
                                 {usoLoadingH ? (
-                                    <div style={{ textAlign: "center", padding: "2rem", color: "#9CA3AF" }}>Cargando historial…</div>
+                                    <div style={{ textAlign: "center", padding: "2rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif" }}>Cargando historial…</div>
                                 ) : usoHistorial.length === 0 ? (
-                                    <div style={{ textAlign: "center", padding: "2rem", color: "#9CA3AF" }}>
+                                    <div style={{ textAlign: "center", padding: "2rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif" }}>
                                         <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📋</div>
-                                        No hay registros de usos adicionales todavía.
+                                        No hay registros todavía.
                                     </div>
                                 ) : (
                                     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                                         {usoHistorial.map(r => {
-                                            const estadoMap = {
-                                                USO_ADICIONAL_PENDIENTE:  { bg: "#FEF3C7", color: "#92400E", label: "⏳ Pendiente" },
-                                                USO_ADICIONAL_APROBADO:   { bg: "#D1FAE5", color: "#065F46", label: "✅ Aprobado" },
-                                                USO_ADICIONAL_RECHAZADO:  { bg: "#FEE2E2", color: "#991B1B", label: "❌ Rechazado" },
+                                            const bMap = {
+                                                USO_ADICIONAL_PENDIENTE: { bg: "#FEF3C7", color: "#92400E", label: "⏳ Pendiente" },
+                                                USO_ADICIONAL_APROBADO:  { bg: "#D1FAE5", color: "#065F46", label: "✅ Aprobado" },
+                                                USO_ADICIONAL_RECHAZADO: { bg: "#FEE2E2", color: "#991B1B", label: "❌ Rechazado" },
                                             };
-                                            const badge = estadoMap[r.estado] || { bg: "#F3F4F6", color: "#374151", label: r.estado };
+                                            const badge = bMap[r.estado] || { bg: "#F3F4F6", color: "#374151", label: r.estado };
                                             return (
                                                 <div key={r.id_reporte} style={{ background: "#F9FAFB", borderRadius: "10px", padding: "0.9rem 1rem", border: "1.5px solid #E5E7EB" }}>
                                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                                                        <div>
-                                                            <span style={{ fontWeight: 700, fontSize: "0.9rem", fontFamily: FONT }}>{r.insumo_nombre}</span>
-                                                            <span style={{ fontSize: "0.82rem", color: "#6B7280", marginLeft: "0.5rem", fontFamily: FONT }}>× {r.cantidad} {r.unidad_medida}</span>
-                                                        </div>
-                                                        <span style={{ padding: "0.15rem 0.6rem", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700, background: badge.bg, color: badge.color, whiteSpace: "nowrap" }}>
-                                                            {badge.label}
-                                                        </span>
+                                                        <span style={{ fontWeight: 700, fontSize: "0.9rem", fontFamily: "'Barlow', sans-serif" }}>{r.insumo_nombre}</span>
+                                                        <span style={{ padding: "0.15rem 0.6rem", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700, background: badge.bg, color: badge.color, whiteSpace: "nowrap" }}>{badge.label}</span>
                                                     </div>
-                                                    {r.numero_ticket && (
-                                                        <div style={{ fontSize: "0.78rem", color: "#6B7280", marginTop: "0.25rem", fontFamily: FONT }}>
-                                                            Orden: <strong>{r.numero_ticket}</strong>
-                                                        </div>
-                                                    )}
+                                                    <div style={{ fontSize: "0.78rem", color: "#6B7280", marginTop: "0.2rem", fontFamily: "'Barlow', sans-serif" }}>
+                                                        {r.cantidad} {r.unidad_medida} {r.numero_ticket ? `— Orden: ${r.numero_ticket}` : ""}
+                                                    </div>
                                                     {r.motivo && (
-                                                        <div style={{ fontSize: "0.8rem", color: "#374151", marginTop: "0.4rem", lineHeight: 1.4, background: "#FFF", padding: "0.4rem 0.65rem", borderRadius: "6px", border: "1px solid #E5E7EB", fontFamily: FONT }}>
+                                                        <div style={{ fontSize: "0.8rem", color: "#374151", marginTop: "0.4rem", lineHeight: 1.4, background: "#FFF", padding: "0.4rem 0.65rem", borderRadius: "6px", border: "1px solid #E5E7EB", fontFamily: "'Barlow', sans-serif" }}>
                                                             💬 {r.motivo}
                                                         </div>
                                                     )}
-                                                    <div style={{ fontSize: "0.73rem", color: "#9CA3AF", marginTop: "0.4rem", fontFamily: FONT }}>
+                                                    <div style={{ fontSize: "0.73rem", color: "#9CA3AF", marginTop: "0.4rem", fontFamily: "'Barlow', sans-serif" }}>
                                                         {new Date(r.fecha_reporte).toLocaleString("es-EC", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                                                     </div>
                                                 </div>
@@ -1117,7 +1092,6 @@ export default function ModuloMuestra() {
                 </Overlay>
             )}
 
-            {/* ══ MODAL — LEER QR / TICKET (validar toma de muestra) ══ */}
             {showQR && (
                 <Overlay onClose={cerrarLectorQR}>
                     <ModalHeader title="VALIDAR" titleOrange="TOMA DE MUESTRA" subtitle="Escanea el QR del ticket o ingrésalo manualmente" onClose={cerrarLectorQR} />

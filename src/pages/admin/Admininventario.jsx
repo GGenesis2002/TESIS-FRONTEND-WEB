@@ -643,6 +643,7 @@ export default function AdminInventario() {
   const [modal,     setModal]     = useState(null);
   const [sel,       setSel]       = useState(null);
   const [toast,     setToast]     = useState(null);
+  const [loading,   setLoading]   = useState(true);
   // Modales diseñados (reemplazan alert / window.confirm nativos)
   const [notifModal,   setNotifModal]   = useState(null); // { tipo, titulo, mensaje }
   const [confirmModal, setConfirmModal] = useState(null); // { titulo, mensaje, onOk }

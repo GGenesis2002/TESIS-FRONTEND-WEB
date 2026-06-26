@@ -64,35 +64,46 @@ export default function ModuloMuestra() {
     const [muestraEncontrada, setMuestraEncontrada] = useState(null);
     const [errorBusqueda, setErrorBusqueda]         = useState("");
 
-    // Modal — Usos adicionales de insumos
+    // Modal — Usos adicionales de insumos (multi-insumo)
     const [showUsoAdicional, setShowUsoAdicional] = useState(false);
     const [insumosTodos,     setInsumosTodos]     = useState([]);
-    const [usoForm, setUsoForm] = useState({ id_orden: "", id_insumo: "", cantidad: 1, motivo: "" });
+    const [ordenesActivas,   setOrdenesActivas]   = useState([]);
+    const [usoIdOrden,       setUsoIdOrden]       = useState("");
+    const [usoMotivo,        setUsoMotivo]        = useState("");
+    // Lista de líneas: [{ id_insumo, cantidad }]
+    const LINEA_VACIA = { id_insumo: "", cantidad: 1 };
+    const [usoLineas,    setUsoLineas]    = useState([{ ...LINEA_VACIA }]);
     const [usoGuardando, setUsoGuardando] = useState(false);
     const [usoExito,     setUsoExito]     = useState(null);
     const [usoError,     setUsoError]     = useState("");
     const [usoHistorial, setUsoHistorial] = useState([]);
     const [usoVistaTab,  setUsoVistaTab]  = useState("form");
     const [usoLoadingH,  setUsoLoadingH]  = useState(false);
-    const [ordenesActivas, setOrdenesActivas] = useState([]);
+    const [usoLoadingData, setUsoLoadingData] = useState(false);
 
     const abrirUsoAdicional = async () => {
         setShowUsoAdicional(true);
         setUsoExito(null); setUsoError(""); setUsoVistaTab("form");
-        setUsoForm({ id_orden: "", id_insumo: "", cantidad: 1, motivo: "" });
+        setUsoIdOrden(""); setUsoMotivo(""); setUsoLineas([{ ...LINEA_VACIA }]);
+        setUsoLoadingData(true);
         try {
             const [resIns, resOrd] = await Promise.allSettled([
                 API.get("/insumos"),
-                API.get("/ordenes?estado=Pagada"),
+                API.get("/muestras/historial"),
             ]);
             if (resIns.status === "fulfilled") setInsumosTodos(Array.isArray(resIns.value.data) ? resIns.value.data : []);
             if (resOrd.status === "fulfilled") {
                 const d = resOrd.value.data;
-                const lista = Array.isArray(d) ? d : (d?.ordenes ?? []);
+                const lista = Array.isArray(d) ? d : [];
                 setOrdenesActivas(lista.filter(o => ["Pagada","En Proceso","Por Validar","Muestra Tomada"].includes(o.estado)));
             }
         } catch(e) { console.error(e); }
+        finally { setUsoLoadingData(false); }
     };
+
+    const agregarLinea = () => setUsoLineas(l => [...l, { ...LINEA_VACIA }]);
+    const quitarLinea  = (i) => setUsoLineas(l => l.filter((_, idx) => idx !== i));
+    const cambiarLinea = (i, campo, valor) => setUsoLineas(l => l.map((ln, idx) => idx === i ? { ...ln, [campo]: valor } : ln));
 
     const cargarUsoHistorial = async () => {
         setUsoLoadingH(true);
@@ -105,20 +116,30 @@ export default function ModuloMuestra() {
 
     const handleEnviarUso = async () => {
         setUsoError("");
-        if (!usoForm.id_orden)   return setUsoError("Selecciona una orden.");
-        if (!usoForm.id_insumo)  return setUsoError("Selecciona el insumo utilizado.");
-        if (!usoForm.cantidad || usoForm.cantidad <= 0) return setUsoError("La cantidad debe ser mayor a 0.");
-        if (!usoForm.motivo.trim()) return setUsoError("Describe el motivo (ej: jeringa tapada).");
+        if (!usoIdOrden) return setUsoError("Selecciona una orden.");
+        if (!usoMotivo.trim()) return setUsoError("Describe el motivo general del informe.");
+        for (let i = 0; i < usoLineas.length; i++) {
+            if (!usoLineas[i].id_insumo) return setUsoError(`Selecciona el insumo en la línea ${i + 1}.`);
+            if (!usoLineas[i].cantidad || usoLineas[i].cantidad <= 0) return setUsoError(`La cantidad en la línea ${i + 1} debe ser mayor a 0.`);
+        }
+        // Verificar duplicados
+        const ids = usoLineas.map(l => l.id_insumo);
+        if (new Set(ids).size !== ids.length) return setUsoError("Hay insumos repetidos. Combínalos en una sola línea.");
+
         setUsoGuardando(true);
         try {
-            const { data } = await API.post("/usos-adicionales", {
-                id_orden:  parseInt(usoForm.id_orden),
-                id_insumo: parseInt(usoForm.id_insumo),
-                cantidad:  parseInt(usoForm.cantidad),
-                motivo:    usoForm.motivo.trim(),
-            });
-            setUsoExito(data.msg);
-            setUsoForm({ id_orden: "", id_insumo: "", cantidad: 1, motivo: "" });
+            // Enviar un POST por cada línea (el backend ya existe y acepta uno por uno)
+            const promesas = usoLineas.map(ln =>
+                API.post("/usos-adicionales", {
+                    id_orden:  parseInt(usoIdOrden),
+                    id_insumo: parseInt(ln.id_insumo),
+                    cantidad:  parseInt(ln.cantidad),
+                    motivo:    usoMotivo.trim(),
+                })
+            );
+            await Promise.all(promesas);
+            setUsoExito(`Informe enviado con ${usoLineas.length} insumo${usoLineas.length > 1 ? "s" : ""}. El administrador recibirá la notificación.`);
+            setUsoIdOrden(""); setUsoMotivo(""); setUsoLineas([{ ...LINEA_VACIA }]);
         } catch(e) {
             setUsoError(e.response?.data?.error || "Error al registrar. Intenta de nuevo.");
         } finally { setUsoGuardando(false); }
@@ -942,19 +963,19 @@ export default function ModuloMuestra() {
                                 ) : (
                                     <>
                                         <div style={{ background: "#FFF7ED", borderRadius: "8px", padding: "0.75rem 1rem", border: "1px solid #FED7AA", marginBottom: "1.25rem", fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
-                                            <strong>¿Cuándo usar esto?</strong> Cuando uses un insumo extra no incluido en la receta: tubo roto, jeringa tapada, muestra repetida, etc. El administrador aprobará para que se descuente del inventario.
+                                            <strong>¿Cuándo usar esto?</strong> Cuando uses insumos extra no incluidos en la receta: tubo roto, jeringa tapada, muestra repetida, etc. Puedes añadir varios insumos en un solo informe.
                                         </div>
 
                                         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                                             {/* Orden */}
                                             <div>
                                                 <label style={S.label}>Orden médica *</label>
-                                                {ordenesActivas.length === 0 ? (
-                                                    <div style={{ padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.85rem", color: "#9CA3AF", background: "#F9FAFB" }}>
-                                                        No hay órdenes activas en este momento
-                                                    </div>
+                                                {usoLoadingData ? (
+                                                    <div style={{ padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.85rem", color: "#9CA3AF", background: "#F9FAFB" }}>Cargando órdenes…</div>
+                                                ) : ordenesActivas.length === 0 ? (
+                                                    <div style={{ padding: "0.6rem 0.85rem", border: "1.5px solid #E5E7EB", borderRadius: "8px", fontSize: "0.85rem", color: "#9CA3AF", background: "#F9FAFB" }}>No hay órdenes activas en este momento</div>
                                                 ) : (
-                                                    <select value={usoForm.id_orden} onChange={e => setUsoForm(f => ({ ...f, id_orden: e.target.value }))}
+                                                    <select value={usoIdOrden} onChange={e => setUsoIdOrden(e.target.value)}
                                                         style={{ ...S.input, width: "100%", cursor: "pointer" }}>
                                                         <option value="">— Selecciona la orden —</option>
                                                         {ordenesActivas.map(o => (
@@ -966,38 +987,60 @@ export default function ModuloMuestra() {
                                                 )}
                                             </div>
 
-                                            {/* Insumo */}
+                                            {/* Motivo general */}
                                             <div>
-                                                <label style={S.label}>Insumo utilizado *</label>
-                                                <select value={usoForm.id_insumo} onChange={e => setUsoForm(f => ({ ...f, id_insumo: e.target.value }))}
-                                                    style={{ ...S.input, width: "100%", cursor: "pointer" }}>
-                                                    <option value="">— Selecciona el insumo —</option>
-                                                    {insumosTodos.map(i => (
-                                                        <option key={i.id_insumo} value={i.id_insumo}>
-                                                            {i.nombre} ({i.stock_actual} {i.unidad_medida} disponibles)
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-
-                                            {/* Cantidad */}
-                                            <div>
-                                                <label style={S.label}>Cantidad adicional usada *</label>
-                                                <input type="number" min="1" max="999"
-                                                    value={usoForm.cantidad}
-                                                    onChange={e => setUsoForm(f => ({ ...f, cantidad: e.target.value }))}
-                                                    style={{ ...S.input, width: "140px" }} />
-                                            </div>
-
-                                            {/* Motivo */}
-                                            <div>
-                                                <label style={S.label}>Motivo del uso adicional *</label>
-                                                <textarea rows={3} value={usoForm.motivo}
-                                                    onChange={e => setUsoForm(f => ({ ...f, motivo: e.target.value }))}
-                                                    placeholder="Ej: La jeringa se tapó al momento de la extracción. Se utilizó una de reemplazo."
+                                                <label style={S.label}>Motivo general del informe *</label>
+                                                <textarea rows={2} value={usoMotivo}
+                                                    onChange={e => setUsoMotivo(e.target.value)}
+                                                    placeholder="Ej: Jeringa tapada, tubo roto durante la extracción. Se reemplazaron los insumos necesarios."
                                                     style={{ ...S.input, width: "100%", resize: "vertical", lineHeight: 1.5, boxSizing: "border-box" }} />
-                                                <span style={{ fontSize: "0.74rem", color: "#9CA3AF" }}>
-                                                    El administrador verá esta descripción al revisar el reporte.
+                                            </div>
+
+                                            {/* Líneas de insumos */}
+                                            <div>
+                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                                                    <label style={S.label}>Insumos utilizados *</label>
+                                                    <button onClick={agregarLinea} style={{
+                                                        padding: "0.3rem 0.75rem", borderRadius: "6px",
+                                                        background: "#EFF6FF", color: "#1D4ED8",
+                                                        border: "1.5px solid #BFDBFE", cursor: "pointer",
+                                                        fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.78rem",
+                                                    }}>
+                                                        + Añadir insumo
+                                                    </button>
+                                                </div>
+
+                                                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                                                    {usoLineas.map((ln, i) => (
+                                                        <div key={i} style={{ display: "flex", gap: "0.5rem", alignItems: "center", background: "#F9FAFB", borderRadius: "8px", padding: "0.6rem 0.75rem", border: "1.5px solid #E5E7EB" }}>
+                                                            <span style={{ fontSize: "0.75rem", color: "#9CA3AF", fontWeight: 700, minWidth: "18px" }}>{i + 1}.</span>
+                                                            <select value={ln.id_insumo}
+                                                                onChange={e => cambiarLinea(i, "id_insumo", e.target.value)}
+                                                                style={{ ...S.input, flex: 1, cursor: "pointer", padding: "0.45rem 0.65rem" }}>
+                                                                <option value="">— Insumo —</option>
+                                                                {insumosTodos.map(ins => (
+                                                                    <option key={ins.id_insumo} value={ins.id_insumo}>
+                                                                        {ins.nombre} ({ins.stock_actual} {ins.unidad_medida})
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                            <input type="number" min="1" max="999"
+                                                                value={ln.cantidad}
+                                                                onChange={e => cambiarLinea(i, "cantidad", e.target.value)}
+                                                                placeholder="Cant."
+                                                                style={{ ...S.input, width: "70px", padding: "0.45rem 0.5rem", textAlign: "center" }} />
+                                                            {usoLineas.length > 1 && (
+                                                                <button onClick={() => quitarLinea(i)} style={{
+                                                                    background: "none", border: "none", cursor: "pointer",
+                                                                    color: "#EF4444", fontSize: "1rem", padding: "0.2rem 0.3rem",
+                                                                    borderRadius: "4px", lineHeight: 1,
+                                                                }} title="Quitar esta línea">✕</button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <span style={{ fontSize: "0.74rem", color: "#9CA3AF", marginTop: "0.3rem", display: "block" }}>
+                                                    El administrador verá este informe completo al revisar la solicitud.
                                                 </span>
                                             </div>
 
@@ -1011,7 +1054,7 @@ export default function ModuloMuestra() {
                                                 <button onClick={() => setShowUsoAdicional(false)} style={S.btnCancel}>Cancelar</button>
                                                 <button onClick={handleEnviarUso} disabled={usoGuardando}
                                                     style={{ ...S.btnFull, width: "auto", padding: "0.65rem 1.4rem", opacity: usoGuardando ? 0.6 : 1 }}>
-                                                    {usoGuardando ? "Enviando…" : "📤 Enviar Reporte"}
+                                                    {usoGuardando ? "Enviando…" : `📤 Enviar Informe (${usoLineas.length} insumo${usoLineas.length > 1 ? "s" : ""})`}
                                                 </button>
                                             </div>
                                         </div>

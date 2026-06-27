@@ -1,5 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import API from "../../services/api";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {
+  Chart as ChartJS,
+  ArcElement, BarElement, LineElement, PointElement,
+  CategoryScale, LinearScale, Tooltip, Legend,
+} from "chart.js";
+import { Bar, Doughnut, Line } from "react-chartjs-2";
+
+ChartJS.register(ArcElement, BarElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend);
 
 // ─── CAPA DE ACCESO A DATOS ───────────────────────────────────────────────────
 const api = {
@@ -650,6 +660,8 @@ export default function AdminInventario() {
   const showConfirm = (titulo, mensaje, onOk) => setConfirmModal({ titulo, mensaje, onOk });
   // Manual de usuario
   const [showManual, setShowManual] = useState(false);
+  // Reporte mensual de inventario (PDF con gráficos)
+  const [showReporte, setShowReporte] = useState(false);
   // Filtro tipo movimiento
   const [tipoMovFiltro, setTipoMovFiltro] = useState("TODOS");
   // Paginación movimientos
@@ -853,6 +865,15 @@ export default function AdminInventario() {
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+          {/* Botón Reporte Mensual */}
+          <button onClick={() => setShowReporte(true)} title="Descargar reporte mensual del inventario" style={{
+            ...btnSec,
+            padding: "0.55rem 0.9rem",
+            display: "flex", alignItems: "center", gap: "0.4rem",
+            borderColor: "#FCD34D", color: "#92400E", background: "#FFFBEB",
+          }}>
+            📊 <span style={{ fontWeight: 700, fontSize: "0.82rem" }}>Reporte</span>
+          </button>
           {/* Botón Manual de Usuario */}
           <button onClick={() => setShowManual(true)} title="Manual de usuario" style={{
             ...btnSec,
@@ -1456,9 +1477,6 @@ export default function AdminInventario() {
         </>
       )}
 
-        </>
-      )}
-
       {/* ═══ PESTAÑA — USOS ADICIONALES ══════════════════════════════════════ */}
       {tab === "usos" && (
         <>
@@ -1726,7 +1744,391 @@ export default function AdminInventario() {
       {showManual && (
         <ManualUsuario onClose={() => setShowManual(false)} />
       )}
+
+      {/* ── MODAL REPORTE MENSUAL DE INVENTARIO (PDF con gráficos) ── */}
+      {showReporte && (
+        <ModalReporteInventario
+          onClose={() => setShowReporte(false)}
+          insumos={insumos}
+          categorias={categorias}
+          movimientos={movimientos}
+          onAlert={(t, m) => showNotif(t, m, "error")}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── REPORTE MENSUAL DE INVENTARIO (PDF con gráficos) ────────────────────────
+const MESES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+const COLORES = {
+  entrada: "#10B981", salida: "#EF4444", primario: "#E88B3A",
+  azul: "#3B82F6", morado: "#7C3AED", gris: "#64748B",
+  paleta: ["#E88B3A", "#3B82F6", "#10B981", "#7C3AED", "#F59E0B", "#EF4444", "#06B6D4", "#84CC16", "#EC4899", "#64748B"],
+};
+
+function ModalReporteInventario({ onClose, insumos, categorias, movimientos, onAlert }) {
+  const hoy = new Date();
+  const [mes, setMes]   = useState(hoy.getMonth());
+  const [anio, setAnio] = useState(hoy.getFullYear());
+  const [generando, setGenerando] = useState(false);
+
+  // Refs a los <canvas> de Chart.js para capturarlos como imagen al exportar
+  const refBarras   = useRef(null);
+  const refDona     = useRef(null);
+  const refTopUsados = useRef(null);
+  const refStockCat = useRef(null);
+
+  const aniosDisponibles = useMemo(() => {
+    const set = new Set([hoy.getFullYear()]);
+    movimientos.forEach(m => { if (m.fecha) set.add(new Date(m.fecha).getFullYear()); });
+    return Array.from(set).sort((a, b) => b - a);
+  }, [movimientos, hoy]);
+
+  // ── Movimientos del periodo seleccionado ──────────────────────────────────
+  const movsPeriodo = useMemo(() => {
+    return movimientos.filter(m => {
+      if (!m.fecha) return false;
+      const f = new Date(m.fecha);
+      return f.getMonth() === mes && f.getFullYear() === anio;
+    });
+  }, [movimientos, mes, anio]);
+
+  const entradas = movsPeriodo.filter(m => m.tipo_movimiento === "ENTRADA");
+  const salidas  = movsPeriodo.filter(m => m.tipo_movimiento === "SALIDA");
+  const totalEntradas = entradas.reduce((s, m) => s + Number(m.cantidad || 0), 0);
+  const totalSalidas  = salidas.reduce((s, m) => s + Number(m.cantidad || 0), 0);
+
+  const diasDelMes = new Date(anio, mes + 1, 0).getDate();
+
+  // ── Datos: movimientos por día (entradas vs salidas) ──────────────────────
+  const porDia = useMemo(() => {
+    const ent = Array(diasDelMes).fill(0);
+    const sal = Array(diasDelMes).fill(0);
+    movsPeriodo.forEach(m => {
+      const d = new Date(m.fecha).getDate() - 1;
+      if (m.tipo_movimiento === "ENTRADA") ent[d] += Number(m.cantidad || 0);
+      else sal[d] += Number(m.cantidad || 0);
+    });
+    return { labels: Array.from({ length: diasDelMes }, (_, i) => String(i + 1)), ent, sal };
+  }, [movsPeriodo, diasDelMes]);
+
+  // ── Datos: top insumos más usados (por salida) ─────────────────────────────
+  const topUsados = useMemo(() => {
+    const map = {};
+    salidas.forEach(m => {
+      const nombre = m.insumo || m.nombre_insumo || `#${m.id_insumo}`;
+      map[nombre] = (map[nombre] || 0) + Number(m.cantidad || 0);
+    });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  }, [salidas]);
+
+  // ── Datos: stock actual agrupado por categoría ─────────────────────────────
+  const stockPorCategoria = useMemo(() => {
+    const map = {};
+    insumos.forEach(i => {
+      const cat = i.categoria_nombre || "Sin categoría";
+      map[cat] = (map[cat] || 0) + Number(i.stock_actual || 0);
+    });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [insumos]);
+
+  const criticosPeriodo = insumos.filter(i => i.stock_actual <= i.stock_minimo);
+
+  // ── Configs Chart.js (compartidas entre preview y export) ───────────────────
+  const optsComunes = { responsive: true, maintainAspectRatio: false, animation: false };
+
+  const dataBarras = {
+    labels: porDia.labels,
+    datasets: [
+      { label: "Entradas", data: porDia.ent, backgroundColor: COLORES.entrada, borderRadius: 3 },
+      { label: "Salidas",  data: porDia.sal, backgroundColor: COLORES.salida,  borderRadius: 3 },
+    ],
+  };
+
+  const dataDona = {
+    labels: ["Entradas", "Salidas"],
+    datasets: [{ data: [totalEntradas, totalSalidas], backgroundColor: [COLORES.entrada, COLORES.salida], borderWidth: 0 }],
+  };
+
+  const dataTopUsados = {
+    labels: topUsados.map(([n]) => n.length > 18 ? n.slice(0, 16) + "…" : n),
+    datasets: [{ label: "Unidades consumidas", data: topUsados.map(([, v]) => v), backgroundColor: COLORES.paleta, borderRadius: 3 }],
+  };
+
+  const dataStockCat = {
+    labels: stockPorCategoria.map(([n]) => n),
+    datasets: [{ data: stockPorCategoria.map(([, v]) => v), backgroundColor: COLORES.paleta, borderWidth: 0 }],
+  };
+
+  // ── Generar PDF ──────────────────────────────────────────────────────────
+  const generarPDF = async () => {
+    setGenerando(true);
+    try {
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageW = doc.internal.pageSize.getWidth();
+      const margin = 40;
+      let y = 0;
+
+      // ── Portada / encabezado ──
+      doc.setFillColor(30, 41, 59); // #1E293B
+      doc.rect(0, 0, pageW, 110, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+      doc.text("REPORTE DE INVENTARIO", margin, 48);
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${MESES[mes]} ${anio}`, margin, 70);
+      doc.setFontSize(9);
+      doc.setTextColor(203, 213, 225);
+      doc.text(`Generado el ${new Date().toLocaleDateString("es-EC", { day: "2-digit", month: "long", year: "numeric" })} a las ${new Date().toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })}`, margin, 88);
+
+      y = 135;
+
+      // ── KPIs resumen (tarjetas) ──
+      const kpis = [
+        { label: "Insumos activos", valor: String(insumos.length), color: [232, 139, 58] },
+        { label: "Movimientos del mes", valor: String(movsPeriodo.length), color: [55, 65, 81] },
+        { label: "Unidades ingresadas", valor: String(totalEntradas), color: [16, 185, 129] },
+        { label: "Unidades consumidas", valor: String(totalSalidas), color: [239, 68, 68] },
+      ];
+      const kpiW = (pageW - margin * 2 - 3 * 10) / 4;
+      kpis.forEach((k, i) => {
+        const x = margin + i * (kpiW + 10);
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(x, y, kpiW, 58, 4, 4, "FD");
+        doc.setTextColor(...k.color);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(18);
+        doc.text(k.valor, x + 12, y + 30);
+        doc.setTextColor(107, 114, 128);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.text(k.label.toUpperCase(), x + 12, y + 45, { maxWidth: kpiW - 20 });
+      });
+
+      y += 80;
+
+      // ── Helper: capturar un canvas de chart.js como imagen PNG ──
+      const capturar = (ref) => ref.current?.canvas?.toDataURL("image/png", 1.0);
+
+      // ── Gráfico 1: Entradas vs Salidas por día ──
+      doc.setTextColor(31, 41, 55);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("Movimientos diarios — Entradas vs Salidas", margin, y);
+      y += 10;
+      const imgBarras = capturar(refBarras);
+      if (imgBarras) {
+        const h = 170;
+        doc.addImage(imgBarras, "PNG", margin, y, pageW - margin * 2, h);
+        y += h + 25;
+      }
+
+      // ── Fila de dos gráficos: dona (entradas vs salidas) + stock por categoría ──
+      if (y > 560) { doc.addPage(); y = 40; }
+      const colW = (pageW - margin * 2 - 20) / 2;
+
+      doc.setFontSize(11);
+      doc.text("Proporción Entradas / Salidas", margin, y);
+      doc.text("Stock actual por categoría", margin + colW + 20, y);
+      y += 10;
+
+      const imgDona = capturar(refDona);
+      const imgStockCat = capturar(refStockCat);
+      const hChica = 160;
+      if (imgDona) doc.addImage(imgDona, "PNG", margin, y, colW, hChica);
+      if (imgStockCat) doc.addImage(imgStockCat, "PNG", margin + colW + 20, y, colW, hChica);
+      y += hChica + 30;
+
+      // ── Gráfico: Top insumos más usados ──
+      if (y > 520) { doc.addPage(); y = 40; }
+      doc.setFontSize(11);
+      doc.text("Top insumos más consumidos en el periodo", margin, y);
+      y += 10;
+      const imgTop = capturar(refTopUsados);
+      if (imgTop) {
+        const h = 170;
+        doc.addImage(imgTop, "PNG", margin, y, pageW - margin * 2, h);
+        y += h + 25;
+      }
+
+      // ── Tabla: detalle de movimientos del periodo ──
+      doc.addPage();
+      doc.setTextColor(31, 41, 55);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text(`Detalle de movimientos — ${MESES[mes]} ${anio}`, margin, 45);
+
+      const filasMov = movsPeriodo
+        .slice()
+        .sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+        .map(m => [
+          new Date(m.fecha).toLocaleDateString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric" }),
+          m.insumo || m.nombre_insumo || `#${m.id_insumo}`,
+          m.tipo_movimiento === "ENTRADA" ? "Entrada" : "Salida",
+          String(m.cantidad ?? ""),
+          m.usuario_nombre || m.username || "—",
+          m.observacion || "—",
+        ]);
+
+      autoTable(doc, {
+        startY: 60,
+        head: [["Fecha", "Insumo", "Tipo", "Cant.", "Responsable", "Observación"]],
+        body: filasMov.length ? filasMov : [["—", "Sin movimientos registrados en este periodo", "", "", "", ""]],
+        styles: { fontSize: 8, font: "helvetica", textColor: [55, 65, 81] },
+        headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold", fontSize: 8 },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: { 3: { halign: "center" } },
+        didParseCell: (data) => {
+          if (data.section === "body" && data.column.index === 2) {
+            if (data.cell.raw === "Entrada") data.cell.styles.textColor = [6, 95, 70];
+            if (data.cell.raw === "Salida")  data.cell.styles.textColor = [153, 27, 27];
+          }
+        },
+        margin: { left: margin, right: margin },
+      });
+
+      // ── Tabla: insumos en estado crítico (al cierre del periodo) ──
+      let finalY = doc.lastAutoTable.finalY + 30;
+      if (finalY > 680) { doc.addPage(); finalY = 45; }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.setTextColor(31, 41, 55);
+      doc.text("Insumos en estado crítico (stock actual)", margin, finalY);
+
+      const filasCriticos = criticosPeriodo.map(i => [
+        i.nombre, i.categoria_nombre || "—", String(i.stock_actual), String(i.stock_minimo),
+        i.stock_actual <= 0 ? "Sin stock" : "Stock bajo",
+      ]);
+
+      autoTable(doc, {
+        startY: finalY + 12,
+        head: [["Insumo", "Categoría", "Stock actual", "Stock mínimo", "Estado"]],
+        body: filasCriticos.length ? filasCriticos : [["—", "No hay insumos en estado crítico", "", "", "✅"]],
+        styles: { fontSize: 8.5, font: "helvetica", textColor: [55, 65, 81] },
+        headStyles: { fillColor: [146, 64, 14], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
+        alternateRowStyles: { fillColor: [255, 251, 235] },
+        didParseCell: (data) => {
+          if (data.section === "body" && data.column.index === 4) {
+            if (data.cell.raw === "Sin stock") data.cell.styles.textColor = [153, 27, 27];
+            if (data.cell.raw === "Stock bajo") data.cell.styles.textColor = [146, 64, 14];
+          }
+        },
+        margin: { left: margin, right: margin },
+      });
+
+      // ── Numeración de páginas ──
+      const totalPaginas = doc.internal.getNumberOfPages();
+      for (let p = 1; p <= totalPaginas; p++) {
+        doc.setPage(p);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(156, 163, 175);
+        doc.text(
+          `Página ${p} de ${totalPaginas}  ·  Reporte de Inventario  ·  ${MESES[mes]} ${anio}`,
+          pageW / 2, doc.internal.pageSize.getHeight() - 20, { align: "center" }
+        );
+      }
+
+      doc.save(`Reporte_Inventario_${MESES[mes]}_${anio}.pdf`);
+      onClose();
+    } catch (e) {
+      console.error(e);
+      onAlert?.("Error al generar reporte", "No se pudo generar el PDF. Revisa la consola para más detalles.");
+    } finally {
+      setGenerando(false);
+    }
+  };
+
+  return (
+    <Modal title="📊 Reporte Mensual de Inventario" onClose={onClose} width="900px">
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+
+        {/* Selector de periodo */}
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "0.9rem 1rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <label style={flabel}>Mes</label>
+            <select style={{ ...finput, width: "160px" }} value={mes} onChange={e => setMes(+e.target.value)}>
+              {MESES.map((m, i) => <option key={m} value={i}>{m}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <label style={flabel}>Año</label>
+            <select style={{ ...finput, width: "110px" }} value={anio} onChange={e => setAnio(+e.target.value)}>
+              {aniosDisponibles.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <p style={{ margin: "0 0 0.55rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#92400E" }}>
+            {movsPeriodo.length} movimiento{movsPeriodo.length !== 1 ? "s" : ""} encontrado{movsPeriodo.length !== 1 ? "s" : ""} en {MESES[mes]} {anio}
+          </p>
+        </div>
+
+        {/* KPIs rápidos */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.75rem" }}>
+          {[
+            ["📦", insumos.length, "Insumos activos", "#E88B3A"],
+            ["📋", movsPeriodo.length, "Movimientos del mes", "#374151"],
+            ["⬆️", totalEntradas, "Unidades ingresadas", "#10B981"],
+            ["⬇️", totalSalidas, "Unidades consumidas", "#EF4444"],
+          ].map(([icon, val, lbl, color]) => (
+            <div key={lbl} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "0.75rem 0.9rem" }}>
+              <p style={{ margin: 0, fontSize: "1rem" }}>{icon}</p>
+              <p style={{ margin: "0.2rem 0 0", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.3rem", color }}>{val}</p>
+              <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.68rem", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.04em" }}>{lbl}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Vista previa de gráficos (también usados para capturar imágenes del PDF) */}
+        <div>
+          <p style={{ margin: "0 0 0.5rem", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "0.8rem", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Vista previa
+          </p>
+          <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "1rem", height: "190px" }}>
+            <Bar ref={refBarras} data={dataBarras} options={{ ...optsComunes, plugins: { legend: { position: "top" } }, scales: { x: { grid: { display: false } } } }} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginTop: "0.75rem" }}>
+            <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "1rem", height: "180px" }}>
+              <Doughnut ref={refDona} data={dataDona} options={{ ...optsComunes, plugins: { legend: { position: "bottom" } } }} />
+            </div>
+            <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "1rem", height: "180px" }}>
+              <Doughnut ref={refStockCat} data={dataStockCat} options={{ ...optsComunes, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 9 } } } } }} />
+            </div>
+          </div>
+          <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "1rem", height: "190px", marginTop: "0.75rem" }}>
+            {topUsados.length > 0 ? (
+              <Bar ref={refTopUsados} data={dataTopUsados} options={{ ...optsComunes, indexAxis: "y", plugins: { legend: { display: false } } }} />
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem" }}>
+                Sin salidas registradas en este periodo
+              </div>
+            )}
+          </div>
+        </div>
+
+        {criticosPeriodo.length > 0 && (
+          <div style={{ background: "#FEF3C7", border: "1px solid #FCD34D", borderRadius: "8px", padding: "0.65rem 1rem" }}>
+            <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", color: "#92400E", fontWeight: 600 }}>
+              ⚠️ El reporte incluirá {criticosPeriodo.length} insumo{criticosPeriodo.length !== 1 ? "s" : ""} en estado crítico (stock actual, no histórico del mes).
+            </p>
+          </div>
+        )}
+
+        <div style={footerRow}>
+          <button onClick={onClose} style={btnSec}>Cancelar</button>
+          <button onClick={generarPDF} disabled={generando} style={{ ...btnPrimary, opacity: generando ? 0.6 : 1 }}>
+            {generando ? "Generando PDF…" : "⬇️ Descargar Reporte PDF"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

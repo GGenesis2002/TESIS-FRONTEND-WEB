@@ -835,9 +835,9 @@ export default function AdminInventario() {
 
   // ── PESTAÑAS ──────────────────────────────────────────────────────────────
   const tabs = [
-    ["insumos",       `📦 Insumos (${insumos.length})`],
     ["tipos",         `🧪 Tipos de Muestra (${tiposMuestra.length})`],
     ["categorias",    `🏷️ Categorías (${categorias.length})`],
+    ["insumos",       `📦 Insumos (${insumos.length})`],
     ["recetas",       `🔗 Recetas (${recetas.length})`],
     ["movimientos",   `📋 Movimientos (${movimientos.length})`],
     ["alertas",       alertas.length > 0 ? `⚠️ Alertas (${alertas.length})` : "⚠️ Alertas"],

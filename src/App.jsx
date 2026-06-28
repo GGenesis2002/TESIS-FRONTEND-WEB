@@ -4,6 +4,7 @@ import "./App.css";
 import LoginPage from "./pages/seguridad/LoginPage";
 import RecuperarContrasenaPage from "./pages/seguridad/RecuperarContrasenaPage";
 import RecuperarUsuarioPage from "./pages/seguridad/RecuperarUsuarioPage";
+import SeleccionarRolPage from "./pages/seguridad/SeleccionarRolPage";
 
 import GestionPacientes from "./pages/pacientes/GestionPacientes";
 
@@ -71,6 +72,16 @@ function App() {
         <Route path="/" element={<LoginPage />} />
         <Route path="/recuperar-contrasena" element={<RecuperarContrasenaPage />} />
         <Route path="/recuperar-usuario" element={<RecuperarUsuarioPage />} />
+
+        {/* Cambio de perfil en caliente (sin re-login) para usuarios con varios roles */}
+        <Route
+          path="/cambiar-rol"
+          element={
+            <RutaProtegida>
+              <SeleccionarRolPage />
+            </RutaProtegida>
+          }
+        />
 
         <Route 
           path="/tecnico" 

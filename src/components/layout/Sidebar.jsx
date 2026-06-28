@@ -39,11 +39,22 @@ export default function Sidebar({ collapsed, onToggle }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [rolVisual, setRolVisual] = useState("");
+  const [tieneMultiplesRoles, setTieneMultiplesRoles] = useState(false);
 
   useEffect(() => {
     // Escucha de manera reactiva el rol activo de la sesión actual
     const rolActual = localStorage.getItem("rolActivo") || "";
     setRolVisual(rolActual);
+
+    // Detecta si la cuenta tiene más de un rol asignado, para ofrecer
+    // la opción de "Cambiar Rol" sin necesidad de cerrar sesión.
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const listaRoles = Array.isArray(user.roles) ? user.roles : [];
+      setTieneMultiplesRoles(listaRoles.length > 1);
+    } catch {
+      setTieneMultiplesRoles(false);
+    }
   }, [location]);
 
   // Normalizador estricto para evitar fallos por minúsculas, mayúsculas o acentos de la BD
@@ -53,7 +64,13 @@ export default function Sidebar({ collapsed, onToggle }) {
   const rolNormalizado = normalizarTexto(rolVisual);
   
   // Si no encuentra el rol por un problema externo, usa "tecnico" como contingencia
-  const menuItems = menus[rolNormalizado] || menus["tecnico"];
+  const menuBase = menus[rolNormalizado] || menus["tecnico"];
+
+  // Clonamos el array para no mutar el objeto "menus" compartido entre renders.
+  // El ítem "Cambiar Rol" solo se muestra a cuentas con más de un perfil asignado.
+  const menuItems = tieneMultiplesRoles
+    ? [...menuBase, { label: "Cambiar Rol", path: "/cambiar-rol", icon: "🔄" }]
+    : menuBase;
 
   return (
     <div style={{

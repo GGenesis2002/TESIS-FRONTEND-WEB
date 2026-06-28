@@ -657,7 +657,7 @@ export default function AdminInventario() {
   const [notifModal,   setNotifModal]   = useState(null); // { tipo, titulo, mensaje }
   const [confirmModal, setConfirmModal] = useState(null); // { titulo, mensaje, onOk }
   const showNotif   = (titulo, mensaje, tipo = "error") => setNotifModal({ tipo, titulo, mensaje });
-  const showConfirm = (titulo, mensaje, onOk) => setConfirmModal({ titulo, mensaje, onOk });
+  const showConfirm = (titulo, mensaje, onOk, tipo = "delete") => setConfirmModal({ titulo, mensaje, onOk, tipo });
   // Manual de usuario
   const [showManual, setShowManual] = useState(false);
   // Reporte mensual de inventario (PDF con gráficos)
@@ -1577,16 +1577,20 @@ export default function AdminInventario() {
                             {isPend ? (
                               <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
                                 <button disabled={enProc}
-                                  onClick={async () => {
-                                    if (!window.confirm(`¿Aprobar el uso de ${r.cantidad} ${r.unidad_medida} de "${r.insumo_nombre}"?\nEsto descontará esa cantidad del inventario.`)) return;
-                                    setUaProcesando(r.id_reporte);
-                                    try {
-                                      const { data } = await API.post(`/usos-adicionales/${r.id_reporte}/aprobar`);
-                                      toastOk(data.msg || "Aprobado correctamente.");
-                                      cargar();
-                                    } catch(e) { toastErr(e.response?.data?.error || "No se pudo aprobar."); }
-                                    finally { setUaProcesando(null); }
-                                  }}
+                                  onClick={() => showConfirm(
+                                    "✅ Aprobar Uso Adicional",
+                                    <>Vas a aprobar el uso de <strong>{r.cantidad} {r.unidad_medida}</strong> de <strong>"{r.insumo_nombre}"</strong>. Esto descontará esa cantidad del inventario.</>,
+                                    async () => {
+                                      setUaProcesando(r.id_reporte);
+                                      try {
+                                        const { data } = await API.post(`/usos-adicionales/${r.id_reporte}/aprobar`);
+                                        toastOk(data.msg || "Aprobado correctamente.");
+                                        cargar();
+                                      } catch(e) { toastErr(e.response?.data?.error || "No se pudo aprobar."); }
+                                      finally { setUaProcesando(null); }
+                                    },
+                                    "aprobar"
+                                  )}
                                   style={{ padding: "0.35rem 0.75rem", borderRadius: "7px", background: "#D1FAE5", color: "#065F46", border: "1.5px solid #6EE7B7", cursor: "pointer", fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.78rem", opacity: enProc ? 0.5 : 1 }}>
                                   {enProc ? "…" : "✅ Aprobar"}
                                 </button>
@@ -1714,31 +1718,38 @@ export default function AdminInventario() {
       )}
 
       {/* ── MODAL CONFIRMACIÓN ── */}
-      {confirmModal && (
-        <div style={overlay}>
-          <div style={{ ...modalBox, width: "420px", maxWidth: "95vw" }}>
-            <div style={{ background: "#FEF2F2", borderBottom: "1px solid #FECACA", padding: "1.1rem 1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <span style={{ fontSize: "1.4rem" }}>🗑️</span>
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1rem",
-                color: "#DC2626", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                {confirmModal.titulo}
-              </span>
-            </div>
-            <div style={{ padding: "1rem 1.25rem" }}>
-              <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.87rem", color: "#374151", lineHeight: 1.6 }}>
-                {confirmModal.mensaje}
-              </p>
-            </div>
-            <div style={{ padding: "0 1.25rem 1rem", display: "flex", gap: "0.65rem", justifyContent: "flex-end" }}>
-              <button onClick={() => setConfirmModal(null)} style={btnSec}>Cancelar</button>
-              <button onClick={async () => { await confirmModal.onOk(); setConfirmModal(null); }}
-                style={{ ...btnPrimary, background: "#DC2626" }}>
-                Confirmar
-              </button>
+      {confirmModal && (() => {
+        const esAprobar = confirmModal.tipo === "aprobar";
+        const colorPrincipal = esAprobar ? "#059669" : "#DC2626";
+        const bgHeader       = esAprobar ? "#F0FDF4" : "#FEF2F2";
+        const borderHeader   = esAprobar ? "#BBF7D0" : "#FECACA";
+        const icono          = esAprobar ? "✅" : "🗑️";
+        return (
+          <div style={overlay}>
+            <div style={{ ...modalBox, width: "420px", maxWidth: "95vw" }}>
+              <div style={{ background: bgHeader, borderBottom: `1px solid ${borderHeader}`, padding: "1.1rem 1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <span style={{ fontSize: "1.4rem" }}>{icono}</span>
+                <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1rem",
+                  color: colorPrincipal, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {confirmModal.titulo}
+                </span>
+              </div>
+              <div style={{ padding: "1rem 1.25rem" }}>
+                <p style={{ margin: 0, fontFamily: "'Barlow', sans-serif", fontSize: "0.87rem", color: "#374151", lineHeight: 1.6 }}>
+                  {confirmModal.mensaje}
+                </p>
+              </div>
+              <div style={{ padding: "0 1.25rem 1rem", display: "flex", gap: "0.65rem", justifyContent: "flex-end" }}>
+                <button onClick={() => setConfirmModal(null)} style={btnSec}>Cancelar</button>
+                <button onClick={async () => { await confirmModal.onOk(); setConfirmModal(null); }}
+                  style={{ ...btnPrimary, background: colorPrincipal }}>
+                  {esAprobar ? "Aprobar" : "Confirmar"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── MODAL MANUAL DE USUARIO (interactivo paso a paso) ── */}
       {showManual && (

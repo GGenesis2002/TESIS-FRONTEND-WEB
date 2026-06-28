@@ -4,7 +4,7 @@ import "./App.css";
 import LoginPage from "./pages/seguridad/LoginPage";
 import RecuperarContrasenaPage from "./pages/seguridad/RecuperarContrasenaPage";
 import RecuperarUsuarioPage from "./pages/seguridad/RecuperarUsuarioPage";
-import SeleccionarRolPage from "./pages/seguridad/SeleccionarRolPage";
+import SeleccionarRolPage from "./pages/seguridad/Seleccionarrolpage";
 
 import GestionPacientes from "./pages/pacientes/GestionPacientes";
 

@@ -45,6 +45,9 @@ export default function ModuloCaja() {
   const [buscar, setBuscar]                     = useState("");
   const [filtroTiempo, setFiltroTiempo]         = useState("hoy");
   const [fechaEspecifica, setFechaEspecifica]   = useState("");
+
+  // Resetear paginado al cambiar filtros
+  useEffect(() => { setPaginaHistorial(1); }, [buscar, filtroTiempo, fechaEspecifica]);
   
   const [vistaTab, setVistaTab]                 = useState("cobrar");
   const [msg, setMsg]                           = useState(null);
@@ -56,6 +59,13 @@ export default function ModuloCaja() {
 
   // Comprobante
   const [comprobante, setComprobante] = useState(null);
+
+  // Comprobante desde historial
+  const [comprobanteHistorial, setComprobanteHistorial] = useState(null);
+
+  // Paginado historial
+  const [paginaHistorial, setPaginaHistorial] = useState(1);
+  const ITEMS_POR_PAGINA = 10;
 
   // Modal detalle orden
   const [showDetalle, setShowDetalle] = useState(null);
@@ -294,6 +304,10 @@ export default function ModuloCaja() {
   const ordenesFiltradas = ordenesGeneradas.filter(o => aplicarFiltros(o, "fecha_orden"));
   const pagosFiltrados   = pagosHistorial.filter(p => aplicarFiltros(p, "fecha_pago"));
 
+  // Paginado del historial
+  const totalPaginas = Math.ceil(pagosFiltrados.length / ITEMS_POR_PAGINA);
+  const pagosPaginados = pagosFiltrados.slice((paginaHistorial - 1) * ITEMS_POR_PAGINA, paginaHistorial * ITEMS_POR_PAGINA);
+
   const totalRecaudado     = pagosFiltrados.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
   const totalTransacciones = pagosFiltrados.length;
   const porMetodo = pagosFiltrados.reduce((acc, p) => {
@@ -429,13 +443,14 @@ export default function ModuloCaja() {
               <span style={{ flex: 1 }}>MÉTODO</span>
               <span style={{ flex: 1 }}>FECHA / HORA</span>
               <span style={{ flex: "0 0 110px", textAlign: "right" }}>MONTO</span>
+              <span style={{ flex: "0 0 50px" }}></span>
             </div>
             {loading ? (
               <div style={S.empty}>Cargando...</div>
             ) : pagosFiltrados.length === 0 ? (
               <div style={S.empty}>No hay pagos registrados para los filtros actuales.</div>
             ) : (
-              pagosFiltrados.map((p, i) => (
+              pagosPaginados.map((p, i) => (
                 <div key={p.id_pago || i} style={{ ...S.tableRow, background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}>
                   <div style={{ flex: "0 0 130px" }}>
                     <span style={S.ticketBadge}>{p.numero_ticket || `#${p.id_orden}`}</span>
@@ -462,10 +477,50 @@ export default function ModuloCaja() {
                   <div style={{ flex: "0 0 110px", textAlign: "right" }}>
                     <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: "#10B981" }}>${parseFloat(p.monto || 0).toFixed(2)}</span>
                   </div>
+                  <div style={{ flex: "0 0 50px", display: "flex", justifyContent: "center" }}>
+                    <button
+                      title="Ver / imprimir comprobante"
+                      onClick={() => setComprobanteHistorial(p)}
+                      style={S.btnVer}
+                    >🖨️</button>
+                  </div>
                 </div>
               ))
             )}
           </div>
+
+          {/* Paginador */}
+          {totalPaginas > 1 && (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", marginTop: "1rem", flexWrap: "wrap" }}>
+              <button
+                onClick={() => setPaginaHistorial(p => Math.max(1, p - 1))}
+                disabled={paginaHistorial === 1}
+                style={{ ...S.btnCancel, padding: "0.4rem 0.85rem", opacity: paginaHistorial === 1 ? 0.4 : 1 }}
+              >‹ Anterior</button>
+              {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(n => (
+                <button
+                  key={n}
+                  onClick={() => setPaginaHistorial(n)}
+                  style={{
+                    padding: "0.4rem 0.75rem",
+                    borderRadius: "7px",
+                    border: `1.5px solid ${n === paginaHistorial ? ORANGE : "#E5E7EB"}`,
+                    background: n === paginaHistorial ? ORANGE : "#FFF",
+                    color: n === paginaHistorial ? "#FFF" : "#374151",
+                    fontFamily: FONTC, fontWeight: 700, fontSize: "0.82rem", cursor: "pointer",
+                  }}
+                >{n}</button>
+              ))}
+              <button
+                onClick={() => setPaginaHistorial(p => Math.min(totalPaginas, p + 1))}
+                disabled={paginaHistorial === totalPaginas}
+                style={{ ...S.btnCancel, padding: "0.4rem 0.85rem", opacity: paginaHistorial === totalPaginas ? 0.4 : 1 }}
+              >Siguiente ›</button>
+              <span style={{ fontFamily: FONTC, fontSize: "0.75rem", color: "#9CA3AF" }}>
+                {(paginaHistorial - 1) * ITEMS_POR_PAGINA + 1}–{Math.min(paginaHistorial * ITEMS_POR_PAGINA, pagosFiltrados.length)} de {pagosFiltrados.length}
+              </span>
+            </div>
+          )}
         </>
       )}
 
@@ -607,6 +662,40 @@ export default function ModuloCaja() {
           <ModalHeader title="COMPROBANTE" titleOrange="DE PAGO" subtitle={comprobante.orden.numero_ticket} onClose={() => setComprobante(null)} />
           <div style={S.modalBody}>
             <ComprobanteView comprobante={comprobante} onCerrar={() => setComprobante(null)} />
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ MODAL COMPROBANTE HISTORIAL ══════════ */}
+      {comprobanteHistorial && (
+        <Overlay onClose={() => setComprobanteHistorial(null)}>
+          <ModalHeader
+            title="COMPROBANTE"
+            titleOrange="DE PAGO"
+            subtitle={comprobanteHistorial.numero_ticket || `Orden #${comprobanteHistorial.id_orden}`}
+            onClose={() => setComprobanteHistorial(null)}
+          />
+          <div style={S.modalBody}>
+            <ComprobanteView
+              comprobante={{
+                orden: comprobanteHistorial,
+                partes: (() => {
+                  const m = comprobanteHistorial.metodo_pago || "";
+                  const monto = parseFloat(comprobanteHistorial.monto || 0);
+                  if (m.includes("+")) {
+                    // Pago mixto guardado como cadena; mostrar como una sola línea
+                    return [{ metodo_pago: m, monto, referencia: comprobanteHistorial.referencia || "" }];
+                  }
+                  const ref = m.includes("REF:") ? m.split("REF:")[1]?.replace(")", "").trim() : (comprobanteHistorial.referencia || "");
+                  const metodoLimpio = m.includes("Transferencia") ? "Transferencia" : m.split(" ")[0] || m;
+                  return [{ metodo_pago: metodoLimpio, monto, referencia: ref }];
+                })(),
+                total: parseFloat(comprobanteHistorial.monto || 0),
+                fecha: comprobanteHistorial.fecha_pago ? new Date(comprobanteHistorial.fecha_pago) : new Date(),
+                esMixto: (comprobanteHistorial.metodo_pago || "").includes("+"),
+              }}
+              onCerrar={() => setComprobanteHistorial(null)}
+            />
           </div>
         </Overlay>
       )}
@@ -806,31 +895,56 @@ function ComprobanteView({ comprobante, onCerrar }) {
   const { orden, partes, total, fecha, esMixto } = comprobante;
 
   const imprimir = () => {
+    // Inyectar estilos de impresión temporalmente
+    const styleId = "comprobante-print-style";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.innerHTML = `
+        @media print {
+          body > *:not(#comprobante-print-wrapper) { display: none !important; }
+          #comprobante-print-wrapper {
+            position: fixed !important;
+            inset: 0 !important;
+            display: block !important;
+            background: white !important;
+            z-index: 99999 !important;
+            padding: 20px !important;
+          }
+          #comprobante-print {
+            font-family: 'Courier New', monospace !important;
+            font-size: 12px !important;
+            max-width: 320px !important;
+            margin: 0 auto !important;
+            background: white !important;
+            border: none !important;
+            padding: 0 !important;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // Mover el comprobante a un wrapper de nivel raíz temporal
+    const wrapper = document.getElementById("comprobante-print-wrapper") || (() => {
+      const el = document.createElement("div");
+      el.id = "comprobante-print-wrapper";
+      document.body.appendChild(el);
+      return el;
+    })();
+
     const contenido = document.getElementById("comprobante-print");
-    const ventana = window.open("", "_blank", "width=400,height=600");
-    ventana.document.write(`
-      <html>
-        <head>
-          <title>Comprobante de Pago - ${orden.numero_ticket}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Courier New', monospace; font-size: 12px; padding: 20px; max-width: 320px; margin: 0 auto; }
-            .title { font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 4px; }
-            .subtitle { font-size: 10px; text-align: center; color: #555; margin-bottom: 12px; }
-            .divider { border-top: 1px dashed #999; margin: 8px 0; }
-            .row { display: flex; justify-content: space-between; margin: 3px 0; }
-            .label { color: #555; }
-            .total-row { display: flex; justify-content: space-between; font-size: 15px; font-weight: bold; margin-top: 4px; }
-            .footer { text-align: center; font-size: 10px; color: #888; margin-top: 12px; }
-          </style>
-        </head>
-        <body>
-          ${contenido.innerHTML}
-          <script>window.onload = function(){ window.print(); window.close(); }<\/script>
-        </body>
-      </html>
-    `);
-    ventana.document.close();
+    const clon = contenido.cloneNode(true);
+    clon.id = "comprobante-print";
+    wrapper.innerHTML = "";
+    wrapper.appendChild(clon);
+
+    window.print();
+
+    // Limpiar después de imprimir
+    setTimeout(() => {
+      wrapper.innerHTML = "";
+    }, 500);
   };
 
   return (

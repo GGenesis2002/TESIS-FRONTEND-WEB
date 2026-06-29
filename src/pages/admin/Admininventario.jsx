@@ -723,6 +723,21 @@ export default function AdminInventario() {
   // ── Filtros adicionales del inventario (pestaña Insumos) ──────────────────
   const [catFiltro,    setCatFiltro]    = useState("TODOS"); // id_categoria_insumo | "TODOS"
   const [estadoFiltro, setEstadoFiltro] = useState("TODOS"); // TODOS | OK | BAJO | SIN
+  // ── Filtros de rango de fechas (listas con campo de fecha) ─────────────────
+  const [movFechaDesde,    setMovFechaDesde]    = useState(""); // YYYY-MM-DD
+  const [movFechaHasta,    setMovFechaHasta]    = useState("");
+  const [alertasFechaDesde, setAlertasFechaDesde] = useState("");
+  const [alertasFechaHasta, setAlertasFechaHasta] = useState("");
+  const [usosFechaDesde,   setUsosFechaDesde]   = useState("");
+  const [usosFechaHasta,   setUsosFechaHasta]   = useState("");
+  // Helper: ¿la fecha del registro cae dentro del rango [desde, hasta] (inclusive)?
+  const enRangoFecha = (fechaStr, desde, hasta) => {
+    if (!fechaStr) return !desde && !hasta; // sin fecha: solo pasa si no hay filtro activo
+    const f = new Date(fechaStr);
+    if (desde && f < new Date(desde + "T00:00:00")) return false;
+    if (hasta && f > new Date(hasta + "T23:59:59")) return false;
+    return true;
+  };
   // ── Paginación (una página por cada lista de registros) ───────────────────
   const PAGE_SIZE = 10;
   const MOV_PAGE_SIZE = 15;
@@ -894,7 +909,8 @@ export default function AdminInventario() {
   );
 
   const alertasFiltradas = alertas.filter(a =>
-    (a.insumo || "").toLowerCase().includes(getBuscar("alertas").toLowerCase())
+    (a.insumo || "").toLowerCase().includes(getBuscar("alertas").toLowerCase()) &&
+    enRangoFecha(a.fecha_reporte, alertasFechaDesde, alertasFechaHasta)
   );
 
   const movsFiltrados = movimientos.filter(m => {
@@ -904,7 +920,8 @@ export default function AdminInventario() {
       (m.usuario_nombre || m.username || "").toLowerCase().includes(getBuscar("movimientos").toLowerCase())
     );
     const tipoOk = tipoMovFiltro === "TODOS" || m.tipo_movimiento === tipoMovFiltro;
-    return textoOk && tipoOk;
+    const fechaOk = enRangoFecha(m.fecha, movFechaDesde, movFechaHasta);
+    return textoOk && tipoOk && fechaOk;
   });
 
   // ── PAGINACIÓN (slice por página, una por cada lista) ──────────────────────
@@ -1481,6 +1498,25 @@ export default function AdminInventario() {
                     }}>{val}</button>
                   ))}
                 </div>
+                {/* Filtro por rango de fechas */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#9CA3AF" }}>Desde</span>
+                  <input type="date" value={movFechaDesde}
+                    onChange={e => { setMovFechaDesde(e.target.value); setMovPage(1); }}
+                    style={{ ...finput, width: "145px", padding: "0.35rem 0.5rem" }} />
+                  <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#9CA3AF" }}>Hasta</span>
+                  <input type="date" value={movFechaHasta}
+                    onChange={e => { setMovFechaHasta(e.target.value); setMovPage(1); }}
+                    style={{ ...finput, width: "145px", padding: "0.35rem 0.5rem" }} />
+                  {(movFechaDesde || movFechaHasta) && (
+                    <button onClick={() => { setMovFechaDesde(""); setMovFechaHasta(""); setMovPage(1); }}
+                      title="Limpiar filtro de fechas"
+                      style={{
+                        padding: "0.35rem 0.55rem", borderRadius: "6px", border: "1px solid #E2E8F0",
+                        background: "#F8FAFC", color: "#6B7280", cursor: "pointer", fontSize: "0.78rem",
+                      }}>✕</button>
+                  )}
+                </div>
                 <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF", marginLeft: "auto" }}>
                   {movsFiltrados.length} registro{movsFiltrados.length !== 1 ? "s" : ""}
                 </span>
@@ -1558,13 +1594,30 @@ export default function AdminInventario() {
                       {alertas.length} insumo{alertas.length !== 1 ? "s" : ""} requiere{alertas.length === 1 ? "" : "n"} reposición urgente.
                     </p>
                   </div>
-                  <div style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                  <div style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                     <input
                       placeholder="🔍 Buscar insumo en alertas…"
                       value={getBuscar("alertas")}
                       onChange={e => { setBuscarTab("alertas", e.target.value); setAlertasPage(1); }}
                       style={searchInput}
                     />
+                    {/* Filtro por rango de fechas */}
+                    <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#9CA3AF" }}>Desde</span>
+                    <input type="date" value={alertasFechaDesde}
+                      onChange={e => { setAlertasFechaDesde(e.target.value); setAlertasPage(1); }}
+                      style={{ ...finput, width: "145px", padding: "0.35rem 0.5rem" }} />
+                    <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#9CA3AF" }}>Hasta</span>
+                    <input type="date" value={alertasFechaHasta}
+                      onChange={e => { setAlertasFechaHasta(e.target.value); setAlertasPage(1); }}
+                      style={{ ...finput, width: "145px", padding: "0.35rem 0.5rem" }} />
+                    {(alertasFechaDesde || alertasFechaHasta) && (
+                      <button onClick={() => { setAlertasFechaDesde(""); setAlertasFechaHasta(""); setAlertasPage(1); }}
+                        title="Limpiar filtro de fechas"
+                        style={{
+                          padding: "0.35rem 0.55rem", borderRadius: "6px", border: "1px solid #E2E8F0",
+                          background: "#F8FAFC", color: "#6B7280", cursor: "pointer", fontSize: "0.78rem",
+                        }}>✕</button>
+                    )}
                     <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
                       {alertasFiltradas.length} de {alertas.length}
                     </span>
@@ -1625,21 +1678,40 @@ export default function AdminInventario() {
                     : " Todo al día ✅"}
                 </p>
               </div>
-              <div style={{ display: "flex", background: "#F3F4F6", borderRadius: "8px", padding: "0.2rem", gap: "0.2rem" }}>
-                {[
-                  { key: "todos",      label: `Todos (${usosAdicionales.length})` },
-                  { key: "pendientes", label: `⏳ Pendientes (${pendientesUA})` },
-                ].map(f => (
-                  <button key={f.key} onClick={() => { setUaFiltro(f.key); setUsosPage(1); }} style={{
-                    padding: "0.4rem 0.85rem", border: "none", borderRadius: "6px", cursor: "pointer",
-                    fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", fontWeight: 700,
-                    background: uaFiltro === f.key ? "#FFF" : "transparent",
-                    color: uaFiltro === f.key ? (f.key === "pendientes" ? "#C2410C" : "#1F2937") : "#6B7280",
-                    boxShadow: uaFiltro === f.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                    transition: "all 0.15s",
-                  }}>{f.label}</button>
-                ))}
-              </div>
+                <div style={{ display: "flex", background: "#F3F4F6", borderRadius: "8px", padding: "0.2rem", gap: "0.2rem" }}>
+                  {[
+                    { key: "todos",      label: `Todos (${usosAdicionales.length})` },
+                    { key: "pendientes", label: `⏳ Pendientes (${pendientesUA})` },
+                  ].map(f => (
+                    <button key={f.key} onClick={() => { setUaFiltro(f.key); setUsosPage(1); }} style={{
+                      padding: "0.4rem 0.85rem", border: "none", borderRadius: "6px", cursor: "pointer",
+                      fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", fontWeight: 700,
+                      background: uaFiltro === f.key ? "#FFF" : "transparent",
+                      color: uaFiltro === f.key ? (f.key === "pendientes" ? "#C2410C" : "#1F2937") : "#6B7280",
+                      boxShadow: uaFiltro === f.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                      transition: "all 0.15s",
+                    }}>{f.label}</button>
+                  ))}
+                </div>
+                {/* Filtro por rango de fechas */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#9CA3AF" }}>Desde</span>
+                  <input type="date" value={usosFechaDesde}
+                    onChange={e => { setUsosFechaDesde(e.target.value); setUsosPage(1); }}
+                    style={{ ...finput, width: "145px", padding: "0.35rem 0.5rem" }} />
+                  <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#9CA3AF" }}>Hasta</span>
+                  <input type="date" value={usosFechaHasta}
+                    onChange={e => { setUsosFechaHasta(e.target.value); setUsosPage(1); }}
+                    style={{ ...finput, width: "145px", padding: "0.35rem 0.5rem" }} />
+                  {(usosFechaDesde || usosFechaHasta) && (
+                    <button onClick={() => { setUsosFechaDesde(""); setUsosFechaHasta(""); setUsosPage(1); }}
+                      title="Limpiar filtro de fechas"
+                      style={{
+                        padding: "0.35rem 0.55rem", borderRadius: "6px", border: "1px solid #E2E8F0",
+                        background: "#F8FAFC", color: "#6B7280", cursor: "pointer", fontSize: "0.78rem",
+                      }}>✕</button>
+                  )}
+                </div>
             </div>
             {pendientesUA > 0 && (
               <div style={{ marginTop: "0.85rem", background: "#FFF7ED", border: "1.5px solid #FED7AA", borderRadius: "10px", padding: "0.75rem 1.1rem", fontSize: "0.83rem", color: "#92400E", fontFamily: "'Barlow', sans-serif", display: "flex", alignItems: "center", gap: "0.6rem" }}>
@@ -1650,14 +1722,15 @@ export default function AdminInventario() {
           </div>
 
           {(() => {
-            const listaUA = uaFiltro === "pendientes"
+            const listaUA = (uaFiltro === "pendientes"
               ? usosAdicionales.filter(u => u.estado === "USO_ADICIONAL_PENDIENTE")
-              : usosAdicionales;
+              : usosAdicionales
+            ).filter(u => enRangoFecha(u.fecha_reporte, usosFechaDesde, usosFechaHasta));
             if (listaUA.length === 0) return (
               <div style={{ ...tableWrap, padding: "3.5rem", textAlign: "center" }}>
                 <p style={{ fontSize: "2rem", margin: "0 0 0.5rem" }}>📋</p>
                 <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", color: "#9CA3AF" }}>
-                  {uaFiltro === "pendientes" ? "No hay usos adicionales pendientes." : "Aún no se han registrado usos adicionales."}
+                  {uaFiltro === "pendientes" ? "No hay usos adicionales pendientes." : "Ningún registro coincide con los filtros."}
                 </p>
               </div>
             );

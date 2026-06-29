@@ -20,7 +20,6 @@ const FONTC = "'Barlow Condensed', sans-serif";
 const DARK  = "#1F2937";
 const ORANGE = "#E88B3A";
 
-// Función auxiliar para verificar si una fecha es hoy
 const isToday = (dateString) => {
   if (!dateString) return false;
   const d = new Date(dateString);
@@ -30,23 +29,33 @@ const isToday = (dateString) => {
          d.getFullYear() === hoy.getFullYear();
 };
 
+// ─── ESTADO INICIAL DEL FORMULARIO DE COBRO ──────────────────────────────────
+const estadoInicial = () => ({
+  modoPago: "simple",          // "simple" | "mixto"
+  partes: [
+    { metodo_pago: "Efectivo", monto: "", referencia: "" }
+  ],
+});
+
 export default function ModuloCaja() {
   const [ordenesGeneradas, setOrdenesGeneradas] = useState([]);
-  const [pagosHistorial, setPagosHistorial]     = useState([]); // Renombrado para indicar que trae todo
+  const [pagosHistorial, setPagosHistorial]     = useState([]);
   const [loading, setLoading]                   = useState(false);
   
-  // Estados de Filtros
   const [buscar, setBuscar]                     = useState("");
-  const [filtroTiempo, setFiltroTiempo]         = useState("hoy"); // "hoy" | "todos" | "fecha"
+  const [filtroTiempo, setFiltroTiempo]         = useState("hoy");
   const [fechaEspecifica, setFechaEspecifica]   = useState("");
   
-  const [vistaTab, setVistaTab]                 = useState("cobrar"); // "cobrar" | "reporte"
+  const [vistaTab, setVistaTab]                 = useState("cobrar");
   const [msg, setMsg]                           = useState(null);
 
   // Modal cobro
   const [showCobro, setShowCobro]   = useState(null);
-  const [formCobro, setFormCobro]   = useState({ monto: "", metodo_pago: "Efectivo" });
+  const [formCobro, setFormCobro]   = useState(estadoInicial());
   const [procesando, setProcesando] = useState(false);
+
+  // Comprobante
+  const [comprobante, setComprobante] = useState(null);
 
   // Modal detalle orden
   const [showDetalle, setShowDetalle] = useState(null);
@@ -63,15 +72,13 @@ export default function ModuloCaja() {
   const [modoQR, setModoQR]         = useState("camara");
   const [showQRAcciones, setShowQRAcciones] = useState(false);
 
-  // ── CARGA DE DATOS ────────────────────────────────────────────────────────
+  // ── CARGA ─────────────────────────────────────────────────────────────────
   const cargar = async () => {
     setLoading(true);
     try {
-      // NOTA: Asegúrate de que el endpoint de pagos ahora traiga el historial completo 
-      // (ej. "/pagos/todos") en lugar de solo los de hoy, para que el filtro funcione.
       const [resOrdenes, resPagos] = await Promise.all([
         API.get("/pagos/ordenes-generadas").catch(() => ({ data: [] })),
-        API.get("/pagos/todos").catch(() => ({ data: [] })), // <-- Endpoint ajustado
+        API.get("/pagos/todos").catch(() => ({ data: [] })),
       ]);
       setOrdenesGeneradas(Array.isArray(resOrdenes.data) ? resOrdenes.data : []);
       setPagosHistorial(Array.isArray(resPagos.data) ? resPagos.data : []);
@@ -86,27 +93,105 @@ export default function ModuloCaja() {
 
   // ── COBRO ─────────────────────────────────────────────────────────────────
   const abrirCobro = (orden) => {
-    setFormCobro({ monto: parseFloat(orden.total || 0).toFixed(2), metodo_pago: "Efectivo" });
+    const total = parseFloat(orden.total || 0).toFixed(2);
+    setFormCobro({
+      modoPago: "simple",
+      partes: [{ metodo_pago: "Efectivo", monto: total, referencia: "" }],
+    });
     setShowCobro(orden);
     setMsg(null);
   };
 
+  // Cambiar modo pago (simple ↔ mixto)
+  const cambiarModo = (modo) => {
+    const total = parseFloat(showCobro?.total || 0);
+    if (modo === "simple") {
+      setFormCobro(f => ({
+        ...f,
+        modoPago: "simple",
+        partes: [{ metodo_pago: f.partes[0]?.metodo_pago || "Efectivo", monto: total.toFixed(2), referencia: "" }],
+      }));
+    } else {
+      // Mixto: dividir 50/50 como punto de partida
+      const mitad = (total / 2).toFixed(2);
+      const resto = (total - parseFloat(mitad)).toFixed(2);
+      setFormCobro(f => ({
+        ...f,
+        modoPago: "mixto",
+        partes: [
+          { metodo_pago: "Efectivo",       monto: mitad, referencia: "" },
+          { metodo_pago: "Transferencia",  monto: resto, referencia: "" },
+        ],
+      }));
+    }
+    setMsg(null);
+  };
+
+  // Actualizar una parte del pago
+  const actualizarParte = (idx, campo, valor) => {
+    setFormCobro(f => {
+      const nuevas = [...f.partes];
+      nuevas[idx] = { ...nuevas[idx], [campo]: valor };
+
+      // En modo mixto: ajustar la otra parte automáticamente al cambiar monto
+      if (campo === "monto" && f.modoPago === "mixto" && nuevas.length === 2) {
+        const total = parseFloat(showCobro?.total || 0);
+        const esteVal = parseFloat(valor) || 0;
+        const otro = Math.max(0, total - esteVal);
+        const otroIdx = idx === 0 ? 1 : 0;
+        nuevas[otroIdx] = { ...nuevas[otroIdx], monto: otro.toFixed(2) };
+      }
+
+      return { ...f, partes: nuevas };
+    });
+    setMsg(null);
+  };
+
   const handleProcesarCobro = async () => {
-    if (!formCobro.monto || parseFloat(formCobro.monto) <= 0)
-      return setMsg({ type: "error", text: "Ingresa un monto válido." });
+    const total = parseFloat(showCobro?.total || 0);
+    const { partes } = formCobro;
+
+    // Validaciones frontend
+    for (const p of partes) {
+      if (!p.monto || parseFloat(p.monto) <= 0) {
+        return setMsg({ type: "error", text: `El monto para "${p.metodo_pago}" debe ser mayor a 0.` });
+      }
+      if (p.metodo_pago === "Transferencia" && !p.referencia.trim()) {
+        return setMsg({ type: "error", text: "Ingresa el número de referencia de la transferencia." });
+      }
+    }
+
+    const suma = partes.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
+    if (Math.abs(suma - total) > 0.01) {
+      return setMsg({ type: "error", text: `La suma ($${suma.toFixed(2)}) no coincide con el total de la orden ($${total.toFixed(2)}).` });
+    }
+
     setProcesando(true);
     setMsg(null);
     try {
-      await API.post("/pagos/procesar", {
-        id_orden:    showCobro.id_orden,
-        monto:       parseFloat(formCobro.monto),
-        metodo_pago: formCobro.metodo_pago,
+      const payload = {
+        id_orden: showCobro.id_orden,
+        pagos: partes.map(p => ({
+          monto: parseFloat(p.monto),
+          metodo_pago: p.metodo_pago,
+          referencia: p.referencia.trim() || undefined,
+        })),
+      };
+
+      const { data } = await API.post("/pagos/procesar", payload);
+
+      // Guardar datos del comprobante
+      setComprobante({
+        orden: showCobro,
+        partes,
+        total,
+        fecha: new Date(),
+        esMixto: partes.length > 1,
+        pagosGuardados: data.pagos,
       });
-      setMsg({ type: "success", text: "✅ Pago registrado. La orden ahora está PAGADA." });
-      setTimeout(() => {
-        setShowCobro(null);
-        cargar();
-      }, 1200);
+
+      setShowCobro(null);
+      cargar();
     } catch (err) {
       setMsg({ type: "error", text: err.response?.data?.error || "Error al procesar el cobro." });
     } finally {
@@ -185,45 +270,38 @@ export default function ModuloCaja() {
   };
 
   const cerrarQR = () => {
-    setShowQR(false);
-    setShowQRAcciones(false);
-    setOrdenEscaneada(null);
-    setQrInvalido(false);
-    setQrError("");
-    detenerCamara();
+    setShowQR(false); setShowQRAcciones(false); setOrdenEscaneada(null);
+    setQrInvalido(false); setQrError(""); detenerCamara();
   };
 
   // ── FILTROS Y KPIs ────────────────────────────────────────────────────────
   const aplicarFiltros = (item, campoFecha) => {
     const valorFecha = item[campoFecha];
-    
-    // 1. Filtro de Texto (incluimos la fecha formateada por si el usuario la tipea en el buscador)
     const fechaStr = valorFecha ? new Date(valorFecha).toLocaleDateString("es-EC") : "";
     const txt = `${item.nombres || ""} ${item.apellidos || ""} ${item.numero_ticket || ""} ${item.cedula || ""} ${fechaStr}`.toLowerCase();
     const matchTexto = txt.includes(buscar.toLowerCase());
-
-    // 2. Filtro de Tiempo
     let matchTiempo = true;
     if (filtroTiempo === "hoy") {
       matchTiempo = isToday(valorFecha);
     } else if (filtroTiempo === "fecha" && fechaEspecifica) {
       if (!valorFecha) return false;
-      const d = new Date(valorFecha);
-      const isoDate = d.toISOString().split('T')[0]; // Convertimos a YYYY-MM-DD local
+      const isoDate = new Date(valorFecha).toISOString().split('T')[0];
       matchTiempo = (isoDate === fechaEspecifica);
     }
-
     return matchTexto && matchTiempo;
   };
 
   const ordenesFiltradas = ordenesGeneradas.filter(o => aplicarFiltros(o, "fecha_orden"));
   const pagosFiltrados   = pagosHistorial.filter(p => aplicarFiltros(p, "fecha_pago"));
 
-  // KPIs dinámicos basados en lo que se está viendo (hoy, todos o fecha específica)
-  const totalRecaudado    = pagosFiltrados.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
+  const totalRecaudado     = pagosFiltrados.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
   const totalTransacciones = pagosFiltrados.length;
   const porMetodo = pagosFiltrados.reduce((acc, p) => {
-    acc[p.metodo_pago] = (acc[p.metodo_pago] || 0) + parseFloat(p.monto || 0);
+    // metodo_pago puede ser "Efectivo", "Transferencia (REF: XXX)", o "Efectivo + Transferencia..."
+    // Para KPIs agrupamos por la primera palabra
+    const clave = (p.metodo_pago || "").includes("Transferencia") && (p.metodo_pago || "").includes("Efectivo")
+      ? "Mixto" : (p.metodo_pago || "").split(" ")[0];
+    acc[clave] = (acc[clave] || 0) + parseFloat(p.monto || 0);
     return acc;
   }, {});
 
@@ -242,12 +320,8 @@ export default function ModuloCaja() {
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.65rem" }}>
-          <button onClick={abrirLectorQR} style={S.btnQR}>
-            📷 LEER QR / TICKET
-          </button>
-          <button onClick={cargar} disabled={loading} style={S.btnRefresh}>
-            {loading ? "…" : "↻ Actualizar"}
-          </button>
+          <button onClick={abrirLectorQR} style={S.btnQR}>📷 LEER QR / TICKET</button>
+          <button onClick={cargar} disabled={loading} style={S.btnRefresh}>{loading ? "…" : "↻ Actualizar"}</button>
         </div>
       </div>
 
@@ -263,15 +337,12 @@ export default function ModuloCaja() {
             color:      vistaTab === t.key ? DARK : "#6B7280",
             fontWeight: vistaTab === t.key ? 700 : 500,
             boxShadow:  vistaTab === t.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-          }}>
-            {t.label}
-          </button>
+          }}>{t.label}</button>
         ))}
       </div>
 
-      {/* ── BARRA DE FILTROS UNIFICADA ── */}
+      {/* ── FILTROS ── */}
       <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        {/* Buscador de Texto */}
         <div style={{ ...S.searchWrap, flex: "1 1 300px", maxWidth: "400px" }}>
           <span style={{ color: "#9CA3AF" }}>🔍</span>
           <input
@@ -281,32 +352,17 @@ export default function ModuloCaja() {
             style={S.searchInput}
           />
         </div>
-
-        {/* Filtro de Tiempo */}
-        <select 
-          value={filtroTiempo} 
-          onChange={e => setFiltroTiempo(e.target.value)}
-          style={{ ...S.input, flex: "0 1 180px" }}
-        >
+        <select value={filtroTiempo} onChange={e => setFiltroTiempo(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }}>
           <option value="hoy">Solo Hoy</option>
           <option value="todos">Todos los registros</option>
           <option value="fecha">Fecha específica</option>
         </select>
-
-        {/* Selector de Fecha (Solo visible si selecciona "Fecha específica") */}
         {filtroTiempo === "fecha" && (
-          <input
-            type="date"
-            value={fechaEspecifica}
-            onChange={e => setFechaEspecifica(e.target.value)}
-            style={{ ...S.input, flex: "0 1 180px" }}
-          />
+          <input type="date" value={fechaEspecifica} onChange={e => setFechaEspecifica(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }} />
         )}
       </div>
 
-      {/* ══════════════════════════════════
-          VISTA: COBRAR
-      ══════════════════════════════════ */}
+      {/* ══════════ VISTA: COBRAR ══════════ */}
       {vistaTab === "cobrar" && (
         <div style={S.tableCard}>
           <div style={S.tableHead}>
@@ -316,7 +372,6 @@ export default function ModuloCaja() {
             <span style={{ flex: "0 0 100px", textAlign: "right" }}>TOTAL</span>
             <span style={{ flex: "0 0 110px", textAlign: "center" }}>COBRAR</span>
           </div>
-
           {loading ? (
             <div style={S.empty}>Cargando...</div>
           ) : ordenesFiltradas.length === 0 ? (
@@ -338,21 +393,17 @@ export default function ModuloCaja() {
                   <p style={{ fontWeight: 600, fontSize: "0.875rem", color: DARK, margin: 0 }}>
                     {o.nombres ? `${o.nombres} ${o.apellidos}` : `Paciente #${o.id_paciente}`}
                   </p>
-                  <p style={{ fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>
-                    {o.cedula || "—"}
-                  </p>
+                  <p style={{ fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>{o.cedula || "—"}</p>
                 </div>
                 <div style={{ flex: 1, fontSize: "0.82rem", color: "#6B7280" }}>
                   {o.fecha_orden ? new Date(o.fecha_orden).toLocaleDateString("es-EC") : "—"}
                 </div>
                 <div style={{ flex: "0 0 100px", textAlign: "right" }}>
-                  <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: DARK }}>
-                    ${parseFloat(o.total || 0).toFixed(2)}
-                  </span>
+                  <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: DARK }}>${parseFloat(o.total || 0).toFixed(2)}</span>
                 </div>
                 <div style={{ flex: "0 0 110px", display: "flex", justifyContent: "center", gap: "0.4rem" }}>
                   <button onClick={() => setShowDetalle(o)} style={S.btnVer} title="Ver detalle">👁️</button>
-                  <button onClick={() => abrirCobro(o)} style={S.btnCobrar} title="Registrar cobro">💳 Cobrar</button>
+                  <button onClick={() => abrirCobro(o)} style={S.btnCobrar}>💳 Cobrar</button>
                 </div>
               </div>
             ))
@@ -360,12 +411,9 @@ export default function ModuloCaja() {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          VISTA: REPORTE
-      ══════════════════════════════════ */}
+      {/* ══════════ VISTA: REPORTE ══════════ */}
       {vistaTab === "reporte" && (
         <>
-          {/* KPIs resumen dinámicos */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "0.85rem", marginBottom: "1.5rem" }}>
             <KpiBox icon="💰" label="Total Recaudado"  value={`$${totalRecaudado.toFixed(2)}`} color="#10B981" />
             <KpiBox icon="🧾" label="Transacciones"    value={totalTransacciones}               color={ORANGE} />
@@ -382,7 +430,6 @@ export default function ModuloCaja() {
               <span style={{ flex: 1 }}>FECHA / HORA</span>
               <span style={{ flex: "0 0 110px", textAlign: "right" }}>MONTO</span>
             </div>
-
             {loading ? (
               <div style={S.empty}>Cargando...</div>
             ) : pagosFiltrados.length === 0 ? (
@@ -397,22 +444,23 @@ export default function ModuloCaja() {
                     <p style={{ fontWeight: 600, fontSize: "0.875rem", color: DARK, margin: 0 }}>
                       {p.nombres ? `${p.nombres} ${p.apellidos}` : `Orden #${p.id_orden}`}
                     </p>
-                    <p style={{ fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>
-                      Atendido por: @{p.secretaria || "—"}
-                    </p>
+                    <p style={{ fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>@{p.secretaria || "—"}</p>
                   </div>
                   <div style={{ flex: 1 }}>
-                    <span style={S.metodoBadge}>{p.metodo_pago || "—"}</span>
+                    <span style={{
+                      ...S.metodoBadge,
+                      background: (p.metodo_pago || "").includes("+") || (p.metodo_pago || "").includes("Transferencia") && (p.metodo_pago || "").includes("Efectivo")
+                        ? "rgba(139,92,246,0.1)" : "rgba(59,130,246,0.1)",
+                      color: (p.metodo_pago || "").includes("+") ? "#7C3AED" : "#2563EB",
+                    }}>
+                      {p.metodo_pago || "—"}
+                    </span>
                   </div>
                   <div style={{ flex: 1, fontSize: "0.82rem", color: "#6B7280" }}>
-                    {p.fecha_pago
-                      ? new Date(p.fecha_pago).toLocaleString("es-EC", { day: '2-digit', month: '2-digit', year: 'numeric', hour: "2-digit", minute: "2-digit" })
-                      : "—"}
+                    {p.fecha_pago ? new Date(p.fecha_pago).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
                   </div>
                   <div style={{ flex: "0 0 110px", textAlign: "right" }}>
-                    <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: "#10B981" }}>
-                      ${parseFloat(p.monto || 0).toFixed(2)}
-                    </span>
+                    <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: "#10B981" }}>${parseFloat(p.monto || 0).toFixed(2)}</span>
                   </div>
                 </div>
               ))
@@ -421,127 +469,7 @@ export default function ModuloCaja() {
         </>
       )}
 
-      {/* ══════════════════════════════════
-          MODALES (Detalle de Orden y Cobro - Se mantienen igual)
-      ══════════════════════════════════ */}
-      
-      {/* ══════════════════════════════════
-          MODAL — LEER QR / TICKET
-      ══════════════════════════════════ */}
-      {showQR && (
-        <Overlay onClose={cerrarQR}>
-          <ModalHeader title="LEER" titleOrange="QR / TICKET" subtitle="Escanea el código del paciente o ingresa el ticket manual" onClose={cerrarQR} />
-          <div style={S.modalBody}>
-
-            {qrLoading && (
-              <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
-                <div style={S.spinner} />
-                <p style={{ color: "#6B7280", fontSize: "0.85rem", marginTop: "0.75rem" }}>Buscando orden...</p>
-              </div>
-            )}
-
-            {/* ── QR INVÁLIDO / EXPIRADO ── */}
-            {qrInvalido && !qrLoading && (
-              <div style={S.qrInvalidBox}>
-                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>⛔</div>
-                <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 800, color: "#991B1B", margin: "0 0 0.5rem", textAlign: "center" }}>
-                  CÓDIGO QR NO VÁLIDO
-                </p>
-                <p style={{ fontSize: "0.85rem", color: "#B91C1C", textAlign: "center", margin: "0 0 1rem", lineHeight: 1.6 }}>
-                  Este código QR ya no es válido.
-                </p>
-                <div style={{ background: "#FFF", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem", width: "100%", boxSizing: "border-box" }}>
-                  <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 0.35rem" }}>
-                    ¿Cómo continuar?
-                  </p>
-                  <p style={{ fontSize: "0.85rem", color: "#374151", margin: 0, lineHeight: 1.55 }}>
-                    Solicita al paciente su <strong>número de ticket</strong> (Ej: <span style={{ fontFamily: FONTC, color: ORANGE, fontWeight: 700 }}>LAB-XXXX</span>) e ingrésalo en la pestaña <strong>⌨️ Manual</strong>.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setQrInvalido(false); setQrError(""); setOrdenEscaneada(null);
-                    setTicketManual(""); setModoQR("manual");
-                  }}
-                  style={{ ...S.btnFull, marginBottom: "0.5rem" }}
-                >
-                  ⌨️ BUSCAR POR NÚMERO DE TICKET
-                </button>
-                <button onClick={cerrarQR} style={{ ...S.btnCancel, width: "100%" }}>
-                  Cerrar
-                </button>
-              </div>
-            )}
-
-            {/* ── ERROR NO EXPIRACIÓN ── */}
-            {qrError && !qrInvalido && !qrLoading && (
-              <div style={S.alertError}>
-                ⚠️ {qrError}
-              </div>
-            )}
-
-            {/* ── RESULTADO ENCONTRADO ── */}
-            {showQRAcciones && ordenEscaneada && !qrLoading && (
-              <PanelAccionesQR
-                data={ordenEscaneada}
-                onCobrar={(o) => { cerrarQR(); abrirCobro(o); }}
-                onVerDetalle={(o) => { cerrarQR(); setShowDetalle(o); }}
-                onNuevoScan={() => {
-                  setOrdenEscaneada(null);
-                  setShowQRAcciones(false);
-                  setQrError(""); setQrInvalido(false);
-                  setTicketManual("");
-                  if (modoQR === "camara") iniciarCamara();
-                }}
-                onCerrar={cerrarQR}
-              />
-            )}
-
-            {/* ── MODO ESCANEO ── */}
-            {!showQRAcciones && !qrInvalido && !qrLoading && (
-              <>
-                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-                  {["camara", "manual"].map(m => (
-                    <button key={m} onClick={() => { setModoQR(m); setOrdenEscaneada(null); setQrError(""); setQrInvalido(false); }} style={{ flex: 1, padding: "0.55rem", borderRadius: "8px", border: "1.5px solid", fontFamily: FONTC, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", letterSpacing: "0.05em", borderColor: modoQR === m ? ORANGE : "#E5E7EB", background: modoQR === m ? ORANGE : "#F8FAFC", color: modoQR === m ? "#FFF" : "#6B7280" }}>
-                      {m === "camara" ? "📷 CÁMARA" : "⌨️ MANUAL"}
-                    </button>
-                  ))}
-                </div>
-
-                {modoQR === "camara" ? (
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ position: "relative", background: "#0F172A", borderRadius: "12px", overflow: "hidden", aspectRatio: "1", maxWidth: "280px", margin: "0 auto 1rem" }}>
-                      <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                        <div style={{ width: "60%", height: "60%", border: `3px solid ${ORANGE}`, borderRadius: "10px", boxShadow: `0 0 0 2000px rgba(0,0,0,0.35)` }} />
-                      </div>
-                    </div>
-                    <p style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: "1rem" }}>Apunta la cámara al código QR</p>
-                    <button onClick={cerrarQR} style={S.btnCancel}>Cerrar Cámara</button>
-                  </div>
-                ) : (
-                  <div>
-                    <label style={S.label}>Código de Ticket (Ej: LAB-XXXX)</label>
-                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-                      <input
-                        type="text" placeholder="LAB-XXXX"
-                        value={ticketManual}
-                        onChange={e => setTicketManual(e.target.value)}
-                        onKeyDown={e => e.key === "Enter" && buscarManual()}
-                        style={{ ...S.input, flex: 1 }}
-                      />
-                      <button onClick={buscarManual} style={S.btnFull2}>BUSCAR</button>
-                    </div>
-                    <button onClick={cerrarQR} style={{ ...S.btnCancel, width: "100%" }}>Cerrar</button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </Overlay>
-      )}
-
-      {/* Modal Detalle */}
+      {/* ══════════ MODAL DETALLE ══════════ */}
       {showDetalle && (
         <Overlay onClose={() => setShowDetalle(null)}>
           <ModalHeader title="DETALLE" titleOrange="ORDEN" subtitle={showDetalle.numero_ticket || `Orden #${showDetalle.id_orden}`} onClose={() => setShowDetalle(null)} />
@@ -553,7 +481,7 @@ export default function ModuloCaja() {
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1.25rem" }}>
                     <DetalleItem label="Ticket"   value={o.numero_ticket || `#${o.id_orden}`} />
-                    <DetalleItem label="Estado" value={<span style={{ background: ec.bg, color: ec.color, fontFamily: FONTC, fontWeight: 700, fontSize: "0.75rem", padding: "0.25rem 0.6rem", borderRadius: "6px" }}>{o.estado}</span>} />
+                    <DetalleItem label="Estado"   value={<span style={{ background: ec.bg, color: ec.color, fontFamily: FONTC, fontWeight: 700, fontSize: "0.75rem", padding: "0.25rem 0.6rem", borderRadius: "6px" }}>{o.estado}</span>} />
                     <DetalleItem label="Paciente" value={o.nombres ? `${o.nombres} ${o.apellidos}` : `#${o.id_paciente}`} />
                     <DetalleItem label="Cédula"   value={o.cedula || "—"} />
                     <DetalleItem label="Total"    value={`$${parseFloat(o.total || 0).toFixed(2)}`} />
@@ -570,66 +498,189 @@ export default function ModuloCaja() {
         </Overlay>
       )}
 
-      {/* Modal Cobro */}
+      {/* ══════════ MODAL COBRO (con pagos mixtos) ══════════ */}
       {showCobro && (
         <Overlay onClose={() => !procesando && setShowCobro(null)}>
-          <ModalHeader title="REGISTRAR" titleOrange="COBRO" subtitle={`Orden: ${showCobro.numero_ticket || `#${showCobro.id_orden}`}`} onClose={() => !procesando && setShowCobro(null)} />
+          <ModalHeader
+            title="REGISTRAR"
+            titleOrange="COBRO"
+            subtitle={`Orden: ${showCobro.numero_ticket || `#${showCobro.id_orden}`}`}
+            onClose={() => !procesando && setShowCobro(null)}
+          />
           <div style={S.modalBody}>
+
+            {/* Info del paciente + total */}
             <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "1rem", marginBottom: "1.25rem", border: "1px solid #F1F5F9" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <p style={{ fontFamily: FONTC, fontSize: "0.68rem", color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.2rem" }}>Paciente</p>
-                  <p style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: DARK, margin: 0 }}>{showCobro.nombres ? `${showCobro.nombres} ${showCobro.apellidos}` : `#${showCobro.id_paciente}`}</p>
+                  <p style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: DARK, margin: 0 }}>
+                    {showCobro.nombres ? `${showCobro.nombres} ${showCobro.apellidos}` : `#${showCobro.id_paciente}`}
+                  </p>
                   <p style={{ fontFamily: FONT, fontSize: "0.78rem", color: "#6B7280", margin: "0.15rem 0 0" }}>CI: {showCobro.cedula || "—"}</p>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <p style={{ fontFamily: FONTC, fontSize: "0.68rem", color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.2rem" }}>Total Orden</p>
-                  <p style={{ fontFamily: FONTC, fontSize: "1.4rem", fontWeight: 800, color: "#10B981", margin: 0 }}>${parseFloat(showCobro.total || 0).toFixed(2)}</p>
+                  <p style={{ fontFamily: FONTC, fontSize: "0.68rem", color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.2rem" }}>Total a Cobrar</p>
+                  <p style={{ fontFamily: FONTC, fontSize: "1.5rem", fontWeight: 800, color: "#10B981", margin: 0 }}>
+                    ${parseFloat(showCobro.total || 0).toFixed(2)}
+                  </p>
                 </div>
               </div>
             </div>
 
             {msg && <Alert msg={msg} />}
 
-            <div style={{ marginBottom: "1rem" }}>
-              <label style={S.label}>Monto a Cobrar *</label>
-              <input type="number" step="0.01" min="0" value={formCobro.monto} onChange={e => setFormCobro(f => ({ ...f, monto: e.target.value }))} style={{ ...S.input, width: "100%" }} placeholder="0.00" />
-            </div>
-
-            <div style={{ marginBottom: "1.5rem" }}>
-              <label style={S.label}>Método de Pago *</label>
+            {/* Selector modo pago */}
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={S.label}>Modo de Pago</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-                {METODOS.map(m => {
-                  const activo = formCobro.metodo_pago === m;
+                {[
+                  { key: "simple", label: "💳 Un solo método" },
+                  { key: "mixto",  label: "🔀 Pago mixto" },
+                ].map(({ key, label }) => {
+                  const activo = formCobro.modoPago === key;
                   return (
-                   <button 
-                  key={m} 
-                  type="button" 
-                  onClick={() => setFormCobro(f => ({ ...f, metodo_pago: m }))} 
-                  style={{ 
-                    padding: "0.65rem", 
-                    borderRadius: "8px", 
-                    border: `1.5px solid ${activo ? ORANGE : "#E5E7EB"}`, 
-                    background: activo ? `${ORANGE}15` : "#FAFAFA", 
-                    color: activo ? ORANGE : "#374151", 
-                    fontFamily: FONTC, 
-                    fontWeight: activo ? 700 : 500, 
-                    fontSize: "0.82rem", 
-                    cursor: "pointer", 
-                    transition: "all 0.15s" 
-                  }}
-                >
-                  {m === "Efectivo" ? "💵" : "🏦"} {m}
-                </button>
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => cambiarModo(key)}
+                      style={{
+                        padding: "0.65rem",
+                        borderRadius: "8px",
+                        border: `1.5px solid ${activo ? ORANGE : "#E5E7EB"}`,
+                        background: activo ? `${ORANGE}15` : "#FAFAFA",
+                        color: activo ? ORANGE : "#374151",
+                        fontFamily: FONTC,
+                        fontWeight: activo ? 700 : 500,
+                        fontSize: "0.82rem",
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {label}
+                    </button>
                   );
                 })}
               </div>
+              {formCobro.modoPago === "mixto" && (
+                <p style={{ fontSize: "0.75rem", color: "#6B7280", margin: "0.5rem 0 0", fontFamily: FONT }}>
+                  Divide el cobro entre Efectivo y Transferencia. La suma debe ser igual al total.
+                </p>
+              )}
             </div>
 
-            <div style={{ display: "flex", gap: "0.75rem" }}>
-              <button onClick={handleProcesarCobro} disabled={procesando} style={{ ...S.btnFull, flex: 1, opacity: procesando ? 0.7 : 1 }}>{procesando ? "Procesando..." : "✅ CONFIRMAR COBRO"}</button>
+            {/* Partes del pago */}
+            {formCobro.partes.map((parte, idx) => (
+              <PagoParteSub
+                key={idx}
+                parte={parte}
+                idx={idx}
+                esMixto={formCobro.modoPago === "mixto"}
+                totalOrden={parseFloat(showCobro.total || 0)}
+                onChange={actualizarParte}
+              />
+            ))}
+
+            {/* Resumen si es mixto */}
+            {formCobro.modoPago === "mixto" && (
+              <ResumenMixto partes={formCobro.partes} total={parseFloat(showCobro.total || 0)} />
+            )}
+
+            {/* Botones */}
+            <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.25rem" }}>
+              <button
+                onClick={handleProcesarCobro}
+                disabled={procesando}
+                style={{ ...S.btnFull, flex: 1, opacity: procesando ? 0.7 : 1 }}
+              >
+                {procesando ? "Procesando..." : "✅ CONFIRMAR COBRO"}
+              </button>
               <button onClick={() => setShowCobro(null)} disabled={procesando} style={S.btnCancel}>Cancelar</button>
             </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ MODAL COMPROBANTE ══════════ */}
+      {comprobante && (
+        <Overlay onClose={() => setComprobante(null)}>
+          <ModalHeader title="COMPROBANTE" titleOrange="DE PAGO" subtitle={comprobante.orden.numero_ticket} onClose={() => setComprobante(null)} />
+          <div style={S.modalBody}>
+            <ComprobanteView comprobante={comprobante} onCerrar={() => setComprobante(null)} />
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ MODAL QR ══════════ */}
+      {showQR && (
+        <Overlay onClose={cerrarQR}>
+          <ModalHeader title="LEER" titleOrange="QR / TICKET" subtitle="Escanea el código del paciente o ingresa el ticket manual" onClose={cerrarQR} />
+          <div style={S.modalBody}>
+            {qrLoading && (
+              <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
+                <div style={S.spinner} />
+                <p style={{ color: "#6B7280", fontSize: "0.85rem", marginTop: "0.75rem" }}>Buscando orden...</p>
+              </div>
+            )}
+            {qrInvalido && !qrLoading && (
+              <div style={S.qrInvalidBox}>
+                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>⛔</div>
+                <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 800, color: "#991B1B", margin: "0 0 0.5rem", textAlign: "center" }}>CÓDIGO QR NO VÁLIDO</p>
+                <p style={{ fontSize: "0.85rem", color: "#B91C1C", textAlign: "center", margin: "0 0 1rem", lineHeight: 1.6 }}>Este código QR ya no es válido.</p>
+                <button onClick={() => { setQrInvalido(false); setQrError(""); setOrdenEscaneada(null); setTicketManual(""); setModoQR("manual"); }} style={{ ...S.btnFull, marginBottom: "0.5rem" }}>
+                  ⌨️ BUSCAR POR NÚMERO DE TICKET
+                </button>
+                <button onClick={cerrarQR} style={{ ...S.btnCancel, width: "100%" }}>Cerrar</button>
+              </div>
+            )}
+            {qrError && !qrInvalido && !qrLoading && (
+              <div style={S.alertError}>⚠️ {qrError}</div>
+            )}
+            {showQRAcciones && ordenEscaneada && !qrLoading && (
+              <PanelAccionesQR
+                data={ordenEscaneada}
+                onCobrar={(o) => { cerrarQR(); abrirCobro(o); }}
+                onVerDetalle={(o) => { cerrarQR(); setShowDetalle(o); }}
+                onNuevoScan={() => {
+                  setOrdenEscaneada(null); setShowQRAcciones(false);
+                  setQrError(""); setQrInvalido(false); setTicketManual("");
+                  if (modoQR === "camara") iniciarCamara();
+                }}
+                onCerrar={cerrarQR}
+              />
+            )}
+            {!showQRAcciones && !qrInvalido && !qrLoading && (
+              <>
+                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+                  {["camara", "manual"].map(m => (
+                    <button key={m} onClick={() => { setModoQR(m); setOrdenEscaneada(null); setQrError(""); setQrInvalido(false); }} style={{ flex: 1, padding: "0.55rem", borderRadius: "8px", border: "1.5px solid", fontFamily: FONTC, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", letterSpacing: "0.05em", borderColor: modoQR === m ? ORANGE : "#E5E7EB", background: modoQR === m ? ORANGE : "#F8FAFC", color: modoQR === m ? "#FFF" : "#6B7280" }}>
+                      {m === "camara" ? "📷 CÁMARA" : "⌨️ MANUAL"}
+                    </button>
+                  ))}
+                </div>
+                {modoQR === "camara" ? (
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ position: "relative", background: "#0F172A", borderRadius: "12px", overflow: "hidden", aspectRatio: "1", maxWidth: "280px", margin: "0 auto 1rem" }}>
+                      <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                        <div style={{ width: "60%", height: "60%", border: `3px solid ${ORANGE}`, borderRadius: "10px", boxShadow: `0 0 0 2000px rgba(0,0,0,0.35)` }} />
+                      </div>
+                    </div>
+                    <p style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: "1rem" }}>Apunta la cámara al código QR</p>
+                    <button onClick={cerrarQR} style={S.btnCancel}>Cerrar Cámara</button>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={S.label}>Código de Ticket (Ej: LAB-XXXX)</label>
+                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+                      <input type="text" placeholder="LAB-XXXX" value={ticketManual} onChange={e => setTicketManual(e.target.value)} onKeyDown={e => e.key === "Enter" && buscarManual()} style={{ ...S.input, flex: 1 }} />
+                      <button onClick={buscarManual} style={S.btnFull2}>BUSCAR</button>
+                    </div>
+                    <button onClick={cerrarQR} style={{ ...S.btnCancel, width: "100%" }}>Cerrar</button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </Overlay>
       )}
@@ -637,8 +688,234 @@ export default function ModuloCaja() {
   );
 }
 
-// ─── SUB-COMPONENTES Y ESTILOS (Sin cambios significativos, se omiten aquí para legibilidad pero debes mantenerlos igual que en tu código original) ────
-// ─── PANEL ACCIONES POST-ESCANEO QR ──────────────────────────────────────────
+// ─── SUB-COMPONENTE: PARTE DE PAGO ───────────────────────────────────────────
+function PagoParteSub({ parte, idx, esMixto, totalOrden, onChange }) {
+  const titulo = esMixto ? `Parte ${idx + 1}` : "Método de Pago";
+  return (
+    <div style={{
+      background: "#F8FAFC",
+      border: "1.5px solid #E5E7EB",
+      borderRadius: "10px",
+      padding: "1rem",
+      marginBottom: "0.85rem",
+    }}>
+      <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.75rem" }}>
+        {titulo}
+      </p>
+
+      {/* Selector de método */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem", marginBottom: "0.75rem" }}>
+        {METODOS.map(m => {
+          // En modo mixto no permitir repetir el mismo método en ambas partes
+          const activo = parte.metodo_pago === m;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange(idx, "metodo_pago", m)}
+              style={{
+                padding: "0.55rem",
+                borderRadius: "7px",
+                border: `1.5px solid ${activo ? ORANGE : "#E5E7EB"}`,
+                background: activo ? `${ORANGE}15` : "#FFF",
+                color: activo ? ORANGE : "#374151",
+                fontFamily: FONTC,
+                fontWeight: activo ? 700 : 500,
+                fontSize: "0.8rem",
+                cursor: "pointer",
+              }}
+            >
+              {m === "Efectivo" ? "💵" : "🏦"} {m}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Monto */}
+      <div style={{ marginBottom: parte.metodo_pago === "Transferencia" ? "0.75rem" : 0 }}>
+        <label style={S.label}>Monto *</label>
+        <input
+          type="number"
+          step="0.01"
+          min="0.01"
+          max={totalOrden}
+          value={parte.monto}
+          onChange={e => onChange(idx, "monto", e.target.value)}
+          style={{ ...S.input, width: "100%" }}
+          placeholder="0.00"
+        />
+      </div>
+
+      {/* Referencia (solo Transferencia) */}
+      {parte.metodo_pago === "Transferencia" && (
+        <div>
+          <label style={S.label}>N° de Referencia / Comprobante *</label>
+          <input
+            type="text"
+            value={parte.referencia}
+            onChange={e => onChange(idx, "referencia", e.target.value)}
+            style={{ ...S.input, width: "100%", textTransform: "uppercase" }}
+            placeholder="Ej: TRF-20250629-001"
+          />
+          <p style={{ fontSize: "0.73rem", color: "#6B7280", margin: "0.3rem 0 0", fontFamily: FONT }}>
+            Ingresa el número de transacción que aparece en el comprobante bancario.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SUB-COMPONENTE: RESUMEN MIXTO ───────────────────────────────────────────
+function ResumenMixto({ partes, total }) {
+  const suma = partes.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+  const diff = Math.abs(suma - total);
+  const ok   = diff <= 0.01;
+
+  return (
+    <div style={{
+      background: ok ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)",
+      border: `1.5px solid ${ok ? "#BBF7D0" : "#FCA5A5"}`,
+      borderRadius: "10px",
+      padding: "0.85rem 1rem",
+    }}>
+      <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: ok ? "#065F46" : "#991B1B", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
+        {ok ? "✓ Desglose correcto" : "⚠ La suma no coincide con el total"}
+      </p>
+      {partes.map((p, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#1F2937", marginBottom: "0.2rem" }}>
+          <span>{p.metodo_pago || "—"}{p.referencia ? ` (${p.referencia.toUpperCase()})` : ""}</span>
+          <span style={{ fontFamily: FONTC, fontWeight: 700 }}>${parseFloat(p.monto || 0).toFixed(2)}</span>
+        </div>
+      ))}
+      <div style={{ borderTop: "1px dashed #D1FAE5", marginTop: "0.5rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: ok ? "#065F46" : "#991B1B" }}>
+        <span>SUMA</span>
+        <span>${suma.toFixed(2)}</span>
+      </div>
+      {!ok && (
+        <p style={{ fontSize: "0.78rem", color: "#DC2626", margin: "0.4rem 0 0", fontFamily: FONT }}>
+          Diferencia: ${diff.toFixed(2)}. Ajusta los montos hasta que sumen ${total.toFixed(2)}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── SUB-COMPONENTE: COMPROBANTE ─────────────────────────────────────────────
+function ComprobanteView({ comprobante, onCerrar }) {
+  const { orden, partes, total, fecha, esMixto } = comprobante;
+
+  const imprimir = () => {
+    const contenido = document.getElementById("comprobante-print");
+    const ventana = window.open("", "_blank", "width=400,height=600");
+    ventana.document.write(`
+      <html>
+        <head>
+          <title>Comprobante de Pago - ${orden.numero_ticket}</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Courier New', monospace; font-size: 12px; padding: 20px; max-width: 320px; margin: 0 auto; }
+            .title { font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+            .subtitle { font-size: 10px; text-align: center; color: #555; margin-bottom: 12px; }
+            .divider { border-top: 1px dashed #999; margin: 8px 0; }
+            .row { display: flex; justify-content: space-between; margin: 3px 0; }
+            .label { color: #555; }
+            .total-row { display: flex; justify-content: space-between; font-size: 15px; font-weight: bold; margin-top: 4px; }
+            .footer { text-align: center; font-size: 10px; color: #888; margin-top: 12px; }
+          </style>
+        </head>
+        <body>
+          ${contenido.innerHTML}
+          <script>window.onload = function(){ window.print(); window.close(); }<\/script>
+        </body>
+      </html>
+    `);
+    ventana.document.close();
+  };
+
+  return (
+    <>
+      {/* Vista previa */}
+      <div id="comprobante-print" style={{
+        fontFamily: "'Courier New', monospace",
+        background: "#FAFAFA",
+        border: "1px dashed #D1D5DB",
+        borderRadius: "10px",
+        padding: "1.25rem",
+        marginBottom: "1.25rem",
+        fontSize: "0.82rem",
+        lineHeight: 1.6,
+      }}>
+        <p style={{ fontSize: "1rem", fontWeight: "bold", textAlign: "center", margin: "0 0 2px" }}>
+          LABORATORIO CLÍNICO
+        </p>
+        <p style={{ fontSize: "0.7rem", textAlign: "center", color: "#6B7280", marginBottom: "0.75rem" }}>
+          COMPROBANTE DE PAGO
+        </p>
+
+        <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.5rem 0" }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span style={{ color: "#6B7280" }}>Ticket:</span>
+          <strong>{orden.numero_ticket || `#${orden.id_orden}`}</strong>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span style={{ color: "#6B7280" }}>Paciente:</span>
+          <span>{orden.nombres ? `${orden.nombres} ${orden.apellidos}` : `#${orden.id_paciente}`}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span style={{ color: "#6B7280" }}>Cédula:</span>
+          <span>{orden.cedula || "—"}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span style={{ color: "#6B7280" }}>Fecha:</span>
+          <span>{fecha.toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+        </div>
+
+        <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.5rem 0" }} />
+
+        <p style={{ fontWeight: "bold", marginBottom: "4px", fontSize: "0.75rem", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {esMixto ? "Detalle de Pago Mixto" : "Método de Pago"}
+        </p>
+        {partes.map((p, i) => (
+          <div key={i} style={{ marginBottom: "4px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{p.metodo_pago}</span>
+              <strong>${parseFloat(p.monto || 0).toFixed(2)}</strong>
+            </div>
+            {p.metodo_pago === "Transferencia" && p.referencia && (
+              <div style={{ fontSize: "0.72rem", color: "#6B7280", paddingLeft: "0.5rem" }}>
+                REF: {p.referencia.toUpperCase()}
+              </div>
+            )}
+          </div>
+        ))}
+
+        <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.5rem 0" }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: "bold" }}>
+          <span>TOTAL PAGADO:</span>
+          <span>${parseFloat(total || 0).toFixed(2)}</span>
+        </div>
+
+        <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.75rem 0 0.5rem" }} />
+        <p style={{ textAlign: "center", fontSize: "0.7rem", color: "#9CA3AF" }}>
+          Gracias por su pago. Conserve este comprobante.
+        </p>
+      </div>
+
+      {/* Botones */}
+      <div style={{ display: "flex", gap: "0.75rem" }}>
+        <button onClick={imprimir} style={{ ...S.btnFull, flex: 1, background: "#1D4ED8" }}>
+          🖨️ IMPRIMIR COMPROBANTE
+        </button>
+        <button onClick={onCerrar} style={S.btnCancel}>Cerrar</button>
+      </div>
+    </>
+  );
+}
+
+// ─── PANEL QR ─────────────────────────────────────────────────────────────────
 function PanelAccionesQR({ data, onCobrar, onVerDetalle, onNuevoScan, onCerrar }) {
   const o = data.orden || data;
   const detalles = data.examenes || data.detalles || [];
@@ -648,31 +925,21 @@ function PanelAccionesQR({ data, onCobrar, onVerDetalle, onNuevoScan, onCerrar }
   return (
     <div>
       <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem" }}>
-        <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#16A34A", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.3rem" }}>
-          ✓ ORDEN ENCONTRADA
-        </p>
+        <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#16A34A", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.3rem" }}>✓ ORDEN ENCONTRADA</p>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 700, color: DARK, margin: 0 }}>
-              {o.nombres} {o.apellidos}
-            </p>
-            <p style={{ fontFamily: FONT, fontSize: "0.78rem", color: "#6B7280", margin: "0.1rem 0 0" }}>
-              Cédula: {o.cedula || "—"} · Ticket: {o.numero_ticket}
-            </p>
+            <p style={{ fontFamily: FONTC, fontSize: "1.1rem", fontWeight: 700, color: "#1F2937", margin: 0 }}>{o.nombres} {o.apellidos}</p>
+            <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#6B7280", margin: "0.1rem 0 0" }}>Cédula: {o.cedula || "—"} · Ticket: {o.numero_ticket}</p>
           </div>
-          <span style={{ background: ec.bg, color: ec.color, padding: "0.3rem 0.6rem", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, fontFamily: FONTC, textTransform: "uppercase" }}>
-            {o.estado}
-          </span>
+          <span style={{ background: ec.bg, color: ec.color, padding: "0.3rem 0.6rem", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, fontFamily: FONTC, textTransform: "uppercase" }}>{o.estado}</span>
         </div>
       </div>
 
       <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "0.85rem", border: "1px solid #E5E7EB", marginBottom: "1rem" }}>
-        <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
-          Exámenes en la orden
-        </p>
+        <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>Exámenes en la orden</p>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "150px", overflowY: "auto" }}>
           {detalles.map((d, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: DARK }}>
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "#1F2937" }}>
               <span>• {d.nombre_examen}</span>
               <span style={{ fontWeight: 600 }}>${parseFloat(d.subtotal || d.precio || 0).toFixed(2)}</span>
             </div>
@@ -680,7 +947,7 @@ function PanelAccionesQR({ data, onCobrar, onVerDetalle, onNuevoScan, onCerrar }
         </div>
         <div style={{ borderTop: "1px dashed #E5E7EB", marginTop: "0.6rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontSize: "1rem", fontWeight: 700 }}>
           <span>TOTAL:</span>
-          <span style={{ color: ORANGE }}>${parseFloat(o.total || 0).toFixed(2)}</span>
+          <span style={{ color: "#E88B3A" }}>${parseFloat(o.total || 0).toFixed(2)}</span>
         </div>
       </div>
 
@@ -690,23 +957,15 @@ function PanelAccionesQR({ data, onCobrar, onVerDetalle, onNuevoScan, onCerrar }
         </button>
       ) : (
         <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "0.75rem", border: "1px solid #E5E7EB", textAlign: "center", marginBottom: "0.5rem" }}>
-          <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#6B7280", margin: 0 }}>
+          <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "#6B7280", margin: 0 }}>
             Esta orden está en estado <strong>{o.estado}</strong>, no requiere cobro.
           </p>
         </div>
       )}
-
-      <button onClick={() => onVerDetalle(o)} style={{ ...btnAccionQR, background: "#F3F4F6", color: DARK, borderColor: "#E5E7EB", marginBottom: "0.5rem" }}>
-        👁️ Ver detalle completo
-      </button>
-
+      <button onClick={() => onVerDetalle(o)} style={{ ...btnAccionQR, background: "#F3F4F6", color: "#1F2937", borderColor: "#E5E7EB", marginBottom: "0.5rem" }}>👁️ Ver detalle completo</button>
       <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button onClick={onNuevoScan} style={{ ...btnAccionQR, flex: 1, textAlign: "center", background: "#F3F4F6", color: "#374151", borderColor: "#E5E7EB" }}>
-          🔄 Buscar otro
-        </button>
-        <button onClick={onCerrar} style={{ ...btnAccionQR, flex: 1, textAlign: "center", background: "#FFF", color: "#6B7280", borderColor: "#E5E7EB" }}>
-          Cerrar
-        </button>
+        <button onClick={onNuevoScan} style={{ ...btnAccionQR, flex: 1, textAlign: "center", background: "#F3F4F6", color: "#374151", borderColor: "#E5E7EB" }}>🔄 Buscar otro</button>
+        <button onClick={onCerrar} style={{ ...btnAccionQR, flex: 1, textAlign: "center", background: "#FFF", color: "#6B7280", borderColor: "#E5E7EB" }}>Cerrar</button>
       </div>
     </div>
   );

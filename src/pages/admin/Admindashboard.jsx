@@ -474,7 +474,7 @@ function ModalPacientes({ open, onClose }) {
       <SearchBox value={q} onChange={setQ} placeholder="Buscar por nombre o cédula…" />
       {loading ? <p style={loadingTxt}>Cargando…</p> : error ? <p style={{ ...emptyTxt, color: "#EF4444" }}>{error}</p> : filtrado.length === 0 ? <p style={emptyTxt}>No se encontraron pacientes</p> : (
         <table style={tbl}>
-          <thead><tr>{["Nombre","Cédula","Teléfono","Correo","Registrado"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["Nombre","Cédula","Teléfono","Correo"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
             {filtrado.slice(0, 50).map((p, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #F1F5F9", background: i % 2 ? "#FAFAFA" : "#FFF" }}>

@@ -144,6 +144,62 @@ function EmptyState({ icon, title, subtitle }) {
   );
 }
 
+// ─── PAGINACIÓN (reutilizable en todas las listas) ───────────────────────────
+function Pagination({ page, totalItems, pageSize, onPageChange }) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (totalItems === 0 || totalPages <= 1) return null;
+
+  const from = (page - 1) * pageSize + 1;
+  const to   = Math.min(page * pageSize, totalItems);
+
+  // Construye el rango de páginas visibles con elipsis (máx. ventana de 1 alrededor de la actual)
+  const delta = 1;
+  const paginas = [];
+  for (let p = 1; p <= totalPages; p++) {
+    if (p === 1 || p === totalPages || (p >= page - delta && p <= page + delta)) {
+      paginas.push(p);
+    } else if (paginas[paginas.length - 1] !== "…") {
+      paginas.push("…");
+    }
+  }
+
+  const navBtn = (disabled) => ({
+    padding: "0.35rem 0.6rem", borderRadius: "6px", border: "1px solid #E2E8F0",
+    background: "#F8FAFC", color: "#374151", cursor: disabled ? "not-allowed" : "pointer",
+    fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", opacity: disabled ? 0.4 : 1,
+    minWidth: "30px", height: "30px",
+  });
+  const pageBtn = (activo) => ({
+    ...navBtn(false),
+    background: activo ? "#1E293B" : "#F8FAFC",
+    color: activo ? "#FFF" : "#374151",
+    borderColor: activo ? "#1E293B" : "#E2E8F0",
+    fontWeight: activo ? 700 : 600,
+  });
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      flexWrap: "wrap", gap: "0.75rem", marginTop: "1rem", padding: "0.25rem 0.1rem",
+    }}>
+      <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
+        Mostrando {from}–{to} de {totalItems}
+      </span>
+      <div style={{ display: "flex", gap: "0.3rem", alignItems: "center" }}>
+        <button title="Primera página" onClick={() => onPageChange(1)} disabled={page === 1} style={navBtn(page === 1)}>«</button>
+        <button title="Anterior" onClick={() => onPageChange(page - 1)} disabled={page === 1} style={navBtn(page === 1)}>‹</button>
+        {paginas.map((p, i) => p === "…" ? (
+          <span key={`el-${i}`} style={{ padding: "0 0.25rem", color: "#D1D5DB", fontSize: "0.8rem" }}>…</span>
+        ) : (
+          <button key={p} onClick={() => onPageChange(p)} style={pageBtn(p === page)}>{p}</button>
+        ))}
+        <button title="Siguiente" onClick={() => onPageChange(page + 1)} disabled={page === totalPages} style={navBtn(page === totalPages)}>›</button>
+        <button title="Última página" onClick={() => onPageChange(totalPages)} disabled={page === totalPages} style={navBtn(page === totalPages)}>»</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── FORMULARIO INSUMO ────────────────────────────────────────────────────────
 function FormInsumo({ initial, categorias, tiposMuestra = [], onSave, onClose, onAlert }) {
   const [f, setF] = useState({
@@ -649,7 +705,7 @@ export default function AdminInventario() {
   const [uaMotivoRechazo, setUaMotivoRechazo] = useState("");
   const [uaFiltro,        setUaFiltro]        = useState("todos");
   const [tab,       setTab]       = useState("insumos");
-  const [buscar,    setBuscar]    = useState({ insumos: "", categorias: "", recetas: "", movimientos: "" });
+  const [buscar,    setBuscar]    = useState({ insumos: "", categorias: "", recetas: "", movimientos: "", tipos: "", alertas: "" });
   const [modal,     setModal]     = useState(null);
   const [sel,       setSel]       = useState(null);
   const [toast,     setToast]     = useState(null);
@@ -664,9 +720,19 @@ export default function AdminInventario() {
   const [showReporte, setShowReporte] = useState(false);
   // Filtro tipo movimiento
   const [tipoMovFiltro, setTipoMovFiltro] = useState("TODOS");
-  // Paginación movimientos
-  const MOV_PAGE = 50;
-  const [movPage, setMovPage] = useState(1);
+  // ── Filtros adicionales del inventario (pestaña Insumos) ──────────────────
+  const [catFiltro,    setCatFiltro]    = useState("TODOS"); // id_categoria_insumo | "TODOS"
+  const [estadoFiltro, setEstadoFiltro] = useState("TODOS"); // TODOS | OK | BAJO | SIN
+  // ── Paginación (una página por cada lista de registros) ───────────────────
+  const PAGE_SIZE = 10;
+  const MOV_PAGE_SIZE = 15;
+  const [insumosPage, setInsumosPage] = useState(1);
+  const [catsPage,     setCatsPage]    = useState(1);
+  const [tiposPage,    setTiposPage]   = useState(1);
+  const [recetasPage,  setRecetasPage] = useState(1);
+  const [alertasPage,  setAlertasPage] = useState(1);
+  const [usosPage,     setUsosPage]    = useState(1);
+  const [movPage,      setMovPage]     = useState(1);
   // Última actualización
   const [ultimaActualizacion, setUltimaActualizacion] = useState(null);
 
@@ -802,19 +868,33 @@ export default function AdminInventario() {
   // ── FILTROS ───────────────────────────────────────────────────────────────
   const q = getBuscar(tab);
 
-  const insumosFiltrados = insumos.filter(i =>
-    i.nombre?.toLowerCase().includes(getBuscar("insumos").toLowerCase()) ||
-    i.categoria_nombre?.toLowerCase().includes(getBuscar("insumos").toLowerCase())
-  );
+  const insumosFiltrados = insumos.filter(i => {
+    const texto = getBuscar("insumos").toLowerCase();
+    const textoOk = !texto ||
+      i.nombre?.toLowerCase().includes(texto) ||
+      i.categoria_nombre?.toLowerCase().includes(texto);
+    const catOk = catFiltro === "TODOS" || String(i.id_categoria_insumo) === String(catFiltro);
+    const estado = i.stock_actual <= 0 ? "SIN" : i.stock_actual <= i.stock_minimo ? "BAJO" : "OK";
+    const estadoOk = estadoFiltro === "TODOS" || estado === estadoFiltro;
+    return textoOk && catOk && estadoOk;
+  });
 
   const catsFiltradas = categorias.filter(c =>
     c.nombre?.toLowerCase().includes(getBuscar("categorias").toLowerCase()) ||
     (c.descripcion || "").toLowerCase().includes(getBuscar("categorias").toLowerCase())
   );
 
+  const tiposFiltrados = tiposMuestra.filter(t =>
+    t.nombre?.toLowerCase().includes(getBuscar("tipos").toLowerCase())
+  );
+
   const recetasFiltradas = recetas.filter(r =>
     (r.nombre_examen || "").toLowerCase().includes(getBuscar("recetas").toLowerCase()) ||
     (r.nombre_insumo || "").toLowerCase().includes(getBuscar("recetas").toLowerCase())
+  );
+
+  const alertasFiltradas = alertas.filter(a =>
+    (a.insumo || "").toLowerCase().includes(getBuscar("alertas").toLowerCase())
   );
 
   const movsFiltrados = movimientos.filter(m => {
@@ -827,9 +907,15 @@ export default function AdminInventario() {
     return textoOk && tipoOk;
   });
 
-  // Paginación movimientos
-  const movsPaginados   = movsFiltrados.slice(0, movPage * MOV_PAGE);
-  const hayMasMov       = movsFiltrados.length > movPage * MOV_PAGE;
+  // ── PAGINACIÓN (slice por página, una por cada lista) ──────────────────────
+  const paginar = (arr, page, size = PAGE_SIZE) => arr.slice((page - 1) * size, page * size);
+
+  const insumosPaginados = paginar(insumosFiltrados, insumosPage);
+  const catsPaginadas    = paginar(catsFiltradas, catsPage);
+  const tiposPaginados   = paginar(tiposFiltrados, tiposPage);
+  const recetasPaginadas = paginar(recetasFiltradas, recetasPage);
+  const alertasPaginadas = paginar(alertasFiltradas, alertasPage);
+  const movsPaginados    = paginar(movsFiltrados, movPage, MOV_PAGE_SIZE);
 
   const criticos = insumos.filter(i => i.stock_actual <= i.stock_minimo).length;
 
@@ -937,14 +1023,37 @@ export default function AdminInventario() {
           {/* ═══ PESTAÑA 1 — INSUMOS ══════════════════════════════════════════ */}
           {tab === "insumos" && (
             <>
-              <div style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+              <div style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                 <input
                   placeholder="🔍 Buscar por nombre o categoría…"
                   value={getBuscar("insumos")}
-                  onChange={e => setBuscarTab("insumos", e.target.value)}
+                  onChange={e => { setBuscarTab("insumos", e.target.value); setInsumosPage(1); }}
                   style={searchInput}
                 />
-                <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
+                {/* Filtro por categoría */}
+                <select
+                  value={catFiltro}
+                  onChange={e => { setCatFiltro(e.target.value); setInsumosPage(1); }}
+                  style={{ ...finput, width: "190px" }}
+                >
+                  <option value="TODOS">Todas las categorías</option>
+                  {categorias.map(c => (
+                    <option key={c.id_categoria_insumo} value={c.id_categoria_insumo}>{c.nombre}</option>
+                  ))}
+                </select>
+                {/* Filtro por estado de stock */}
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  {[["TODOS", "#374151", "#F8FAFC"], ["OK", "#065F46", "#D1FAE5"], ["BAJO", "#92400E", "#FEF3C7"], ["SIN", "#991B1B", "#FEE2E2"]].map(([val, color, bg]) => (
+                    <button key={val} onClick={() => { setEstadoFiltro(val); setInsumosPage(1); }} style={{
+                      padding: "0.4rem 0.75rem", borderRadius: "8px", cursor: "pointer",
+                      fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.72rem",
+                      border: estadoFiltro === val ? `1.5px solid ${color}` : "1px solid #E2E8F0",
+                      background: estadoFiltro === val ? bg : "#F8FAFC",
+                      color: estadoFiltro === val ? color : "#9CA3AF",
+                    }}>{val === "SIN" ? "SIN STOCK" : val}</button>
+                  ))}
+                </div>
+                <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF", marginLeft: "auto" }}>
                   {insumosFiltrados.length} de {insumos.length}
                 </span>
               </div>
@@ -959,8 +1068,8 @@ export default function AdminInventario() {
                   </thead>
                   <tbody>
                     {insumosFiltrados.length === 0 ? (
-                      <EmptyState icon="📦" title="Sin insumos" subtitle={getBuscar("insumos") ? "Ningún insumo coincide con la búsqueda" : "Usa '+ Nuevo Insumo' para registrar el primero"} />
-                    ) : insumosFiltrados.map(ins => (
+                      <EmptyState icon="📦" title="Sin insumos" subtitle={getBuscar("insumos") || catFiltro !== "TODOS" || estadoFiltro !== "TODOS" ? "Ningún insumo coincide con los filtros" : "Usa '+ Nuevo Insumo' para registrar el primero"} />
+                    ) : insumosPaginados.map(ins => (
                       <tr key={ins.id_insumo} style={{ borderBottom: "1px solid #F1F5F9" }}
                         onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
@@ -1005,6 +1114,7 @@ export default function AdminInventario() {
                   </tbody>
                 </table>
               </div>
+              <Pagination page={insumosPage} totalItems={insumosFiltrados.length} pageSize={PAGE_SIZE} onPageChange={setInsumosPage} />
             </>
           )}
 
@@ -1027,7 +1137,7 @@ export default function AdminInventario() {
                 <input
                   placeholder="🔍 Buscar categoría…"
                   value={getBuscar("categorias")}
-                  onChange={e => setBuscarTab("categorias", e.target.value)}
+                  onChange={e => { setBuscarTab("categorias", e.target.value); setCatsPage(1); }}
                   style={searchInput}
                 />
                 <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
@@ -1048,7 +1158,7 @@ export default function AdminInventario() {
                     {catsFiltradas.length === 0 ? (
                       <EmptyState icon="🏷️" title="Sin categorías"
                         subtitle={categorias.length === 0 ? "Usa '+ Nueva Categoría' para crear la primera" : "Ninguna categoría coincide con la búsqueda"} />
-                    ) : catsFiltradas.map((cat, idx) => {
+                    ) : catsPaginadas.map((cat, idx) => {
                       const vinculados = insumos.filter(i => i.id_categoria_insumo === cat.id_categoria_insumo);
                       const conStockBajo = vinculados.filter(i => i.stock_actual <= i.stock_minimo).length;
                       return (
@@ -1056,7 +1166,7 @@ export default function AdminInventario() {
                           style={{ borderBottom: "1px solid #F1F5F9" }}
                           onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
                           onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                          <td style={{ ...td, color: "#D1D5DB", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>{idx + 1}</td>
+                          <td style={{ ...td, color: "#D1D5DB", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>{(catsPage - 1) * PAGE_SIZE + idx + 1}</td>
                           <td style={td}>
                             <span style={{ fontWeight: 700, color: "#1F2937", fontSize: "0.88rem" }}>{cat.nombre}</span>
                           </td>
@@ -1089,6 +1199,7 @@ export default function AdminInventario() {
                   </tbody>
                 </table>
               </div>
+              <Pagination page={catsPage} totalItems={catsFiltradas.length} pageSize={PAGE_SIZE} onPageChange={setCatsPage} />
 
               {/* Tarjetas resumen */}
               {categorias.length > 0 && (
@@ -1160,6 +1271,19 @@ export default function AdminInventario() {
                 </div>
               </div>
 
+              {/* ── Buscar tipo ── */}
+              <div style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                <input
+                  placeholder="🔍 Buscar tipo de muestra…"
+                  value={getBuscar("tipos")}
+                  onChange={e => { setBuscarTab("tipos", e.target.value); setTiposPage(1); }}
+                  style={searchInput}
+                />
+                <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
+                  {tiposFiltrados.length} de {tiposMuestra.length}
+                </span>
+              </div>
+
               {/* ── Lista de tipos ── */}
               <div style={tableWrap}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1171,16 +1295,16 @@ export default function AdminInventario() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tiposMuestra.length === 0 ? (
+                    {tiposFiltrados.length === 0 ? (
                       <EmptyState icon="🧪" title="Sin tipos de muestra"
-                        subtitle="Agrega los tipos que maneja tu laboratorio (sangre venosa, orina, heces…)" />
-                    ) : tiposMuestra.map((tipo, idx) => {
+                        subtitle={tiposMuestra.length === 0 ? "Agrega los tipos que maneja tu laboratorio (sangre venosa, orina, heces…)" : "Ningún tipo coincide con la búsqueda"} />
+                    ) : tiposPaginados.map((tipo, idx) => {
                       const insumosConTipo = insumos.filter(i => i.id_tipo_muestra === tipo.id_tipo_muestra);
                       return (
                         <tr key={tipo.id_tipo_muestra} style={{ borderBottom: "1px solid #F1F5F9" }}
                           onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
                           onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                          <td style={{ ...td, color: "#D1D5DB", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>{idx + 1}</td>
+                          <td style={{ ...td, color: "#D1D5DB", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>{(tiposPage - 1) * PAGE_SIZE + idx + 1}</td>
                           <td style={td}>
                             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                               <span style={{
@@ -1222,6 +1346,7 @@ export default function AdminInventario() {
                   </tbody>
                 </table>
               </div>
+              <Pagination page={tiposPage} totalItems={tiposFiltrados.length} pageSize={PAGE_SIZE} onPageChange={setTiposPage} />
               {tiposMuestra.length > 0 && (
                 <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.73rem", color: "#9CA3AF", marginTop: "0.6rem" }}>
                   💡 Para asignar un tipo de muestra a un insumo, usa ✏️ Editar en la pestaña Insumos.
@@ -1251,7 +1376,7 @@ export default function AdminInventario() {
                 <input
                   placeholder="🔍 Buscar por examen o insumo…"
                   value={getBuscar("recetas")}
-                  onChange={e => setBuscarTab("recetas", e.target.value)}
+                  onChange={e => { setBuscarTab("recetas", e.target.value); setRecetasPage(1); }}
                   style={searchInput}
                 />
                 <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
@@ -1272,7 +1397,7 @@ export default function AdminInventario() {
                     {recetasFiltradas.length === 0 ? (
                       <EmptyState icon="🔗" title="Sin vinculaciones"
                         subtitle={recetas.length === 0 ? "Usa '+ Nueva Vinculación' para comenzar" : "Ninguna vinculación coincide con la búsqueda"} />
-                    ) : recetasFiltradas.map((r, i) => {
+                    ) : recetasPaginadas.map((r, i) => {
                       const tipoNombre = r.tipo_muestra_nombre;
                       return (
                         <tr key={r.id_examen_insumo || i} style={{ borderBottom: "1px solid #F1F5F9" }}
@@ -1327,6 +1452,7 @@ export default function AdminInventario() {
                   </tbody>
                 </table>
               </div>
+              <Pagination page={recetasPage} totalItems={recetasFiltradas.length} pageSize={PAGE_SIZE} onPageChange={setRecetasPage} />
               <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.72rem", color: "#9CA3AF", marginTop: "0.6rem" }}>
                 💡 El tipo de muestra se define en cada insumo. Para cambiarlo, ve a la pestaña <strong>Insumos → ✏️ Editar</strong>.
               </p>
@@ -1340,7 +1466,7 @@ export default function AdminInventario() {
                 <input
                   placeholder="🔍 Buscar por insumo, responsable u observación…"
                   value={getBuscar("movimientos")}
-                  onChange={e => setBuscarTab("movimientos", e.target.value)}
+                  onChange={e => { setBuscarTab("movimientos", e.target.value); setMovPage(1); }}
                   style={{ ...searchInput, width: "320px" }}
                 />
                 {/* Filtro tipo */}
@@ -1407,15 +1533,7 @@ export default function AdminInventario() {
                 </table>
               </div>
               {/* Paginación */}
-              {hayMasMov && (
-                <div style={{ textAlign: "center", marginTop: "1rem" }}>
-                  <button onClick={() => setMovPage(p => p + 1)} style={{
-                    ...btnSec, padding: "0.5rem 1.5rem", fontSize: "0.82rem",
-                  }}>
-                    Ver más ({movsFiltrados.length - movPage * MOV_PAGE} restantes)
-                  </button>
-                </div>
-              )}
+              <Pagination page={movPage} totalItems={movsFiltrados.length} pageSize={MOV_PAGE_SIZE} onPageChange={setMovPage} />
             </>
           )}
 
@@ -1440,6 +1558,17 @@ export default function AdminInventario() {
                       {alertas.length} insumo{alertas.length !== 1 ? "s" : ""} requiere{alertas.length === 1 ? "" : "n"} reposición urgente.
                     </p>
                   </div>
+                  <div style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                    <input
+                      placeholder="🔍 Buscar insumo en alertas…"
+                      value={getBuscar("alertas")}
+                      onChange={e => { setBuscarTab("alertas", e.target.value); setAlertasPage(1); }}
+                      style={searchInput}
+                    />
+                    <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
+                      {alertasFiltradas.length} de {alertas.length}
+                    </span>
+                  </div>
                   <div style={tableWrap}>
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead>
@@ -1450,7 +1579,9 @@ export default function AdminInventario() {
                         </tr>
                       </thead>
                       <tbody>
-                        {alertas.map((a, i) => {
+                        {alertasFiltradas.length === 0 ? (
+                          <EmptyState icon="⚠️" title="Sin resultados" subtitle="Ninguna alerta coincide con la búsqueda" />
+                        ) : alertasPaginadas.map((a, i) => {
                           const deficit = Math.max(0, a.stock_minimo - a.stock_actual);
                           return (
                             <tr key={a.id_insumo ?? a.id_reporte ?? i} style={{ borderBottom: "1px solid #FEF3C7" }}>
@@ -1470,6 +1601,7 @@ export default function AdminInventario() {
                       </tbody>
                     </table>
                   </div>
+                  <Pagination page={alertasPage} totalItems={alertasFiltradas.length} pageSize={PAGE_SIZE} onPageChange={setAlertasPage} />
                 </>
               )}
             </>
@@ -1498,7 +1630,7 @@ export default function AdminInventario() {
                   { key: "todos",      label: `Todos (${usosAdicionales.length})` },
                   { key: "pendientes", label: `⏳ Pendientes (${pendientesUA})` },
                 ].map(f => (
-                  <button key={f.key} onClick={() => setUaFiltro(f.key)} style={{
+                  <button key={f.key} onClick={() => { setUaFiltro(f.key); setUsosPage(1); }} style={{
                     padding: "0.4rem 0.85rem", border: "none", borderRadius: "6px", cursor: "pointer",
                     fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", fontWeight: 700,
                     background: uaFiltro === f.key ? "#FFF" : "transparent",
@@ -1529,7 +1661,9 @@ export default function AdminInventario() {
                 </p>
               </div>
             );
+            const listaUAPaginada = paginar(listaUA, usosPage);
             return (
+              <>
               <div style={tableWrap}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
@@ -1540,7 +1674,7 @@ export default function AdminInventario() {
                     </tr>
                   </thead>
                   <tbody>
-                    {listaUA.map((r, i) => {
+                    {listaUAPaginada.map((r, i) => {
                       const isPend = r.estado === "USO_ADICIONAL_PENDIENTE";
                       const enProc = uaProcesando === r.id_reporte;
                       const badgeMap = {
@@ -1612,6 +1746,8 @@ export default function AdminInventario() {
                   </tbody>
                 </table>
               </div>
+              <Pagination page={usosPage} totalItems={listaUA.length} pageSize={PAGE_SIZE} onPageChange={setUsosPage} />
+              </>
             );
           })()}
         </>

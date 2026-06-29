@@ -415,32 +415,66 @@ function ModalIngresos({ open, onClose }) {
   );
 }
 
-// ─── MODAL: PACIENTES REGISTRADOS ────────────────────────────────────────────
+// ─── MODAL: PACIENTES REGISTRADOS — con filtro de fechas ────────────────────
 function ModalPacientes({ open, onClose }) {
+  const hoyISO = new Date().toISOString().split("T")[0];
+  const [desde, setDesde]     = useState("");   // vacío = sin límite inferior
+  const [hasta, setHasta]     = useState("");   // vacío = sin límite superior
   const [lista, setLista]     = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState(null);
   const [q, setQ]             = useState("");
 
-  useEffect(() => {
-    if (!open) return;
+  const cargar = useCallback(() => {
     setLoading(true);
-    API.get("/pacientes?limit=100")
+    setError(null);
+    const params = new URLSearchParams({ limit: "100" });
+    if (desde) params.set("desde", desde);
+    if (hasta) params.set("hasta", hasta);
+    API.get(`/pacientes?${params.toString()}`)
       .then((r) => setLista(Array.isArray(r.data) ? r.data : (r.data?.pacientes || [])))
-      .catch(() => setLista([]))
+      .catch(() => setError("No se pudo cargar la lista de pacientes."))
       .finally(() => setLoading(false));
-  }, [open]);
+  }, [desde, hasta]);
+
+  useEffect(() => { if (open) cargar(); }, [open, cargar]);
 
   const filtrado = lista.filter((p) => {
     const term = q.toLowerCase();
     return !term || `${p.nombres} ${p.apellidos}`.toLowerCase().includes(term) || p.cedula?.includes(term);
   });
 
+  const hayFiltro = desde || hasta;
+
   return (
-    <Modal open={open} onClose={onClose} title="👤 Pacientes Registrados" subtitle={`${lista.length} pacientes en el sistema`} wide>
+    <Modal open={open} onClose={onClose} title="👤 Pacientes Registrados" subtitle={`${lista.length} pacientes${hayFiltro ? " en el rango seleccionado" : " en el sistema"}`} wide>
+      {/* ── Filtros de fecha ── */}
+      <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end", marginBottom: "0.85rem", flexWrap: "wrap" }}>
+        <div>
+          <p style={{ ...sectionLabel, marginBottom: "0.25rem" }}>Desde</p>
+          <input type="date" value={desde} max={hasta || hoyISO} onChange={(e) => setDesde(e.target.value)} style={dateInput} />
+        </div>
+        <div>
+          <p style={{ ...sectionLabel, marginBottom: "0.25rem" }}>Hasta</p>
+          <input type="date" value={hasta} min={desde} max={hoyISO} onChange={(e) => setHasta(e.target.value)} style={dateInput} />
+        </div>
+        <button
+          onClick={cargar}
+          style={{ padding: "0.48rem 1rem", background: "#E88B3A", color: "#FFF", border: "none", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}
+        >
+          🔍 Consultar
+        </button>
+        {hayFiltro ? (
+          <button onClick={() => { setDesde(""); setHasta(""); }} style={{ padding: "0.48rem 0.8rem", background: "#F1F5F9", color: "#374151", border: "1px solid #E2E8F0", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", cursor: "pointer" }}>
+            Todos
+          </button>
+        ) : null}
+      </div>
+
       <SearchBox value={q} onChange={setQ} placeholder="Buscar por nombre o cédula…" />
-      {loading ? <p style={loadingTxt}>Cargando…</p> : filtrado.length === 0 ? <p style={emptyTxt}>No se encontraron pacientes</p> : (
+      {loading ? <p style={loadingTxt}>Cargando…</p> : error ? <p style={{ ...emptyTxt, color: "#EF4444" }}>{error}</p> : filtrado.length === 0 ? <p style={emptyTxt}>No se encontraron pacientes</p> : (
         <table style={tbl}>
-          <thead><tr>{["Nombre","Cédula","Teléfono","Correo"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["Nombre","Cédula","Teléfono","Correo","Registrado"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
             {filtrado.slice(0, 50).map((p, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #F1F5F9", background: i % 2 ? "#FAFAFA" : "#FFF" }}>
@@ -448,6 +482,7 @@ function ModalPacientes({ open, onClose }) {
                 <td style={td}>{p.cedula || "—"}</td>
                 <td style={td}>{p.telefono || "—"}</td>
                 <td style={{ ...td, color: "#9CA3AF" }}>{p.correo || "—"}</td>
+                <td style={{ ...td, color: "#9CA3AF" }}>{p.fecha_registro ? new Date(p.fecha_registro).toLocaleDateString("es-EC") : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -790,7 +825,7 @@ export default function AdminDashboard() {
     { icon: "✅", label: "Completados",              value: fmt(k.completados),      accent: "#10B981" },
     { icon: "⚠️", label: "Resultados Críticos",     value: fmt(k.criticos),         accent: "#EF4444", onClick: () => openModal("criticos") },
     { icon: "👥", label: "Usuarios Activos Hoy",    value: fmt(k.activos),          accent: "#8B5CF6", onClick: () => openModal("usuarios") },
-    { icon: "💵", label: "Ingresos del Día",         value: fmtMoney(k.ingresos_hoy), accent: "#10B981", onClick: () => openModal("ingresos") },
+    { icon: "💵", label: "Ingresos",                  value: fmtMoney(k.ingresos_hoy), accent: "#10B981", onClick: () => openModal("ingresos") },
     { icon: "📦", label: "Insumos con Stock Bajo",  value: fmt(k.stock_bajo),       accent: k.stock_bajo > 0 ? "#EF4444" : "#10B981" },
   ];
 

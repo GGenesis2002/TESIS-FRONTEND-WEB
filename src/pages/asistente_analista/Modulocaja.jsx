@@ -961,7 +961,7 @@ function ComprobanteView({ comprobante, onCerrar }) {
         lineHeight: 1.6,
       }}>
         <p style={{ fontSize: "1rem", fontWeight: "bold", textAlign: "center", margin: "0 0 2px" }}>
-          LABORATORIO CLÍNICO
+          LABORATORIO CLÍNICO CARDENAS-GAROFALO
         </p>
         <p style={{ fontSize: "0.7rem", textAlign: "center", color: "#6B7280", marginBottom: "0.75rem" }}>
           COMPROBANTE DE PAGO

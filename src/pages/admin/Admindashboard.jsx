@@ -108,7 +108,7 @@ function ModalUsuarios({ open, onClose }) {
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    API.get("/usuarios/activos-hoy")
+    API.get("/dashboard/usuarios-activos-hoy")
       .then((r) => setUsuarios(Array.isArray(r.data) ? r.data : []))
       .catch(() => setUsuarios([]))
       .finally(() => setLoading(false));
@@ -401,7 +401,7 @@ function ModalCriticos({ open, onClose }) {
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    API.get("/resultados/criticos")
+    API.get("/dashboard/resultados-criticos")
       .then((r) => setLista(Array.isArray(r.data) ? r.data : []))
       .catch(() => setLista([]))
       .finally(() => setLoading(false));

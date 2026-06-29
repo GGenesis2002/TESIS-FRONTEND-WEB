@@ -482,7 +482,6 @@ function ModalPacientes({ open, onClose }) {
                 <td style={td}>{p.cedula || "—"}</td>
                 <td style={td}>{p.telefono || "—"}</td>
                 <td style={{ ...td, color: "#9CA3AF" }}>{p.correo || "—"}</td>
-                <td style={{ ...td, color: "#9CA3AF" }}>{p.fecha_registro ? new Date(p.fecha_registro).toLocaleDateString("es-EC") : "—"}</td>
               </tr>
             ))}
           </tbody>

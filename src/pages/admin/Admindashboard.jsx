@@ -136,7 +136,169 @@ function BarChart({ items, colorFn }) {
   );
 }
 
-// ─── MODAL: USUARIOS ACTIVOS ──────────────────────────────────────────────────
+// ─── DONUT CHART (SVG, sin dependencias) ─────────────────────────────────────
+function DonutChart({ slices, size = 160 }) {
+  const cx = size / 2, cy = size / 2, R = size * 0.38, r = size * 0.22;
+  let angle = -Math.PI / 2;
+  const total = slices.reduce((s, sl) => s + sl.value, 0) || 1;
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: size, height: size, display: "block" }}>
+      {slices.map((sl, i) => {
+        const sweep = (sl.value / total) * 2 * Math.PI;
+        const x1 = cx + R * Math.cos(angle), y1 = cy + R * Math.sin(angle);
+        const x2 = cx + R * Math.cos(angle + sweep), y2 = cy + R * Math.sin(angle + sweep);
+        const xi1 = cx + r * Math.cos(angle), yi1 = cy + r * Math.sin(angle);
+        const xi2 = cx + r * Math.cos(angle + sweep), yi2 = cy + r * Math.sin(angle + sweep);
+        const large = sweep > Math.PI ? 1 : 0;
+        const d = `M ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${r} ${r} 0 ${large} 0 ${xi1} ${yi1} Z`;
+        angle += sweep;
+        return <path key={i} d={d} fill={sl.color} opacity="0.88" />;
+      })}
+      <text x={cx} y={cy - 6} textAnchor="middle" fontSize={size * 0.12} fontWeight="800" fill="#1F2937" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>{total}</text>
+      <text x={cx} y={cy + size * 0.1} textAnchor="middle" fontSize={size * 0.07} fill="#9CA3AF" style={{ fontFamily: "'Barlow', sans-serif" }}>órdenes</text>
+    </svg>
+  );
+}
+
+// ─── SECCIÓN DE GRÁFICOS ──────────────────────────────────────────────────────
+function ChartsSection({ kpis: k, ordenes, alertas }) {
+  // Distribución de estados de órdenes
+  const estadosSlices = [
+    { label: "Por Validar", value: Number(k.pen_val || 0),     color: "#F59E0B" },
+    { label: "Completados", value: Number(k.completados || 0), color: "#10B981" },
+    { label: "En Proceso",  value: Math.max(0, Number(k.ord_hoy || 0) - Number(k.pen_val || 0) - Number(k.completados || 0)), color: "#3B82F6" },
+  ].filter(s => s.value > 0);
+
+  // Top insumos con stock bajo para el mini chart
+  const topInsumos = alertas.slice(0, 6);
+  const maxStock = Math.max(...topInsumos.map(a => a.stock_minimo), 1);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
+
+      {/* ── Distribución de órdenes ── */}
+      <div style={card}>
+        <div style={cardHeader}>
+          <span style={cardTitle}>📊 Estado de Órdenes</span>
+          <span style={{ fontSize: "0.72rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif" }}>Total hoy</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+          <DonutChart slices={estadosSlices.length > 0 ? estadosSlices : [{ value: 1, color: "#F1F5F9" }]} size={140} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+            {[
+              { label: "Por Validar", value: k.pen_val,     color: "#F59E0B" },
+              { label: "Completados", value: k.completados, color: "#10B981" },
+              { label: "Órdenes Hoy", value: k.ord_hoy,     color: "#3B82F6" },
+              { label: "Críticos",    value: k.criticos,    color: "#EF4444" },
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: item.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: "0.75rem", color: "#6B7280", fontFamily: "'Barlow', sans-serif" }}>{item.label}</span>
+                </div>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#1F2937", fontFamily: "'Barlow Condensed', sans-serif" }}>{Number(item.value || 0)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Stock crítico visual ── */}
+      <div style={card}>
+        <div style={cardHeader}>
+          <span style={cardTitle}>📦 Insumos Críticos</span>
+          <span style={{ fontSize: "0.72rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif" }}>{alertas.length} bajo mínimo</span>
+        </div>
+        {alertas.length === 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem 0", gap: "0.4rem" }}>
+            <span style={{ fontSize: "2rem" }}>✅</span>
+            <p style={{ ...emptyTxt, padding: 0 }}>Todos los insumos tienen stock suficiente</p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.25rem" }}>
+            {topInsumos.map((a, i) => {
+              const pct = Math.min(100, Math.round((a.stock_actual / a.stock_minimo) * 100));
+              const color = pct <= 50 ? "#EF4444" : pct <= 80 ? "#F59E0B" : "#10B981";
+              return (
+                <div key={i}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#374151", fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>{a.insumo}</span>
+                    <span style={{ fontSize: "0.72rem", color, fontFamily: "'Barlow', sans-serif", fontWeight: 700 }}>{a.stock_actual}/{a.stock_minimo} {a.unidad_medida}</span>
+                  </div>
+                  <div style={{ height: 7, background: "#F1F5F9", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 4, transition: "width 0.5s ease" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+// ─── MODAL: STOCK BAJO ────────────────────────────────────────────────────────
+function ModalStockBajo({ open, onClose, alertas, onVerInventario }) {
+  const [q, setQ] = useState("");
+  const filtrado = alertas.filter((a) => {
+    const term = q.toLowerCase();
+    return !term || a.insumo?.toLowerCase().includes(term) || a.categoria?.toLowerCase().includes(term);
+  });
+
+  return (
+    <Modal open={open} onClose={onClose} title="📦 Insumos con Stock Bajo" subtitle={`${alertas.length} insumo${alertas.length !== 1 ? "s" : ""} por debajo del mínimo requerido`} wide>
+      <SearchBox value={q} onChange={setQ} placeholder="Buscar insumo o categoría…" />
+      {filtrado.length === 0 ? <p style={emptyTxt}>No hay insumos con stock bajo</p> : (
+        <>
+          <table style={tbl}>
+            <thead>
+              <tr>{["Insumo","Categoría","Stock Actual","Mínimo Req.","Faltante","Nivel"].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {filtrado.map((a, i) => {
+                const pct   = Math.min(100, Math.round((a.stock_actual / a.stock_minimo) * 100));
+                const color = pct <= 50 ? "#EF4444" : "#F59E0B";
+                const falta = a.stock_minimo - a.stock_actual;
+                return (
+                  <tr key={i} style={{ borderBottom: "1px solid #F1F5F9", background: i % 2 === 0 ? "#FFF" : "#FFFBEB" }}>
+                    <td style={td}><strong style={{ color: "#1F2937" }}>{a.insumo}</strong></td>
+                    <td style={{ ...td, color: "#9CA3AF" }}>{a.categoria || "—"}</td>
+                    <td style={td}><span style={{ color, fontWeight: 700 }}>{a.stock_actual} {a.unidad_medida}</span></td>
+                    <td style={{ ...td, color: "#9CA3AF" }}>{a.stock_minimo} {a.unidad_medida}</td>
+                    <td style={td}>
+                      <span style={{ background: "#FEE2E2", color: "#991B1B", padding: "0.15rem 0.6rem", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700 }}>
+                        +{falta} {a.unidad_medida}
+                      </span>
+                    </td>
+                    <td style={{ ...td, minWidth: 90 }}>
+                      <div style={{ height: 7, background: "#F1F5F9", borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 4 }} />
+                      </div>
+                      <span style={{ fontSize: "0.68rem", color, fontWeight: 700 }}>{pct}%</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ marginTop: "1rem", textAlign: "right" }}>
+            <button
+              style={{ background: "#E88B3A", color: "#FFF", border: "none", borderRadius: "8px", padding: "0.5rem 1.2rem", fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}
+              onClick={() => { onClose(); onVerInventario(); }}
+            >
+              Ir a Inventario →
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+
 function ModalUsuarios({ open, onClose }) {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -825,7 +987,7 @@ export default function AdminDashboard() {
     { icon: "⚠️", label: "Resultados Críticos",     value: fmt(k.criticos),         accent: "#EF4444", onClick: () => openModal("criticos") },
     { icon: "👥", label: "Usuarios Activos Hoy",    value: fmt(k.activos),          accent: "#8B5CF6", onClick: () => openModal("usuarios") },
     { icon: "💵", label: "Ingresos",                  value: fmtMoney(k.ingresos_hoy), accent: "#10B981", onClick: () => openModal("ingresos") },
-    { icon: "📦", label: "Insumos con Stock Bajo",  value: fmt(k.stock_bajo),       accent: k.stock_bajo > 0 ? "#EF4444" : "#10B981" },
+    { icon: "📦", label: "Insumos con Stock Bajo",  value: fmt(k.stock_bajo),       accent: k.stock_bajo > 0 ? "#EF4444" : "#10B981", onClick: k.stock_bajo > 0 ? () => openModal("stockBajo") : undefined },
   ];
 
   return (
@@ -838,6 +1000,7 @@ export default function AdminDashboard() {
       <ModalCriticos    open={modal === "criticos"}   onClose={closeModal} />
       <ModalPorValidar  open={modal === "porValidar"} onClose={closeModal} />
       <ModalReportePDF  open={modal === "reporte"}    onClose={closeModal} />
+      <ModalStockBajo   open={modal === "stockBajo"}  onClose={closeModal} alertas={alertas} onVerInventario={() => navigate("/admin/inventario")} />
 
       {/* ── ENCABEZADO ── */}
       <div style={header}>
@@ -859,6 +1022,9 @@ export default function AdminDashboard() {
       <div style={kpiGrid}>
         {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
       </div>
+
+      {/* ── GRÁFICOS ── */}
+      <ChartsSection kpis={k} ordenes={ordenes} alertas={alertas} />
 
       {/* ── PANEL INSUMOS COLAPSABLE ── */}
       <PanelInsumos alertas={alertas} onVerInventario={() => navigate("/admin/inventario")} />

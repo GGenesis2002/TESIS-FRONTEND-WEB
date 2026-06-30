@@ -46,6 +46,7 @@ export default function DashboardAsistente() {
     grafico: []
   });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   
   // Estados de Interactividad e Innovación Añadidos
   const [busquedaPaciente, setBusquedaPaciente] = useState("");
@@ -73,6 +74,7 @@ export default function DashboardAsistente() {
 
  const cargar = async () => {
     setLoading(true);
+    setError(null);
     try {
         const [resDash, resCaja] = await Promise.all([
             API.get("/dashboard/secretaria", { params: { mes: reporteMes, anio: reporteAnio } }),
@@ -88,8 +90,9 @@ export default function DashboardAsistente() {
                 transferencia: Number(resCaja.data.transferencia || 0)
             });
         }
-    } catch (error) {
-        console.error("Error cargando dashboard:", error);
+    } catch (err) {
+        console.error("Error cargando dashboard:", err);
+        setError("No se pudo sincronizar el dashboard. Verifica tu conexión e inténtalo de nuevo.");
     } finally {
         setLoading(false);
     }
@@ -170,10 +173,11 @@ export default function DashboardAsistente() {
     return nombreCompleto.includes(buscarPacienteModal.toLowerCase()) || String(p.id_paciente || "").includes(buscarPacienteModal);
   });
 
-  const pacientesFiltrados = data.pacientesRecientes.filter(p => {
+  const pacientesFiltrados = (data.pacientesRecientes || []).filter(p => {
     const nombreCompleto = `${p.nombres || ""} ${p.apellidos || ""}`.toLowerCase();
     return nombreCompleto.includes(busquedaPaciente.toLowerCase()) || String(p.id_paciente || "").includes(busquedaPaciente);
   });
+  const pacientesVisibles = pacientesFiltrados.slice(0, 8);
 
   return (
     <div style={c.wrap}>
@@ -254,14 +258,23 @@ export default function DashboardAsistente() {
           <p style={c.sub}>Módulo de Gestión Asistencial e Inteligencia del Laboratorio.</p>
         </div>
         <div style={{ display: "flex", gap: "0.75rem" }}>
-          <button onClick={cargar} style={c.refreshBtn}>↻ Sincronizar Sistema</button>
+          <button onClick={cargar} disabled={loading} style={{ ...c.refreshBtn, opacity: loading ? 0.6 : 1, cursor: loading ? "default" : "pointer" }}>
+            {loading ? "↻ Sincronizando..." : "↻ Sincronizar Sistema"}
+          </button>
         </div>
       </div>
+
+      {error && (
+        <div style={c.errorBanner}>
+          ⚠️ {error}
+          <button onClick={cargar} style={c.errorRetryBtn}>Reintentar</button>
+        </div>
+      )}
 
       
 
       {/* ── METRICAS / KPIS ── */}
-      <div style={c.kpiGrid}>
+      <div style={{ ...c.kpiGrid, opacity: loading ? 0.5 : 1, transition: "opacity 0.2s" }}>
         {kpisMap.map((k, i) => (
           <div
             key={i}
@@ -377,17 +390,27 @@ export default function DashboardAsistente() {
             {pacientesFiltrados.length === 0 ? (
               <p style={c.emptyState}>No hay coincidencias en el listado.</p>
             ) : (
-              <div style={c.scrollList}>
-                {pacientesFiltrados.map((p, i) => (
-                  <div key={p.id_paciente || i} style={c.logRow}>
-                    <div style={c.avatarCircle}>{p.nombres ? p.nombres.charAt(0) : "P"}</div>
-                    <div>
-                      <p style={c.logName}>{p.nombres} {p.apellidos}</p>
-                      <p style={c.logSub}>ID Paciente: #{p.id_paciente || "N/A"}</p>
+              <>
+                <div style={c.scrollList}>
+                  {pacientesVisibles.map((p, i) => (
+                    <div key={p.id_paciente || i} style={c.logRow}>
+                      <div style={c.avatarCircle}>{p.nombres ? p.nombres.charAt(0) : "P"}</div>
+                      <div>
+                        <p style={c.logName}>{p.nombres} {p.apellidos}</p>
+                        <p style={c.logSub}>ID Paciente: #{p.id_paciente || "N/A"}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                {pacientesFiltrados.length > 8 && (
+                  <button
+                    style={c.verTodosBtn}
+                    onClick={() => setModal("pacientes")}
+                  >
+                    Ver todos ({pacientesFiltrados.length}) →
+                  </button>
+                )}
+              </>
             )}
           </div>
 
@@ -473,6 +496,11 @@ const c = {
   orange:     { color: "#E88B3A" },
   sub:        { fontSize: "0.9rem", color: "#6B7280", margin: "0.15rem 0 0" },
   refreshBtn: { background: "#FFF", border: "1px solid #E5E7EB", color: "#374151", padding: "0.55rem 1.1rem", borderRadius: "8px", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" },
+
+  errorBanner: { background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1.5rem", fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" },
+  errorRetryBtn: { background: "#FFF", border: "1px solid #FECACA", color: "#B91C1C", padding: "0.35rem 0.8rem", borderRadius: "6px", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", flexShrink: 0 },
+
+  verTodosBtn: { width: "100%", marginTop: "0.6rem", background: "none", border: "1px dashed #D1D5DB", color: "#E88B3A", padding: "0.5rem", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" },
   
   alertBanner:{ background: "#FEF2F2", border: "1px solid #FEE2E2", borderLeft: "4px solid #EF4444", borderRadius: "10px", padding: "1rem", marginBottom: "1.5rem" },
   alertGrid:  { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "0.75rem", marginTop: "0.75rem" },

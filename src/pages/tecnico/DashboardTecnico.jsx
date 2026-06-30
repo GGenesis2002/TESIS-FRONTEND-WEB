@@ -42,6 +42,144 @@ function getRolColor(rol) {
   return "#6B7280";
 }
 
+/* ── Animación de número contando ── */
+function useCountUp(target, duration = 700, active = true) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let start = null;
+    const step = (ts) => {
+      if (!start) start = ts;
+      const p = Math.min((ts - start) / duration, 1);
+      setVal(Math.round(p * target));
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [target, active]);
+  return val;
+}
+
+/* ── Donut SVG ── */
+function DonutChart({ data, size = 130 }) {
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setAnimated(true), 200); return () => clearTimeout(t); }, []);
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0) return (
+    <div style={{ width: size, height: size, borderRadius: "50%", background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <span style={{ fontSize: "0.72rem", color: "#9CA3AF" }}>Sin datos</span>
+    </div>
+  );
+  const cx = size / 2, cy = size / 2, r = size * 0.35, strokeW = size * 0.14;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        {data.map((d, i) => {
+          const pct = d.value / total;
+          const dash = animated ? pct * circ : 0;
+          const gap = circ - dash;
+          const seg = (
+            <circle key={i} cx={cx} cy={cy} r={r} fill="none"
+              stroke={d.color} strokeWidth={strokeW}
+              strokeDasharray={`${dash} ${gap}`}
+              strokeDashoffset={-offset * circ}
+              style={{ transition: "stroke-dasharray 0.8s cubic-bezier(.4,0,.2,1)" }}
+            />
+          );
+          offset += pct;
+          return seg;
+        })}
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: size * 0.18 + "px", fontWeight: 800, color: "#1F2937", lineHeight: 1 }}>{total}</span>
+        <span style={{ fontSize: size * 0.09 + "px", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.05em" }}>total</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Sección de gráficos ── */
+function ChartsSection({ kpis }) {
+  const usuariosData = [
+    { label: "Activos",   value: kpis.usuariosActivos,   color: "#10B981" },
+    { label: "Inactivos", value: kpis.usuariosInactivos, color: "#6B7280" },
+  ].filter(d => d.value > 0);
+
+  const catalogoItems = [
+    { label: "Exámenes",    value: kpis.totalExamenes,   color: "#8B5CF6" },
+    { label: "Categorías",  value: kpis.totalCategorias, color: "#3B82F6" },
+    { label: "Parámetros",  value: kpis.totalParametros, color: "#10B981" },
+  ];
+  const maxCat = Math.max(...catalogoItems.map(c => c.value), 1);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.4rem" }}>
+
+      {/* Distribución de usuarios */}
+      <div style={{ background: "#FFF", borderRadius: 12, border: "1px solid #F1F5F9", padding: "1.35rem", boxShadow: "0 2px 6px rgba(0,0,0,0.03)" }}>
+        <p style={{ ...S.grpLabel, margin: "0 0 1rem" }}>Distribución de Usuarios</p>
+        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+          <DonutChart data={usuariosData} size={120} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {[
+              { label: "Activos",        value: kpis.usuariosActivos,    color: "#10B981", pct: kpis.totalUsuarios > 0 ? Math.round(kpis.usuariosActivos / kpis.totalUsuarios * 100) : 0 },
+              { label: "Inactivos",      value: kpis.usuariosInactivos,  color: "#6B7280", pct: kpis.totalUsuarios > 0 ? Math.round(kpis.usuariosInactivos / kpis.totalUsuarios * 100) : 0 },
+              { label: "Activos Hoy",   value: kpis.usuariosActivosHoy, color: "#3B82F6", pct: kpis.totalUsuarios > 0 ? Math.round(kpis.usuariosActivosHoy / kpis.totalUsuarios * 100) : 0 },
+            ].map((item, i) => (
+              <div key={i}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                  <span style={{ fontSize: "0.75rem", color: "#374151", fontFamily: "'Barlow', sans-serif", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: item.color, display: "inline-block" }} />
+                    {item.label}
+                  </span>
+                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: item.color, fontFamily: "'Barlow Condensed', sans-serif" }}>{item.value} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>({item.pct}%)</span></span>
+                </div>
+                <BarAnim value={item.value} max={kpis.totalUsuarios || 1} color={item.color} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Catálogo */}
+      <div style={{ background: "#FFF", borderRadius: 12, border: "1px solid #F1F5F9", padding: "1.35rem", boxShadow: "0 2px 6px rgba(0,0,0,0.03)" }}>
+        <p style={{ ...S.grpLabel, margin: "0 0 1rem" }}>Resumen del Catálogo</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {catalogoItems.map((item, i) => (
+            <div key={i}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
+                <span style={{ fontSize: "0.78rem", color: "#374151", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>{item.label}</span>
+                <span style={{ fontSize: "0.85rem", fontWeight: 800, color: item.color, fontFamily: "'Barlow Condensed', sans-serif" }}>{item.value}</span>
+              </div>
+              <BarAnim value={item.value} max={maxCat} color={item.color} height={10} />
+            </div>
+          ))}
+          {kpis.exSinParametros > 0 && (
+            <div style={{ marginTop: "0.25rem", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8, padding: "0.6rem 0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span>⚡</span>
+              <span style={{ fontSize: "0.77rem", color: "#D97706", fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>
+                {kpis.exSinParametros} examen{kpis.exSinParametros !== 1 ? "es" : ""} sin parámetros configurados
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+function BarAnim({ value, max, color, height = 6 }) {
+  const [w, setW] = useState(0);
+  useEffect(() => { const t = setTimeout(() => setW(max > 0 ? (value / max) * 100 : 0), 200); return () => clearTimeout(t); }, [value, max]);
+  return (
+    <div style={{ height, background: "#F1F5F9", borderRadius: height / 2, overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${w}%`, background: color, borderRadius: height / 2, transition: "width 0.8s cubic-bezier(.4,0,.2,1)" }} />
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
 ═══════════════════════════════════════════════════════ */
@@ -71,6 +209,7 @@ export default function DashboardTecnico() {
 
   // ── Tabla personal ──
   const [busqPersonal, setBusqPersonal] = useState("");
+  const [filtroPersonal, setFiltroPersonal] = useState("TODOS"); // "TODOS" | "activos" | "inactivos"
   const [sort, setSort]                 = useState({ col:"fecha_creacion", asc:false });
 
   const notifRef    = useRef(null);
@@ -190,7 +329,11 @@ export default function DashboardTecnico() {
   const persFiltrado = personal
     .filter(p => {
       const q = busqPersonal.toLowerCase();
-      return !q || `${p.nombres} ${p.apellidos} ${p.username} ${p.rol}`.toLowerCase().includes(q);
+      const matchQ = !q || `${p.nombres} ${p.apellidos} ${p.username} ${p.rol}`.toLowerCase().includes(q);
+      const matchE = filtroPersonal === "TODOS" ||
+        (filtroPersonal === "activos"   &&  p.estado) ||
+        (filtroPersonal === "inactivos" && !p.estado);
+      return matchQ && matchE;
     })
     .sort((a, b) => {
       const va = a[sort.col] ?? "", vb = b[sort.col] ?? "";
@@ -307,6 +450,9 @@ export default function DashboardTecnico() {
               <KpiCard anim={animKpis} delay={120} icon="🛠️" label="Parámetros"       value={kpis.totalParametros} color="#10B981" desc="Rangos de referencia" />
               <KpiCard anim={animKpis} delay={180} icon="⚡" label="Sin Parámetros"   value={kpis.exSinParametros} color={kpis.exSinParametros>0?"#F59E0B":"#10B981"} desc="Requieren configuración" />
             </div>
+
+            {/* ── GRÁFICOS ── */}
+            <ChartsSection kpis={kpis} />
 
             {/* ── ACCESOS RÁPIDOS ── */}
             <div style={S.section}>
@@ -434,15 +580,63 @@ export default function DashboardTecnico() {
               <button onClick={() => setShowModal(false)} style={S.closeBtn}>✕</button>
             </div>
 
-            {/* Filtros — solo búsqueda de texto */}
-            <div style={{ marginBottom:"0.65rem" }}>
-              <input
-                type="text"
-                placeholder="🔍  Buscar por usuario o descripción…"
-                value={busqueda}
-                onChange={e => { setBusqueda(e.target.value); setPagina(1); }}
-                style={S.sInput}
-              />
+            {/* Filtros ── acción + fechas + búsqueda */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem", marginBottom: "0.75rem" }}>
+
+              {/* Botones de tipo de acción */}
+              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                {FILTROS.map(f => {
+                  const meta = getAccionMeta(f === "TODOS" ? "" : f);
+                  const active = filtroAccion === f;
+                  const count = f === "TODOS" ? auditoria.length : auditoria.filter(a => (a.accion || "").toUpperCase().includes(f)).length;
+                  return (
+                    <button key={f} onClick={() => { setFiltroAccion(f); setPagina(1); }} style={{
+                      padding: "0.28rem 0.75rem", borderRadius: 20, cursor: "pointer",
+                      border: `1px solid ${active ? meta.color : "#E5E7EB"}`,
+                      background: active ? meta.bg : "transparent",
+                      color: active ? meta.color : "#6B7280",
+                      fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.7rem",
+                      textTransform: "uppercase", letterSpacing: "0.04em", transition: "all 0.15s",
+                      display: "flex", alignItems: "center", gap: "0.3rem",
+                    }}>
+                      {f !== "TODOS" && <span>{meta.icon}</span>}
+                      {f === "TODOS" ? "Todos" : f.replace("_", " ")}
+                      <span style={{ background: active ? "rgba(255,255,255,0.4)" : "#F3F4F6", borderRadius: 10, padding: "0 0.3rem", fontSize: "0.62rem" }}>{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Búsqueda + rango de fechas */}
+              <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                <input
+                  type="text"
+                  placeholder="🔍  Buscar por usuario o descripción…"
+                  value={busqueda}
+                  onChange={e => { setBusqueda(e.target.value); setPagina(1); }}
+                  style={{ ...S.sInput, flex: "1 1 200px" }}
+                />
+                <input
+                  type="date"
+                  value={fechaDesde}
+                  onChange={e => { setFechaDesde(e.target.value); setPagina(1); }}
+                  style={{ ...S.sInput, flex: "0 0 140px" }}
+                  title="Desde"
+                />
+                <input
+                  type="date"
+                  value={fechaHasta}
+                  onChange={e => { setFechaHasta(e.target.value); setPagina(1); }}
+                  style={{ ...S.sInput, flex: "0 0 140px" }}
+                  title="Hasta"
+                />
+                {(busqueda || fechaDesde || fechaHasta || filtroAccion !== "TODOS") && (
+                  <button onClick={() => { setBusqueda(""); setFechaDesde(""); setFechaHasta(""); setFiltroAccion("TODOS"); setPagina(1); }}
+                    style={{ ...S.btnSec, flexShrink: 0 }}>
+                    ✕ Limpiar
+                  </button>
+                )}
+              </div>
             </div>
 
             <p style={{ fontSize:"0.74rem", color:"#9CA3AF", margin:"0 0 0.5rem" }}>
@@ -538,18 +732,28 @@ export default function DashboardTecnico() {
 /* ═══════════════════════════════════════════════════════
    SUB-COMPONENTES
 ═══════════════════════════════════════════════════════ */
-function KpiCard({ icon, label, value, color, desc, delay, anim }) {
+function KpiCard({ icon, label, value, color, desc, delay, anim, onClick, active }) {
+  const counted = useCountUp(value, 700, anim);
   return (
-    <div style={{
-      ...S.kpiCard,
-      opacity:   anim ? 1 : 0,
-      transform: anim ? "translateY(0)" : "translateY(14px)",
-      transition:`opacity 0.35s ease ${delay}ms, transform 0.35s ease ${delay}ms`,
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        ...S.kpiCard,
+        background: active ? `${color}08` : "#FFF",
+        border: active ? `1.5px solid ${color}55` : "1px solid #F1F5F9",
+        boxShadow: active ? `0 4px 16px ${color}18` : "0 2px 6px rgba(0,0,0,0.03)",
+        cursor: onClick ? "pointer" : "default",
+        opacity:   anim ? 1 : 0,
+        transform: anim ? "translateY(0)" : "translateY(14px)",
+        transition: `opacity 0.35s ease ${delay}ms, transform 0.35s ease ${delay}ms, border 0.2s, box-shadow 0.2s`,
+      }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.boxShadow = `0 6px 20px ${color}22`; }}
+      onMouseLeave={e => { if (onClick) e.currentTarget.style.boxShadow = active ? `0 4px 16px ${color}18` : "0 2px 6px rgba(0,0,0,0.03)"; }}
+    >
       <div style={{ ...S.kpiIcon, background:`${color}15`, color }}>{icon}</div>
       <p style={S.kpiLabel}>{label}</p>
-      <p style={{ ...S.kpiVal, color }}>{value}</p>
-      <p style={S.kpiDesc}>{desc}</p>
+      <p style={{ ...S.kpiVal, color }}>{counted}</p>
+      <p style={S.kpiDesc}>{active ? <span style={{ color, fontWeight: 600, fontSize: "0.7rem" }}>Filtrando · click para quitar</span> : desc}</p>
       <div style={{ ...S.kpiBar, background:`${color}20` }}>
         <div style={{ ...S.kpiBarFill, background:color, width:`${Math.min(100, value*8+20)}%` }} />
       </div>

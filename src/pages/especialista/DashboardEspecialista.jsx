@@ -355,12 +355,15 @@ export default function DashboardEspecialista() {
               {/* KPIs 2x2 */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.9rem" }}>
                 {[
-                  { icon: "🔬", label: "En Proceso",  value: kpis.enProceso,  color: "#3B82F6", desc: "Con resultados activos",  max: total },
-                  { icon: "↩️", label: "Devueltas",   value: kpis.devueltas,  color: "#EF4444", desc: "Requieren corrección",    max: total },
-                  { icon: "⏳", label: "Por Validar", value: kpis.porValidar, color: "#8B5CF6", desc: "Enviadas, en revisión",   max: total },
-                  { icon: "✅", label: "Validadas",   value: kpis.validadas,  color: "#10B981", desc: "Completadas y publicadas", max: total },
+                  { icon: "🔬", label: "En Proceso",  value: kpis.enProceso,  color: "#3B82F6", desc: "Con resultados activos",  max: total, filtro: "En Proceso" },
+                  { icon: "↩️", label: "Devueltas",   value: kpis.devueltas,  color: "#EF4444", desc: "Requieren corrección",    max: total, filtro: "Devuelto"   },
+                  { icon: "⏳", label: "Por Validar", value: kpis.porValidar, color: "#8B5CF6", desc: "Enviadas, en revisión",   max: total, filtro: "Por Validar"},
+                  { icon: "✅", label: "Validadas",   value: kpis.validadas,  color: "#10B981", desc: "Completadas y publicadas", max: total, filtro: "Validado"  },
                 ].map((k, i) => (
-                  <KpiCard key={k.label} {...k} delay={i * 60} anim={animKpis} />
+                  <KpiCard key={k.label} {...k} delay={i * 60} anim={animKpis}
+                    active={filtroEstado === k.filtro}
+                    onClick={() => setFiltroEstado(prev => prev === k.filtro ? "TODOS" : k.filtro)}
+                  />
                 ))}
               </div>
 
@@ -373,10 +376,17 @@ export default function DashboardEspecialista() {
                   </p>
                   <DonutChart data={donutData} size={130} />
                   <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                    {donutData.map(d => (
-                      <div key={d.label} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    {[
+                      { label: "En Proceso",  value: kpis.enProceso,  color: "#3B82F6", filtro: "En Proceso"  },
+                      { label: "Devueltas",   value: kpis.devueltas,  color: "#EF4444", filtro: "Devuelto"    },
+                      { label: "Por Validar", value: kpis.porValidar, color: "#8B5CF6", filtro: "Por Validar" },
+                      { label: "Validadas",   value: kpis.validadas,  color: "#10B981", filtro: "Validado"    },
+                    ].filter(d => d.value > 0).map(d => (
+                      <div key={d.label}
+                        onClick={() => setFiltroEstado(prev => prev === d.filtro ? "TODOS" : d.filtro)}
+                        style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", padding: "0.15rem 0.3rem", borderRadius: 6, background: filtroEstado === d.filtro ? `${d.color}12` : "transparent", transition: "background 0.15s" }}>
                         <div style={{ width: 8, height: 8, borderRadius: "50%", background: d.color, flexShrink: 0 }} />
-                        <span style={{ fontSize: "0.72rem", color: "#6B7280", flex: 1, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600 }}>{d.label}</span>
+                        <span style={{ fontSize: "0.72rem", color: filtroEstado === d.filtro ? d.color : "#6B7280", flex: 1, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: filtroEstado === d.filtro ? 700 : 600 }}>{d.label}</span>
                         <span style={{ fontSize: "0.72rem", fontWeight: 800, color: d.color, fontFamily: "'Barlow Condensed', sans-serif" }}>{d.value}</span>
                       </div>
                     ))}
@@ -436,6 +446,13 @@ export default function DashboardEspecialista() {
                   <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.7rem", fontWeight: 700, background: "rgba(139,92,246,0.1)", color: "#7C3AED", padding: "0.12rem 0.5rem", borderRadius: 20 }}>
                     {ordenesFiltradas.length} / {ordenes.length}
                   </span>
+                  {filtroEstado !== "TODOS" && (
+                    <span
+                      onClick={() => setFiltroEstado("TODOS")}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: getMeta(filtroEstado).bg, color: getMeta(filtroEstado).color, border: `1px solid ${getMeta(filtroEstado).color}40`, padding: "0.12rem 0.55rem", borderRadius: 20, fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                      {getMeta(filtroEstado).icon} {filtroEstado} ✕
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
                   <input
@@ -672,15 +689,23 @@ export default function DashboardEspecialista() {
 /* ══════════════════════════════════════════════════════════
    KPI CARD
 ══════════════════════════════════════════════════════════ */
-function KpiCard({ icon, label, value, color, desc, max, delay, anim }) {
+function KpiCard({ icon, label, value, color, desc, max, delay, anim, onClick, active }) {
   const counted = useCountUp(value, 600, anim);
   return (
-    <div style={{
-      background: "#FFF", padding: "1.25rem 1.35rem", borderRadius: 14,
-      border: "1px solid #F1F5F9", boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
-      opacity: anim ? 1 : 0, transform: anim ? "translateY(0)" : "translateY(14px)",
-      transition: `opacity 0.35s ease ${delay}ms, transform 0.35s ease ${delay}ms`,
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: active ? `${color}08` : "#FFF",
+        padding: "1.25rem 1.35rem", borderRadius: 14,
+        border: active ? `1.5px solid ${color}55` : "1px solid #F1F5F9",
+        boxShadow: active ? `0 4px 16px ${color}18` : "0 2px 6px rgba(0,0,0,0.03)",
+        opacity: anim ? 1 : 0, transform: anim ? "translateY(0)" : "translateY(14px)",
+        transition: `opacity 0.35s ease ${delay}ms, transform 0.35s ease ${delay}ms, border 0.2s, box-shadow 0.2s, background 0.2s`,
+        cursor: onClick ? "pointer" : "default",
+      }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.boxShadow = `0 6px 20px ${color}22`; }}
+      onMouseLeave={e => { if (onClick) e.currentTarget.style.boxShadow = active ? `0 4px 16px ${color}18` : "0 2px 6px rgba(0,0,0,0.03)"; }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
         <div style={{ width: 40, height: 40, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.15rem", background: `${color}18` }}>
           {icon}
@@ -690,7 +715,7 @@ function KpiCard({ icon, label, value, color, desc, max, delay, anim }) {
         </span>
       </div>
       <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 0.2rem" }}>{label}</p>
-      <p style={{ fontSize: "0.72rem", color: "#9CA3AF", margin: "0 0 0.6rem" }}>{desc}</p>
+      <p style={{ fontSize: "0.72rem", color: "#9CA3AF", margin: "0 0 0.6rem" }}>{active ? <span style={{ color, fontWeight: 600 }}>Filtrando por este estado · click para quitar</span> : desc}</p>
       <MiniBar value={value} max={max || 1} color={color} />
     </div>
   );

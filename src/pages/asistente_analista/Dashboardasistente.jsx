@@ -41,6 +41,8 @@ export default function DashboardAsistente() {
     kpis: { pac_reg_hoy: 0, ord_cre_hoy: 0, resultados_pen: 0, listos_entrega: 0 },
     pacientesRecientes: [],
     ordenesHoy: [],
+    ordenesProceso: [],
+    ordenesValidadas: [],
     grafico: []
   });
   const [loading, setLoading] = useState(false);
@@ -54,7 +56,12 @@ export default function DashboardAsistente() {
   const [modal, setModal] = useState(null);
   const [buscarOrden, setBuscarOrden] = useState("");
   const [buscarPacienteModal, setBuscarPacienteModal] = useState("");
-  const closeModal = () => { setModal(null); setBuscarOrden(""); setBuscarPacienteModal(""); };
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+  const closeModal = () => {
+    setModal(null); setBuscarOrden(""); setBuscarPacienteModal("");
+    setFechaDesde(""); setFechaHasta("");
+  };
   
   // Datos simulados de negocio avanzados (Finanzas y alertas críticas de muestras)
   const [cajaDelDia, setCajaDelDia] = useState({ efectivo: 0, transferencia: 0 });
@@ -135,15 +142,28 @@ export default function DashboardAsistente() {
   ];
 
   const ordenesHoy = data.ordenesHoy || [];
-  const ordenesFiltradasModal = (lista) => lista.filter(o => {
+  const dentroDeRango = (fechaStr) => {
+    if (!fechaStr) return true;
+    const dia = String(fechaStr).slice(0, 10);
+    if (fechaDesde && dia < fechaDesde) return false;
+    if (fechaHasta && dia > fechaHasta) return false;
+    return true;
+  };
+  const ordenesFiltradasModal = (lista, conFecha = false) => lista.filter(o => {
     const q = buscarOrden.toLowerCase();
-    return !q
+    const coincideTexto = !q
       || String(o.numero_ticket || "").toLowerCase().includes(q)
       || (o.paciente || "").toLowerCase().includes(q)
       || (o.estado || "").toLowerCase().includes(q);
+    if (!coincideTexto) return false;
+    if (conFecha) {
+      const fechaRef = o.fecha_validacion || o.fecha_orden;
+      return dentroDeRango(fechaRef);
+    }
+    return true;
   });
-  const ordenesEnProceso = ordenesHoy.filter(o => o.estado === "Generada" || o.estado === "En Proceso");
-  const ordenesListas    = ordenesHoy.filter(o => o.estado === "Validado");
+  const ordenesEnProceso = data.ordenesProceso || [];
+  const ordenesListas    = data.ordenesValidadas || [];
 
   const pacientesModalFiltrados = (data.pacientesRecientes || []).filter(p => {
     const nombreCompleto = `${p.nombres || ""} ${p.apellidos || ""}`.toLowerCase();
@@ -170,14 +190,40 @@ export default function DashboardAsistente() {
         title="🧫 Resultados en Proceso" subtitle={`${ordenesEnProceso.length} órdenes pendientes de análisis`}>
         <input style={c.inputSearch} placeholder="🔍 Buscar por ticket o paciente…"
           value={buscarOrden} onChange={e => setBuscarOrden(e.target.value)} />
-        <OrdenesTabla lista={ordenesFiltradasModal(ordenesEnProceso)} getColorByEstado={getColorByEstado} />
+        <div style={c.dateFilterRow}>
+          <div style={c.selectGroup}>
+            <label style={c.label}>Desde</label>
+            <input type="date" style={c.select} value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+          </div>
+          <div style={c.selectGroup}>
+            <label style={c.label}>Hasta</label>
+            <input type="date" style={c.select} value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+          </div>
+          {(fechaDesde || fechaHasta) && (
+            <button style={c.clearDateBtn} onClick={() => { setFechaDesde(""); setFechaHasta(""); }}>✕ Limpiar fechas</button>
+          )}
+        </div>
+        <OrdenesTabla lista={ordenesFiltradasModal(ordenesEnProceso, true)} getColorByEstado={getColorByEstado} />
       </Modal>
 
       <Modal open={modal === "listos"} onClose={closeModal}
         title="✅ Listos para Entrega" subtitle={`${ordenesListas.length} resultados validados`}>
         <input style={c.inputSearch} placeholder="🔍 Buscar por ticket o paciente…"
           value={buscarOrden} onChange={e => setBuscarOrden(e.target.value)} />
-        <OrdenesTabla lista={ordenesFiltradasModal(ordenesListas)} getColorByEstado={getColorByEstado} />
+        <div style={c.dateFilterRow}>
+          <div style={c.selectGroup}>
+            <label style={c.label}>Desde</label>
+            <input type="date" style={c.select} value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+          </div>
+          <div style={c.selectGroup}>
+            <label style={c.label}>Hasta</label>
+            <input type="date" style={c.select} value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+          </div>
+          {(fechaDesde || fechaHasta) && (
+            <button style={c.clearDateBtn} onClick={() => { setFechaDesde(""); setFechaHasta(""); }}>✕ Limpiar fechas</button>
+          )}
+        </div>
+        <OrdenesTabla lista={ordenesFiltradasModal(ordenesListas, true)} getColorByEstado={getColorByEstado} />
       </Modal>
 
       <Modal open={modal === "pacientes"} onClose={closeModal}
@@ -454,6 +500,8 @@ const c = {
   downloadBtn:{ background: "#E88B3A", color: "#FFF", border: "none", padding: "0.55rem 1.25rem", borderRadius: "6px", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" },
   
   inputSearch:{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #D1D5DB", marginBottom: "0.75rem", fontSize: "0.85rem", boxSizing: "border-box" },
+  dateFilterRow: { display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end", marginBottom: "0.9rem" },
+  clearDateBtn: { background: "none", border: "1px solid #D1D5DB", color: "#6B7280", padding: "0.4rem 0.7rem", borderRadius: "6px", fontSize: "0.75rem", cursor: "pointer" },
   scrollList: { display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "200px", overflowY: "auto" },
   emptyState: { color: "#9CA3AF", fontSize: "0.85rem", textAlign: "center", padding: "1.5rem 0" },
   

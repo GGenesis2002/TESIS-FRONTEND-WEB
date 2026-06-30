@@ -22,7 +22,7 @@ function descripcionReferencia(p) {
   const { tipo, opciones } = parseTipoDato(p.valor_referencia);
   if (tipo === "OPCIONES") return opciones.join(" / ") || "—";
   if (tipo === "TEXTO")    return "Texto libre";
-  return p.rango_min != null ? `${p.rango_min} – ${p.rango_max}` : "—";
+  return p.rango_min != null ? `${p.rango_min} - ${p.rango_max}` : "—";
 }
 
 // Determina si un parámetro está fuera de rango. Solo aplica a parámetros
@@ -1184,6 +1184,10 @@ export default function AdminResultados() {
   const [loading,      setLoading]      = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [buscar,       setBuscar]       = useState("");
+  const [desde,        setDesde]        = useState("");   // filtro de fecha — vacío = sin límite inferior
+  const [hasta,        setHasta]        = useState("");   // filtro de fecha — vacío = sin límite superior
+  const [pagina,        setPagina]      = useState(1);
+  const PAGE_SIZE = 10;
   const [modal,        setModal]        = useState(null);
   const [seleccionado, setSeleccionado] = useState(null);
   const [ordenDetalle, setOrdenDetalle] = useState(null);
@@ -1292,11 +1296,31 @@ export default function AdminResultados() {
     await cargar();
   };
 
-  const filtrados = ordenes.filter(o =>
-    (o.numero_ticket || "").toLowerCase().includes(buscar.toLowerCase()) ||
-    (o.paciente_nombre || "").toLowerCase().includes(buscar.toLowerCase()) ||
-    (o.paciente_cedula || "").toLowerCase().includes(buscar.toLowerCase())
-  );
+  const filtrados = ordenes.filter(o => {
+    const coincideTexto =
+      (o.numero_ticket || "").toLowerCase().includes(buscar.toLowerCase()) ||
+      (o.paciente_nombre || "").toLowerCase().includes(buscar.toLowerCase()) ||
+      (o.paciente_cedula || "").toLowerCase().includes(buscar.toLowerCase());
+
+    if (!coincideTexto) return false;
+
+    // Filtro por rango de fecha (sobre fecha_orden, en formato YYYY-MM-DD)
+    if (desde || hasta) {
+      const fechaOrden = o.fecha_orden ? String(o.fecha_orden).slice(0, 10) : null;
+      if (!fechaOrden) return false;
+      if (desde && fechaOrden < desde) return false;
+      if (hasta && fechaOrden > hasta) return false;
+    }
+
+    return true;
+  });
+
+  // Resetear a la página 1 cada vez que cambian los filtros (texto, estado o fecha)
+  useEffect(() => { setPagina(1); }, [buscar, filtroEstado, desde, hasta]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / PAGE_SIZE));
+  const paginaSegura = Math.min(pagina, totalPaginas);
+  const filtradosPagina = filtrados.slice((paginaSegura - 1) * PAGE_SIZE, paginaSegura * PAGE_SIZE);
 
   const estados = ["Por Validar", "En Proceso", "Validado", "Devuelto", "todos"];
   // Contadores globales calculados de TODAS las órdenes (independiente del filtro activo)
@@ -1317,9 +1341,20 @@ export default function AdminResultados() {
           <h2 style={pageH2}>Resultados <span style={{ color: "#8B5CF6" }}>Clínicos</span></h2>
           <p style={pageSub}>Validación y publicación de resultados de laboratorio</p>
         </div>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           <input placeholder="🔍 Ticket, paciente o cédula…" value={buscar}
             onChange={e => setBuscar(e.target.value)} style={searchInput} />
+          <input type="date" value={desde} max={hasta || undefined}
+            onChange={e => setDesde(e.target.value)} style={dateInput} title="Desde" />
+          <span style={{ color: "#9CA3AF", fontSize: "0.8rem" }}>—</span>
+          <input type="date" value={hasta} min={desde || undefined}
+            onChange={e => setHasta(e.target.value)} style={dateInput} title="Hasta" />
+          {(desde || hasta) && (
+            <button onClick={() => { setDesde(""); setHasta(""); }}
+              style={{ ...btnBase, background: "#F1F5F9", color: "#374151", border: "1px solid #E2E8F0", fontSize: "0.78rem", padding: "0.45rem 0.85rem" }}>
+              ✕ Limpiar fechas
+            </button>
+          )}
           <button onClick={cargar} style={{ ...btnBase, background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.2)", fontSize: "0.82rem" }}>
             ↻ Actualizar
           </button>
@@ -1359,7 +1394,7 @@ export default function AdminResultados() {
                     Sin órdenes para este filtro
                   </td>
                 </tr>
-              ) : filtrados.map(o => {
+              ) : filtradosPagina.map(o => {
                 const porValidar = parseInt(o.por_validar || 0);
                 const validados  = parseInt(o.validados   || 0);
                 const devueltos  = parseInt(o.devueltos   || 0);
@@ -1429,6 +1464,25 @@ export default function AdminResultados() {
               })}
             </tbody>
           </table>
+
+          {/* PAGINADO */}
+          {filtrados.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderTop: "1px solid #F1F5F9", background: "#F8FAFC" }}>
+              <span style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF" }}>
+                {filtrados.length} orden{filtrados.length !== 1 ? "es" : ""} — página {paginaSegura} de {totalPaginas}
+              </span>
+              <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={paginaSegura <= 1}
+                  style={{ ...pgBtn, opacity: paginaSegura <= 1 ? 0.5 : 1, cursor: paginaSegura <= 1 ? "default" : "pointer" }}>
+                  ← Anterior
+                </button>
+                <button onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={paginaSegura >= totalPaginas}
+                  style={{ ...pgBtn, opacity: paginaSegura >= totalPaginas ? 0.5 : 1, cursor: paginaSegura >= totalPaginas ? "default" : "pointer" }}>
+                  Siguiente →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1500,6 +1554,8 @@ const td          = { padding: "0.7rem 1rem", fontFamily: "'Barlow', sans-serif"
 const badgeSt     = { padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.72rem", fontFamily: "'Barlow', sans-serif", fontWeight: 600 };
 const btnSmall    = { padding: "0.3rem 0.7rem", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "'Barlow', sans-serif", fontWeight: 600, cursor: "pointer" };
 const searchInput = { padding: "0.55rem 1rem", borderRadius: "8px", border: "1px solid #E2E8F0", fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", width: "260px", outline: "none" };
+const dateInput   = { padding: "0.5rem 0.75rem", borderRadius: "8px", border: "1px solid #E2E8F0", fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "#374151", outline: "none", background: "#FFF" };
+const pgBtn       = { padding: "0.4rem 0.9rem", border: "1px solid #E2E8F0", borderRadius: "6px", background: "#FFF", fontFamily: "'Barlow', sans-serif", fontWeight: 600, fontSize: "0.78rem", color: "#374151" };
 const modalInner  = { background: "#FFF", borderRadius: "14px", width: "520px", maxWidth: "95vw", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" };
 const flabel      = { fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", fontWeight: 600, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em" };
 const finput      = { padding: "0.55rem 0.75rem", borderRadius: "8px", border: "1px solid #E2E8F0", fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem", outline: "none", width: "100%", boxSizing: "border-box" };

@@ -213,28 +213,6 @@ async function generarPDFResultado(orden, resultados, admin) {
 
   // ── RESULTADOS POR ESPECIALISTA ──
   for (const resultado of resultados) {
-    // Bloque especialista — naranja marca
-    doc.setFillColor(...C_OSCURO);
-    doc.roundedRect(ML, y, PW - ML - MR, 8, 1, 1, "F");
-    // Acento naranja izquierdo
-    doc.setFillColor(...C_NARANJA);
-    doc.rect(ML, y, 3, 8, "F");
-    doc.setTextColor(...C_BLANCO);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
-    doc.text(
-      st(`  ${(resultado.especialista_nombre || "Sin especialista").toUpperCase()}`),
-      ML + 6, y + 5.5
-    );
-    if (resultado.especialidad) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(...C_NARANJA);
-      doc.text(st(resultado.especialidad), PW - MR - 3, y + 5.5, { align: "right" });
-    }
-    doc.setTextColor(0, 0, 0);
-    y += 11;
-
     for (const examen of (resultado.examenes || [])) {
       if (y > PH - 60) { doc.addPage(); y = 20; }
 

@@ -19,9 +19,9 @@ function parseTipoDato(valor_referencia) {
 
 // Texto legible del rango/referencia de un parámetro según su tipo.
 function descripcionReferencia(p) {
-  const { tipo, opciones } = parseTipoDato(p.valor_referencia);
-  if (tipo === "OPCIONES") return opciones.join(" / ") || "—";
-  if (tipo === "TEXTO")    return "Texto libre";
+  const { tipo } = parseTipoDato(p.valor_referencia);
+  if (tipo === "OPCIONES") return "";
+  if (tipo === "TEXTO")    return "";
   return p.rango_min != null ? `${p.rango_min} - ${p.rango_max}` : "—";
 }
 
@@ -211,9 +211,31 @@ async function generarPDFResultado(orden, resultados, admin) {
 
   y += 25;
 
-  // ── RESULTADOS POR ESPECIALISTA ──
-  for (const resultado of resultados) {
-    for (const examen of (resultado.examenes || [])) {
+  // ── RESULTADOS AGRUPADOS POR CATEGORÍA ──
+  const todosLosExamenes = resultados.flatMap(r => r.examenes || []);
+  const porCategoria = {};
+  for (const examen of todosLosExamenes) {
+    const cat = examen.categoria || "Otros";
+    if (!porCategoria[cat]) porCategoria[cat] = [];
+    porCategoria[cat].push(examen);
+  }
+
+  for (const [categoria, examenesCategoria] of Object.entries(porCategoria)) {
+    if (y > PH - 65) { doc.addPage(); y = 20; }
+
+    // Encabezado de categoría — barra oscura con acento naranja
+    doc.setFillColor(...C_OSCURO);
+    doc.roundedRect(ML, y, PW - ML - MR, 8, 1, 1, "F");
+    doc.setFillColor(...C_NARANJA);
+    doc.rect(ML, y, 3, 8, "F");
+    doc.setTextColor(...C_BLANCO);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.text(st(`  ${categoria.toUpperCase()}`), ML + 6, y + 5.5);
+    doc.setTextColor(0, 0, 0);
+    y += 11;
+
+    for (const examen of examenesCategoria) {
       if (y > PH - 60) { doc.addPage(); y = 20; }
 
       // Encabezado examen

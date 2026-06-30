@@ -47,6 +47,10 @@ export default function GestionOrdenes() {
   const [loading, setLoading]     = useState(false);
   const [filtroEstado, setFiltroEstado] = useState("");
   const [buscar, setBuscar]       = useState("");
+  const [desde, setDesde]         = useState("");
+  const [hasta, setHasta]         = useState("");
+  const [pagina, setPagina]       = useState(1);
+  const PAGE_SIZE = 10;
   const [toast, setToast]         = useState(null);
 
   // Crear orden
@@ -305,8 +309,22 @@ export default function GestionOrdenes() {
 
   const filtradas = ordenes.filter(o => {
     const txt = `${o.nombres || ""} ${o.apellidos || ""} ${o.numero_ticket || ""}`.toLowerCase();
-    return txt.includes(buscar.toLowerCase());
+    if (!txt.includes(buscar.toLowerCase())) return false;
+    if (o.fecha_orden) {
+      const fOrden = new Date(o.fecha_orden).toISOString().split("T")[0];
+      if (desde && fOrden < desde) return false;
+      if (hasta && fOrden > hasta) return false;
+    } else if (desde || hasta) {
+      return false;
+    }
+    return true;
   });
+
+  const totalPaginas = Math.max(1, Math.ceil(filtradas.length / PAGE_SIZE));
+  const paginaSegura = Math.min(pagina, totalPaginas);
+  const paginadas = filtradas.slice((paginaSegura - 1) * PAGE_SIZE, paginaSegura * PAGE_SIZE);
+
+  useEffect(() => { setPagina(1); }, [buscar, filtroEstado, desde, hasta]);
 
   return (
     <div style={{ padding: "1.25rem", fontFamily: FONT, color: DARK }}>
@@ -372,9 +390,11 @@ export default function GestionOrdenes() {
           <option value="">Todos los estados</option>
           {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
         </select>
-        {filtroEstado && (
-          <button onClick={() => setFiltroEstado("")} style={{ ...s.btnSecondary, padding: "0.5rem 0.85rem", fontSize: "0.78rem" }}>
-            ✕ Limpiar filtro
+        <input type="date" value={desde} max={hasta || undefined} onChange={e => setDesde(e.target.value)} style={s.select} title="Desde" />
+        <input type="date" value={hasta} min={desde || undefined} onChange={e => setHasta(e.target.value)} style={s.select} title="Hasta" />
+        {(filtroEstado || desde || hasta) && (
+          <button onClick={() => { setFiltroEstado(""); setDesde(""); setHasta(""); }} style={{ ...s.btnSecondary, padding: "0.5rem 0.85rem", fontSize: "0.78rem" }}>
+            ✕ Limpiar filtros
           </button>
         )}
       </div>
@@ -395,7 +415,7 @@ export default function GestionOrdenes() {
         ) : filtradas.length === 0 ? (
           <div style={s.empty}>No hay órdenes para mostrar</div>
         ) : (
-          filtradas.map((o, i) => {
+          paginadas.map((o, i) => {
             const ec = EC[o.estado] || { bg: "#F8FAFC", color: "#6B7280" };
             const puedeEditar   = PUEDE_EDITAR.includes(o.estado);
             const puedeEliminar = PUEDE_ELIMINAR.includes(o.estado);
@@ -425,6 +445,34 @@ export default function GestionOrdenes() {
           })
         )}
       </div>
+
+      {/* ── PAGINADO ── */}
+      {!loading && filtradas.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.85rem", flexWrap: "wrap", gap: "0.75rem" }}>
+          <p style={{ fontSize: "0.8rem", color: "#6B7280", margin: 0 }}>
+            Mostrando {(paginaSegura - 1) * PAGE_SIZE + 1}–{Math.min(paginaSegura * PAGE_SIZE, filtradas.length)} de {filtradas.length} órdenes
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <button
+              onClick={() => setPagina(p => Math.max(1, p - 1))}
+              disabled={paginaSegura === 1}
+              style={{ ...s.btnCancel, padding: "0.45rem 0.85rem", opacity: paginaSegura === 1 ? 0.45 : 1, cursor: paginaSegura === 1 ? "default" : "pointer" }}
+            >
+              ‹ Anterior
+            </button>
+            <span style={{ fontFamily: FONTC, fontSize: "0.82rem", fontWeight: 700, color: DARK, padding: "0 0.4rem" }}>
+              Página {paginaSegura} de {totalPaginas}
+            </span>
+            <button
+              onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+              disabled={paginaSegura === totalPaginas}
+              style={{ ...s.btnCancel, padding: "0.45rem 0.85rem", opacity: paginaSegura === totalPaginas ? 0.45 : 1, cursor: paginaSegura === totalPaginas ? "default" : "pointer" }}
+            >
+              Siguiente ›
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════════
           MODAL — LEER QR / TICKET

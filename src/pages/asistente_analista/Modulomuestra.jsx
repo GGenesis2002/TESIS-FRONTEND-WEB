@@ -40,6 +40,9 @@ export default function ModuloMuestra() {
     const [ordenesPagadas, setOrdenesPagadas] = useState([]);
     const [loading, setLoading]               = useState(false);
     const [buscar, setBuscar]                 = useState("");
+    const [desdeReg, setDesdeReg]              = useState("");
+    const [hastaReg, setHastaReg]              = useState("");
+    const [paginaReg, setPaginaReg]            = useState(1);
     const [vistaTab, setVistaTab]             = useState("registrar");
     const [msg, setMsg]                       = useState(null);
 
@@ -154,6 +157,9 @@ export default function ModuloMuestra() {
     const [historial, setHistorial]               = useState([]);
     const [loadingHistorial, setLoadingHistorial] = useState(false);
     const [filtroFecha, setFiltroFecha]           = useState("todos"); // "hoy" | "todos"
+    const [desdeHist, setDesdeHist]                = useState("");
+    const [hastaHist, setHastaHist]                = useState("");
+    const [paginaHist, setPaginaHist]              = useState(1);
     const [buscarHistorial, setBuscarHistorial]   = useState("");
 
     
@@ -257,9 +263,18 @@ export default function ModuloMuestra() {
         const txt = `${o.nombres || ""} ${o.apellidos || ""} ${o.numero_ticket || ""} ${o.cedula || ""}`.toLowerCase();
         const coincideTexto = txt.includes(buscarHistorial.toLowerCase());
         const fechaOrden = o.fecha_orden ? o.fecha_orden.slice(0, 10) : "";
-        const coincideFecha = filtroFecha === "todos" || fechaOrden === hoyISO;
-        return coincideTexto && coincideFecha;
+        const coincideToggle = filtroFecha === "todos" || fechaOrden === hoyISO;
+        const coincideDesde = !desdeHist || (fechaOrden && fechaOrden >= desdeHist);
+        const coincideHasta = !hastaHist || (fechaOrden && fechaOrden <= hastaHist);
+        return coincideTexto && coincideToggle && coincideDesde && coincideHasta;
     });
+
+    const HIST_PAGE_SIZE = 10;
+    const totalPagHist = Math.max(1, Math.ceil(historialFiltrado.length / HIST_PAGE_SIZE));
+    const paginaHistSegura = Math.min(paginaHist, totalPagHist);
+    const historialPaginado = historialFiltrado.slice((paginaHistSegura - 1) * HIST_PAGE_SIZE, paginaHistSegura * HIST_PAGE_SIZE);
+
+    useEffect(() => { setPaginaHist(1); }, [buscarHistorial, filtroFecha, desdeHist, hastaHist]);
 
     const ESTADO_BADGE = {
         "Pagada":        { bg: "#EFF6FF", color: "#1D4ED8", label: "Pagada" },
@@ -389,8 +404,19 @@ export default function ModuloMuestra() {
 
     const ordenesFiltradas = ordenesPagadas.filter(o => {
         const txt = `${o.nombres || ""} ${o.apellidos || ""} ${o.numero_ticket || ""}`.toLowerCase();
-        return txt.includes(buscar.toLowerCase());
+        const coincideTexto = txt.includes(buscar.toLowerCase());
+        const fechaOrden = o.fecha_orden ? o.fecha_orden.slice(0, 10) : "";
+        const coincideDesde = !desdeReg || (fechaOrden && fechaOrden >= desdeReg);
+        const coincideHasta = !hastaReg || (fechaOrden && fechaOrden <= hastaReg);
+        return coincideTexto && coincideDesde && coincideHasta;
     });
+
+    const REG_PAGE_SIZE = 10;
+    const totalPagReg = Math.max(1, Math.ceil(ordenesFiltradas.length / REG_PAGE_SIZE));
+    const paginaRegSegura = Math.min(paginaReg, totalPagReg);
+    const ordenesPaginadas = ordenesFiltradas.slice((paginaRegSegura - 1) * REG_PAGE_SIZE, paginaRegSegura * REG_PAGE_SIZE);
+
+    useEffect(() => { setPaginaReg(1); }, [buscar, desdeReg, hastaReg]);
 
     // ─────────────────────────────────────────────────────────────────────────
     return (
@@ -444,8 +470,8 @@ export default function ModuloMuestra() {
             {/* ══ VISTA: REGISTRAR ══ */}
             {vistaTab === "registrar" && (
                 <>
-                    <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem" }}>
-                        <div style={{ ...S.searchWrap, flex: 1 }}>
+                    <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap", alignItems: "center" }}>
+                        <div style={{ ...S.searchWrap, flex: 1, minWidth: "200px" }}>
                             <span style={{ color: "#9CA3AF" }}>🔍</span>
                             <input
                                 placeholder="Buscar por paciente o ticket..."
@@ -457,6 +483,13 @@ export default function ModuloMuestra() {
                                 <button onClick={() => setBuscar("")} style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: "0.9rem" }}>✕</button>
                             )}
                         </div>
+                        <input type="date" value={desdeReg} max={hastaReg || undefined} onChange={e => setDesdeReg(e.target.value)} style={{ ...S.input, padding: "0.55rem 0.75rem" }} title="Desde" />
+                        <input type="date" value={hastaReg} min={desdeReg || undefined} onChange={e => setHastaReg(e.target.value)} style={{ ...S.input, padding: "0.55rem 0.75rem" }} title="Hasta" />
+                        {(desdeReg || hastaReg) && (
+                            <button onClick={() => { setDesdeReg(""); setHastaReg(""); }} style={S.btnRefresh}>
+                                ✕ Limpiar fechas
+                            </button>
+                        )}
                     </div>
 
                     <div style={S.tableCard}>
@@ -472,10 +505,10 @@ export default function ModuloMuestra() {
                             <div style={S.empty}>Cargando órdenes pagadas...</div>
                         ) : ordenesFiltradas.length === 0 ? (
                             <div style={S.empty}>
-                                {buscar ? "Sin resultados." : "No hay órdenes pagadas pendientes."}
+                                {buscar || desdeReg || hastaReg ? "Sin resultados." : "No hay órdenes pagadas pendientes."}
                             </div>
                         ) : (
-                            ordenesFiltradas.map((o, i) => (
+                            ordenesPaginadas.map((o, i) => (
                                 <div key={o.id_orden}
                                     style={{ ...S.tableRow, background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}
                                     onMouseEnter={e => e.currentTarget.style.background = "#F0FDF4"}
@@ -506,6 +539,17 @@ export default function ModuloMuestra() {
                             ))
                         )}
                     </div>
+
+                    {!loading && ordenesFiltradas.length > 0 && (
+                        <Paginador
+                            pagina={paginaRegSegura}
+                            totalPaginas={totalPagReg}
+                            total={ordenesFiltradas.length}
+                            pageSize={REG_PAGE_SIZE}
+                            onAnterior={() => setPaginaReg(p => Math.max(1, p - 1))}
+                            onSiguiente={() => setPaginaReg(p => Math.min(totalPagReg, p + 1))}
+                        />
+                    )}
                 </>
             )}
 
@@ -574,6 +618,15 @@ export default function ModuloMuestra() {
                             ))}
                         </div>
 
+                        {/* Rango de fechas */}
+                        <input type="date" value={desdeHist} max={hastaHist || undefined} onChange={e => setDesdeHist(e.target.value)} style={{ ...S.input, padding: "0.5rem 0.7rem" }} title="Desde" />
+                        <input type="date" value={hastaHist} min={desdeHist || undefined} onChange={e => setHastaHist(e.target.value)} style={{ ...S.input, padding: "0.5rem 0.7rem" }} title="Hasta" />
+                        {(desdeHist || hastaHist) && (
+                            <button onClick={() => { setDesdeHist(""); setHastaHist(""); }} style={S.btnRefresh}>
+                                ✕ Limpiar fechas
+                            </button>
+                        )}
+
                         {/* Buscador */}
                         <div style={{ ...S.searchWrap, flex: 1, minWidth: "200px" }}>
                             <span style={{ color: "#9CA3AF" }}>🔍</span>
@@ -612,12 +665,12 @@ export default function ModuloMuestra() {
                             <div style={S.empty}>Cargando historial...</div>
                         ) : historialFiltrado.length === 0 ? (
                             <div style={S.empty}>
-                                {buscarHistorial || filtroFecha === "hoy"
+                                {buscarHistorial || filtroFecha === "hoy" || desdeHist || hastaHist
                                     ? "Sin resultados para este filtro."
                                     : "No hay registros en el historial."}
                             </div>
                         ) : (
-                            historialFiltrado.map((o, i) => {
+                            historialPaginado.map((o, i) => {
                                 const badge = ESTADO_BADGE[o.estado] || { bg: "#F3F4F6", color: "#374151", label: o.estado };
                                 return (
                                     <div key={o.id_orden}
@@ -656,6 +709,17 @@ export default function ModuloMuestra() {
                             })
                         )}
                     </div>
+
+                    {!loadingHistorial && historialFiltrado.length > 0 && (
+                        <Paginador
+                            pagina={paginaHistSegura}
+                            totalPaginas={totalPagHist}
+                            total={historialFiltrado.length}
+                            pageSize={HIST_PAGE_SIZE}
+                            onAnterior={() => setPaginaHist(p => Math.max(1, p - 1))}
+                            onSiguiente={() => setPaginaHist(p => Math.min(totalPagHist, p + 1))}
+                        />
+                    )}
                 </>
             )}
 
@@ -1232,6 +1296,35 @@ export default function ModuloMuestra() {
 }
 
 // ─── SUB-COMPONENTES ──────────────────────────────────────────────────────────
+function Paginador({ pagina, totalPaginas, total, pageSize, onAnterior, onSiguiente }) {
+    return (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.85rem", flexWrap: "wrap", gap: "0.75rem" }}>
+            <p style={{ fontSize: "0.8rem", color: "#6B7280", margin: 0, fontFamily: FONT }}>
+                Mostrando {(pagina - 1) * pageSize + 1}–{Math.min(pagina * pageSize, total)} de {total}
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <button
+                    onClick={onAnterior}
+                    disabled={pagina === 1}
+                    style={{ ...S.btnCancel, padding: "0.45rem 0.85rem", opacity: pagina === 1 ? 0.45 : 1, cursor: pagina === 1 ? "default" : "pointer" }}
+                >
+                    ‹ Anterior
+                </button>
+                <span style={{ fontFamily: FONTC, fontSize: "0.82rem", fontWeight: 700, color: DARK, padding: "0 0.4rem" }}>
+                    Página {pagina} de {totalPaginas}
+                </span>
+                <button
+                    onClick={onSiguiente}
+                    disabled={pagina === totalPaginas}
+                    style={{ ...S.btnCancel, padding: "0.45rem 0.85rem", opacity: pagina === totalPaginas ? 0.45 : 1, cursor: pagina === totalPaginas ? "default" : "pointer" }}
+                >
+                    Siguiente ›
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function Overlay({ children, onClose }) {
     return (
         <div

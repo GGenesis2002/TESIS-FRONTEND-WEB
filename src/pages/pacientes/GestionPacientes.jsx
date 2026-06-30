@@ -50,6 +50,8 @@ export default function GestionPacientes() {
   const [toast, setToast] = useState(null);
   const [errors, setErrors] = useState({});
   const [confirmEstado, setConfirmEstado] = useState(null);
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [itemsPorPagina, setItemsPorPagina] = useState(10);
 
   const [form, setForm] = useState({
     cedula: "", nombres: "", apellidos: "", correo: "",
@@ -193,6 +195,16 @@ export default function GestionPacientes() {
     (p.cedula || "").includes(buscar)
   );
 
+  // ── Paginado ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [buscar, itemsPorPagina]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / itemsPorPagina));
+  const paginaSegura = Math.min(paginaActual, totalPaginas);
+  const inicioIndice = (paginaSegura - 1) * itemsPorPagina;
+  const paginados = filtrados.slice(inicioIndice, inicioIndice + itemsPorPagina);
+
   return (
     <div style={s.container}>
       <Toast toast={toast} />
@@ -234,7 +246,7 @@ export default function GestionPacientes() {
           {filtrados.length === 0 ? (
             <div style={s.empty}>No se encontraron pacientes registrados.</div>
           ) : (
-            filtrados.map((p, idx) => (
+            paginados.map((p, idx) => (
               <div
                 key={p.id_usuario}
                 style={{ ...s.tableRow, background: idx % 2 === 0 ? "#FFFFFF" : "#F9FAFB" }}
@@ -304,10 +316,65 @@ export default function GestionPacientes() {
         </div>
       </div>
 
-      {/* Conteo */}
+      {/* Paginado */}
       {filtrados.length > 0 && (
-        <div style={s.footer}>
-          <span>{filtrados.length} paciente{filtrados.length !== 1 ? "s" : ""} encontrado{filtrados.length !== 1 ? "s" : ""}</span>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexWrap: "wrap", gap: "0.75rem", marginTop: "0.75rem"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.78rem", color: "#9CA3AF", fontFamily: FONT }}>
+            <span>
+              Mostrando {inicioIndice + 1}–{Math.min(inicioIndice + itemsPorPagina, filtrados.length)} de {filtrados.length} paciente{filtrados.length !== 1 ? "s" : ""}
+            </span>
+            <select
+              value={itemsPorPagina}
+              onChange={(e) => setItemsPorPagina(Number(e.target.value))}
+              style={{
+                border: "1.5px solid #E5E7EB", borderRadius: "7px", padding: "0.3rem 0.5rem",
+                fontFamily: FONT, fontSize: "0.76rem", color: DARK, background: "#FAFAFA", cursor: "pointer", outline: "none"
+              }}
+            >
+              {[10, 20, 50, 100].map(n => (
+                <option key={n} value={n}>{n} por página</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            <button
+              onClick={() => setPaginaActual(1)}
+              disabled={paginaSegura === 1}
+              style={{ ...s.btnCancel, padding: "0.4rem 0.65rem", color: paginaSegura === 1 ? "#D1D5DB" : "#6B7280", cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}
+            >
+              «
+            </button>
+            <button
+              onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
+              disabled={paginaSegura === 1}
+              style={{ ...s.btnCancel, padding: "0.4rem 0.65rem", color: paginaSegura === 1 ? "#D1D5DB" : "#6B7280", cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}
+            >
+              ‹ Anterior
+            </button>
+
+            <span style={{ fontFamily: FONTC, fontSize: "0.8rem", color: DARK, fontWeight: 700, padding: "0 0.5rem" }}>
+              Página {paginaSegura} de {totalPaginas}
+            </span>
+
+            <button
+              onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))}
+              disabled={paginaSegura === totalPaginas}
+              style={{ ...s.btnCancel, padding: "0.4rem 0.65rem", color: paginaSegura === totalPaginas ? "#D1D5DB" : "#6B7280", cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}
+            >
+              Siguiente ›
+            </button>
+            <button
+              onClick={() => setPaginaActual(totalPaginas)}
+              disabled={paginaSegura === totalPaginas}
+              style={{ ...s.btnCancel, padding: "0.4rem 0.65rem", color: paginaSegura === totalPaginas ? "#D1D5DB" : "#6B7280", cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}
+            >
+              »
+            </button>
+          </div>
         </div>
       )}
 

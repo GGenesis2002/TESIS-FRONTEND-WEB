@@ -48,6 +48,10 @@ export default function ResultadosEspecialista() {
   const [msg, setMsg]                     = useState(null);
   const [busqueda, setBusqueda]           = useState("");
   const [filtroEstado, setFiltroEstado]   = useState("TODOS");
+  const [desde, setDesde]                 = useState("");
+  const [hasta, setHasta]                 = useState("");
+  const [pagina, setPagina]               = useState(1);
+  const PAGE_SIZE = 10;
   const [tab, setTab]                     = useState("pendientes");
 
   const cargarOrdenes = useCallback(async () => {
@@ -137,9 +141,17 @@ export default function ResultadosEspecialista() {
   const ESTADOS_ENVIADO   = ["Por Validar", "Validado"];
   const q = busqueda.toLowerCase();
   const matchBusq = (o) => !q || `${o.numero_ticket || ""} ${o.paciente_nombre || ""}`.toLowerCase().includes(q);
+  const matchFecha = (o) => {
+    if (!desde && !hasta) return true;
+    const f = o.fecha_orden ? o.fecha_orden.slice(0, 10) : "";
+    if (!f) return false;
+    if (desde && f < desde) return false;
+    if (hasta && f > hasta) return false;
+    return true;
+  };
   const FILTROS_PENDIENTE = ["TODOS", "En Proceso", "Devuelto"];
   const ordenesPendientes = ordenes.filter(o =>
-    ESTADOS_PENDIENTE.includes(o.estado_resultado) && matchBusq(o) &&
+    ESTADOS_PENDIENTE.includes(o.estado_resultado) && matchBusq(o) && matchFecha(o) &&
     (
       filtroEstado === "TODOS" ||
       o.estado_orden === filtroEstado ||
@@ -149,9 +161,15 @@ export default function ResultadosEspecialista() {
     )
   );
   const ordenesEnviadas = ordenes.filter(o =>
-    ESTADOS_ENVIADO.includes(o.estado_resultado) && matchBusq(o)
+    ESTADOS_ENVIADO.includes(o.estado_resultado) && matchBusq(o) && matchFecha(o)
   );
   const ordenesFiltradas = tab === "pendientes" ? ordenesPendientes : ordenesEnviadas;
+
+  const totalPaginas   = Math.max(1, Math.ceil(ordenesFiltradas.length / PAGE_SIZE));
+  const paginaSegura   = Math.min(pagina, totalPaginas);
+  const ordenesPaginadas = ordenesFiltradas.slice((paginaSegura - 1) * PAGE_SIZE, paginaSegura * PAGE_SIZE);
+
+  useEffect(() => { setPagina(1); }, [busqueda, filtroEstado, desde, hasta, tab]);
 
   return (
     <>
@@ -191,6 +209,14 @@ export default function ResultadosEspecialista() {
                 onChange={e => setBusqueda(e.target.value)} style={S.searchInput} />
             </div>
 
+            <div style={{ padding: "0.5rem 0.75rem 0", display: "flex", gap: "0.35rem", alignItems: "center" }}>
+              <input type="date" value={desde} max={hasta || undefined} onChange={e => setDesde(e.target.value)} style={{ ...S.searchInput, flex: 1 }} title="Desde" />
+              <input type="date" value={hasta} min={desde || undefined} onChange={e => setHasta(e.target.value)} style={{ ...S.searchInput, flex: 1 }} title="Hasta" />
+              {(desde || hasta) && (
+                <button onClick={() => { setDesde(""); setHasta(""); }} style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: "0.85rem", padding: "0 0.2rem" }} title="Limpiar fechas">✕</button>
+              )}
+            </div>
+
             {tab === "pendientes" && (
               <div style={{ padding: "0.5rem 0.75rem 0.6rem", display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
                 {FILTROS_PENDIENTE.map(f => {
@@ -211,7 +237,7 @@ export default function ResultadosEspecialista() {
               ) : ordenesFiltradas.length === 0 ? (
                 <div style={S.emptyLeft}>{tab === "pendientes" ? "Sin órdenes pendientes" : "Aún no has enviado resultados"}</div>
               ) : (
-                ordenesFiltradas.map(o => {
+                ordenesPaginadas.map(o => {
                   const enviado     = ESTADOS_ENVIADO.includes(o.estado_resultado);
                   const metaPill    = enviado
                     ? getMeta(o.estado_resultado)

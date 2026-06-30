@@ -161,6 +161,8 @@ export default function GestionUsuarios() {
   const [formErrors, setFormErrors] = useState({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [userToToggle, setUserToToggle] = useState(null);
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [itemsPorPagina, setItemsPorPagina] = useState(10);
 
   const [formData, setFormData] = useState({
     id_usuario: null, cedula: "", nombres: "", apellidos: "",
@@ -410,6 +412,16 @@ export default function GestionUsuarios() {
     : vistaTabla === "unicos" ? usuariosUnicos
     : usuariosFiltrados;
 
+  // ── Paginado ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [busqueda, vistaTabla, itemsPorPagina]);
+
+  const totalPaginas = Math.max(1, Math.ceil(tablaActual.length / itemsPorPagina));
+  const paginaSegura = Math.min(paginaActual, totalPaginas);
+  const inicioIndice = (paginaSegura - 1) * itemsPorPagina;
+  const tablaPaginada = tablaActual.slice(inicioIndice, inicioIndice + itemsPorPagina);
+
   // ── Helper: input con error ──────────────────────────────────────────────────
   const errStyle = (name) => formErrors[name]
     ? { ...styles.fieldInput, borderColor: "#EF4444" }
@@ -491,7 +503,7 @@ export default function GestionUsuarios() {
                 </td>
               </tr>
             ) : (
-              tablaActual.map((u) => {
+              tablaPaginada.map((u) => {
                 const rolesArr = u.roles ? u.roles.split(", ") : [];
                 const esMixto = rolesArr.length > 1;
                 return (
@@ -564,6 +576,68 @@ export default function GestionUsuarios() {
           </tbody>
         </table>
       </div>
+
+      {/* ── PAGINADO ──────────────────────────────────────────────────────── */}
+      {tablaActual.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexWrap: "wrap", gap: "0.75rem", marginTop: "1rem", padding: "0 0.25rem"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.8rem", color: "#6B7280", fontFamily: FONT }}>
+            <span>
+              Mostrando {inicioIndice + 1}–{Math.min(inicioIndice + itemsPorPagina, tablaActual.length)} de {tablaActual.length}
+            </span>
+            <select
+              value={itemsPorPagina}
+              onChange={(e) => setItemsPorPagina(Number(e.target.value))}
+              style={{
+                border: "1.5px solid #E5E7EB", borderRadius: "7px", padding: "0.3rem 0.5rem",
+                fontFamily: FONT, fontSize: "0.78rem", color: DARK, background: "#FAFAFA", cursor: "pointer", outline: "none"
+              }}
+            >
+              {[10, 20, 50, 100].map(n => (
+                <option key={n} value={n}>{n} por página</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            <button
+              onClick={() => setPaginaActual(1)}
+              disabled={paginaSegura === 1}
+              style={{ ...styles.tabBtn, background: "#F3F4F6", color: paginaSegura === 1 ? "#D1D5DB" : DARK, cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}
+            >
+              «
+            </button>
+            <button
+              onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
+              disabled={paginaSegura === 1}
+              style={{ ...styles.tabBtn, background: "#F3F4F6", color: paginaSegura === 1 ? "#D1D5DB" : DARK, cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}
+            >
+              ‹ Anterior
+            </button>
+
+            <span style={{ fontFamily: FONTC, fontSize: "0.8rem", color: DARK, fontWeight: 700, padding: "0 0.5rem" }}>
+              Página {paginaSegura} de {totalPaginas}
+            </span>
+
+            <button
+              onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))}
+              disabled={paginaSegura === totalPaginas}
+              style={{ ...styles.tabBtn, background: "#F3F4F6", color: paginaSegura === totalPaginas ? "#D1D5DB" : DARK, cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}
+            >
+              Siguiente ›
+            </button>
+            <button
+              onClick={() => setPaginaActual(totalPaginas)}
+              disabled={paginaSegura === totalPaginas}
+              style={{ ...styles.tabBtn, background: "#F3F4F6", color: paginaSegura === totalPaginas ? "#D1D5DB" : DARK, cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}
+            >
+              »
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL VER ─────────────────────────────────────────────────────── */}
       {showVerModal && <ModalVer usuario={usuarioVisto} onClose={() => setShowVerModal(false)} />}

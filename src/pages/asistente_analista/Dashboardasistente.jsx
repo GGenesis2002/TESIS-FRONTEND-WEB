@@ -2,6 +2,36 @@ import { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import API from "../../services/api";
 
+// ─── MODAL BASE (detalle clickeable de los KPIs) ─────────────────────────────
+function Modal({ open, onClose, title, subtitle, children }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div style={c.overlay} onClick={onClose}>
+      <div style={c.modalBox} onClick={(e) => e.stopPropagation()}>
+        <div style={c.modalHead}>
+          <div>
+            <h3 style={c.modalTitle}>{title}</h3>
+            {subtitle && <p style={c.modalSub}>{subtitle}</p>}
+          </div>
+          <button style={c.modalCloseBtn} onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: "1.1rem 1.4rem 1.4rem", overflowY: "auto", flex: 1 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function EstadoBadge({ estado, getColorByEstado }) {
+  const color = getColorByEstado(estado);
+  return <span style={{ ...c.estadoBadge, color, background: `${color}18` }}>{estado || "—"}</span>;
+}
+
 export default function DashboardAsistente() {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const fechaActual = new Date();
@@ -10,6 +40,7 @@ export default function DashboardAsistente() {
   const [data, setData] = useState({
     kpis: { pac_reg_hoy: 0, ord_cre_hoy: 0, resultados_pen: 0, listos_entrega: 0 },
     pacientesRecientes: [],
+    ordenesHoy: [],
     grafico: []
   });
   const [loading, setLoading] = useState(false);
@@ -18,6 +49,12 @@ export default function DashboardAsistente() {
   const [busquedaPaciente, setBusquedaPaciente] = useState("");
   const [descargando, setDescargando] = useState(false);
   const [notaRapida, setNotaRapida] = useState(localStorage.getItem("dash_nota") || "");
+
+  // Modal de detalle de KPI ("ordenes" | "enProceso" | "listos" | "pacientes" | null)
+  const [modal, setModal] = useState(null);
+  const [buscarOrden, setBuscarOrden] = useState("");
+  const [buscarPacienteModal, setBuscarPacienteModal] = useState("");
+  const closeModal = () => { setModal(null); setBuscarOrden(""); setBuscarPacienteModal(""); };
   
   // Datos simulados de negocio avanzados (Finanzas y alertas críticas de muestras)
   const [cajaDelDia, setCajaDelDia] = useState({ efectivo: 0, transferencia: 0 });
@@ -82,13 +119,6 @@ export default function DashboardAsistente() {
     }
   };
 
-  const kpisMap = [
-    { icon: "📋", label: "Órdenes Hoy",     value: data.kpis.ord_cre_hoy,    color: "#E88B3A", desc: "Nuevas órdenes registradas" },
-    { icon: "🧫", label: "En Proceso",      value: data.kpis.resultados_pen, color: "#3B82F6", desc: "Resultados pendientes analista" },
-    { icon: "✅", label: "Listos para Entrega", value: data.kpis.listos_entrega, color: "#10B981", desc: "Resultados validados listos" },
-    { icon: "👤", label: "Pacientes Registrados", value: data.kpis.pac_reg_hoy,    color: "#8B5CF6", desc: "Nuevos registros totales" },
-  ];
-
   const getColorByEstado = (estado) => {
     const colors = {
       "Generada": "#3B82F6", "Pagada": "#10B981", "En Proceso": "#8B5CF6",
@@ -97,6 +127,29 @@ export default function DashboardAsistente() {
     return colors[estado] || "#9CA3AF";
   };
 
+  const kpisMap = [
+    { icon: "📋", label: "Órdenes Hoy",     value: data.kpis.ord_cre_hoy,    color: "#E88B3A", desc: "Nuevas órdenes registradas", onClick: () => setModal("ordenes") },
+    { icon: "🧫", label: "En Proceso",      value: data.kpis.resultados_pen, color: "#3B82F6", desc: "Resultados pendientes analista", onClick: () => setModal("enProceso") },
+    { icon: "✅", label: "Listos para Entrega", value: data.kpis.listos_entrega, color: "#10B981", desc: "Resultados validados listos", onClick: () => setModal("listos") },
+    { icon: "👤", label: "Pacientes Registrados", value: data.kpis.pac_reg_hoy,    color: "#8B5CF6", desc: "Nuevos registros totales", onClick: () => setModal("pacientes") },
+  ];
+
+  const ordenesHoy = data.ordenesHoy || [];
+  const ordenesFiltradasModal = (lista) => lista.filter(o => {
+    const q = buscarOrden.toLowerCase();
+    return !q
+      || String(o.numero_ticket || "").toLowerCase().includes(q)
+      || (o.paciente || "").toLowerCase().includes(q)
+      || (o.estado || "").toLowerCase().includes(q);
+  });
+  const ordenesEnProceso = ordenesHoy.filter(o => o.estado === "Generada" || o.estado === "En Proceso");
+  const ordenesListas    = ordenesHoy.filter(o => o.estado === "Validado");
+
+  const pacientesModalFiltrados = (data.pacientesRecientes || []).filter(p => {
+    const nombreCompleto = `${p.nombres || ""} ${p.apellidos || ""}`.toLowerCase();
+    return nombreCompleto.includes(buscarPacienteModal.toLowerCase()) || String(p.id_paciente || "").includes(buscarPacienteModal);
+  });
+
   const pacientesFiltrados = data.pacientesRecientes.filter(p => {
     const nombreCompleto = `${p.nombres || ""} ${p.apellidos || ""}`.toLowerCase();
     return nombreCompleto.includes(busquedaPaciente.toLowerCase()) || String(p.id_paciente || "").includes(busquedaPaciente);
@@ -104,6 +157,49 @@ export default function DashboardAsistente() {
 
   return (
     <div style={c.wrap}>
+
+      {/* ── MODALES DE DETALLE (KPIs clickeables) ── */}
+      <Modal open={modal === "ordenes"} onClose={closeModal}
+        title="📋 Órdenes de Hoy" subtitle={`${ordenesHoy.length} órdenes registradas hoy`}>
+        <input style={c.inputSearch} placeholder="🔍 Buscar por ticket, paciente o estado…"
+          value={buscarOrden} onChange={e => setBuscarOrden(e.target.value)} />
+        <OrdenesTabla lista={ordenesFiltradasModal(ordenesHoy)} getColorByEstado={getColorByEstado} />
+      </Modal>
+
+      <Modal open={modal === "enProceso"} onClose={closeModal}
+        title="🧫 Resultados en Proceso" subtitle={`${ordenesEnProceso.length} órdenes pendientes de análisis`}>
+        <input style={c.inputSearch} placeholder="🔍 Buscar por ticket o paciente…"
+          value={buscarOrden} onChange={e => setBuscarOrden(e.target.value)} />
+        <OrdenesTabla lista={ordenesFiltradasModal(ordenesEnProceso)} getColorByEstado={getColorByEstado} />
+      </Modal>
+
+      <Modal open={modal === "listos"} onClose={closeModal}
+        title="✅ Listos para Entrega" subtitle={`${ordenesListas.length} resultados validados`}>
+        <input style={c.inputSearch} placeholder="🔍 Buscar por ticket o paciente…"
+          value={buscarOrden} onChange={e => setBuscarOrden(e.target.value)} />
+        <OrdenesTabla lista={ordenesFiltradasModal(ordenesListas)} getColorByEstado={getColorByEstado} />
+      </Modal>
+
+      <Modal open={modal === "pacientes"} onClose={closeModal}
+        title="👤 Pacientes Registrados" subtitle={`${(data.pacientesRecientes || []).length} pacientes más recientes`}>
+        <input style={c.inputSearch} placeholder="🔍 Buscar por nombre o ID…"
+          value={buscarPacienteModal} onChange={e => setBuscarPacienteModal(e.target.value)} />
+        {pacientesModalFiltrados.length === 0 ? (
+          <p style={c.emptyState}>No hay coincidencias en el listado.</p>
+        ) : (
+          <div style={c.scrollList}>
+            {pacientesModalFiltrados.map((p, i) => (
+              <div key={p.id_paciente || i} style={c.logRow}>
+                <div style={c.avatarCircle}>{p.nombres ? p.nombres.charAt(0) : "P"}</div>
+                <div>
+                  <p style={c.logName}>{p.nombres} {p.apellidos}</p>
+                  <p style={c.logSub}>ID Paciente: #{p.id_paciente || "N/A"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       {/* ── ENCABEZADO ── */}
       <div style={c.header}>
@@ -121,11 +217,18 @@ export default function DashboardAsistente() {
       {/* ── METRICAS / KPIS ── */}
       <div style={c.kpiGrid}>
         {kpisMap.map((k, i) => (
-          <div key={i} style={c.kpiCard}>
+          <div
+            key={i}
+            style={{ ...c.kpiCard, cursor: "pointer" }}
+            onClick={k.onClick}
+            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 4px 14px rgba(0,0,0,0.08)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "translateY(0)"; }}
+          >
             <div style={{ ...c.kpiIcon, background: `${k.color}15`, color: k.color }}>{k.icon}</div>
             <p style={c.kpiLabel}>{k.label}</p>
             <p style={{ ...c.kpiValue, color: k.color }}>{k.value || 0}</p>
             <p style={c.kpiDesc}>{k.desc}</p>
+            <p style={c.kpiVerMas}>Ver detalle →</p>
           </div>
         ))}
       </div>
@@ -274,6 +377,29 @@ export default function DashboardAsistente() {
   );
 }
 
+function OrdenesTabla({ lista, getColorByEstado }) {
+  if (!lista || lista.length === 0) return <p style={c.emptyState}>No hay órdenes que coincidan.</p>;
+  return (
+    <table style={c.modalTable}>
+      <thead>
+        <tr>
+          {["Ticket", "Paciente", "Estado", "Total"].map(h => <th key={h} style={c.modalTh}>{h}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {lista.map((o, i) => (
+          <tr key={o.id_orden || i} style={{ borderBottom: "1px solid #F1F5F9" }}>
+            <td style={c.modalTd}><span style={c.ticketStyle}>{o.numero_ticket || "—"}</span></td>
+            <td style={c.modalTd}>{o.paciente || "—"}</td>
+            <td style={c.modalTd}><EstadoBadge estado={o.estado} getColorByEstado={getColorByEstado} /></td>
+            <td style={c.modalTd}>${Number(o.total || 0).toFixed(2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function QuickCard({ icon, label, desc, path }) {
   return (
     <div
@@ -342,6 +468,21 @@ const c = {
   quickCard:  { display: "flex", alignItems: "center", gap: "0.75rem", padding: "1rem", border: "1px solid #E5E7EB", borderRadius: "8px", cursor: "pointer", transition: "all 0.2s", background: "#FAFAFA" },
   quickLabel: { fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.95rem", color: "#1F2937", margin: "0 0 0.1rem", textTransform: "uppercase" },
   quickDesc:  { fontSize: "0.75rem", color: "#6B7280", margin: 0 },
+
+  kpiVerMas:  { fontSize: "0.68rem", color: "#9CA3AF", margin: "0.5rem 0 0" },
+
+  // ── Modal de detalle (KPIs clickeables) ──
+  overlay:     { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" },
+  modalBox:    { background: "#FFF", borderRadius: "16px", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", width: "100%", maxWidth: "640px", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" },
+  modalHead:   { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "1.1rem 1.4rem 0.9rem", borderBottom: "1px solid #F1F5F9", flexShrink: 0 },
+  modalTitle:  { fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.05rem", color: "#1F2937", margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" },
+  modalSub:    { fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#9CA3AF", margin: "0.2rem 0 0" },
+  modalCloseBtn: { background: "none", border: "none", fontSize: "1rem", cursor: "pointer", color: "#9CA3AF", padding: "0.25rem", lineHeight: 1 },
+  modalTable:  { width: "100%", borderCollapse: "collapse", marginTop: "0.25rem" },
+  modalTh:     { fontFamily: "'Barlow', sans-serif", fontSize: "0.7rem", color: "#9CA3AF", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", padding: "0.5rem 0.6rem", textAlign: "left", borderBottom: "2px solid #F1F5F9" },
+  modalTd:     { padding: "0.55rem 0.6rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", color: "#374151" },
+  estadoBadge: { padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.72rem", fontFamily: "'Barlow', sans-serif", fontWeight: 600, whiteSpace: "nowrap" },
+  ticketStyle: { fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.85rem", color: "#1F2937", letterSpacing: "0.05em" },
 };
 
 if (typeof window !== "undefined") {

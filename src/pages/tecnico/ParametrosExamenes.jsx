@@ -71,6 +71,12 @@ export default function ParametrosExamenes() {
   const [guardandoCat, setGuardandoCat] = useState(false);
   const [buscarCat, setBuscarCat] = useState("");
 
+  // ── Paginado ──
+  const [paginaExamenes, setPaginaExamenes] = useState(1);
+  const [itemsPorPaginaExamenes, setItemsPorPaginaExamenes] = useState(12);
+  const [paginaCategorias, setPaginaCategorias] = useState(1);
+  const [itemsPorPaginaCategorias, setItemsPorPaginaCategorias] = useState(12);
+
   const [confirmarEliminar, setConfirmarEliminar] = useState(null);
   // tipo: "parametro" | "examen" | "categoria"
   const [confirmarEliminarExamen, setConfirmarEliminarExamen] = useState(null);
@@ -110,6 +116,8 @@ export default function ParametrosExamenes() {
 
   useEffect(() => { cargarExamenes(); cargarCategorias(); }, []);
   useEffect(() => { cargarExamenes(); }, [buscar]);
+  useEffect(() => { setPaginaExamenes(1); }, [buscar, itemsPorPaginaExamenes]);
+  useEffect(() => { setPaginaCategorias(1); }, [buscarCat, itemsPorPaginaCategorias]);
 
   // ── Guardar examen ── (ahora envía tipo_resultado)
  const handleGuardarExamen = async () => {
@@ -302,6 +310,17 @@ const handleEditarExamen = (examen) => {
   const categoriasFiltradas = categorias.filter(c =>
     c.nombre_categoria?.toLowerCase().includes(buscarCat.toLowerCase())
   );
+
+  // ── Cálculo de páginas ──
+  const totalPaginasExamenes = Math.max(1, Math.ceil(examenes.length / itemsPorPaginaExamenes));
+  const paginaExamenesSegura = Math.min(paginaExamenes, totalPaginasExamenes);
+  const inicioExamenes = (paginaExamenesSegura - 1) * itemsPorPaginaExamenes;
+  const examenesPaginados = examenes.slice(inicioExamenes, inicioExamenes + itemsPorPaginaExamenes);
+
+  const totalPaginasCategorias = Math.max(1, Math.ceil(categoriasFiltradas.length / itemsPorPaginaCategorias));
+  const paginaCategoriasSegura = Math.min(paginaCategorias, totalPaginasCategorias);
+  const inicioCategorias = (paginaCategoriasSegura - 1) * itemsPorPaginaCategorias;
+  const categoriasPaginadas = categoriasFiltradas.slice(inicioCategorias, inicioCategorias + itemsPorPaginaCategorias);
 
   // ── VISTA PARÁMETROS ──
   // CAMBIO 2: Si el examen es tipo PDF, mostrar aviso en lugar del formulario de parámetros
@@ -712,7 +731,7 @@ const handleEditarExamen = (examen) => {
             <p style={{ textAlign: "center", color: "#6B7280", padding: "3rem" }}>Cargando exámenes...</p>
           ) : (
             <div style={examenesGridStyle}>
-              {examenes.map(e => (
+              {examenesPaginados.map(e => (
                 <div key={e.id_examen} style={examenCardStyle}>
                   <div style={{ fontSize: "1.5rem", color: "#E5E7EB", marginBottom: "0.5rem" }}>🔬</div>
                   <p style={catLabelStyle}>{e.nombre_categoria}</p>
@@ -746,6 +765,19 @@ const handleEditarExamen = (examen) => {
                 </div>
               ))}
             </div>
+          )}
+
+          {!loading && examenes.length > 0 && (
+            <PaginadorControl
+              paginaActual={paginaExamenesSegura}
+              totalPaginas={totalPaginasExamenes}
+              totalItems={examenes.length}
+              itemsPorPagina={itemsPorPaginaExamenes}
+              inicioIndice={inicioExamenes}
+              onCambiarPagina={setPaginaExamenes}
+              onCambiarItemsPorPagina={setItemsPorPaginaExamenes}
+              etiqueta="examen"
+            />
           )}
         </>
       )}
@@ -783,7 +815,7 @@ const handleEditarExamen = (examen) => {
           </div>
 
           <div style={catGridStyle}>
-            {categoriasFiltradas.map(c => (
+            {categoriasPaginadas.map(c => (
               <div key={c.id_categoria} style={catCardStyle}>
                 <span style={{ color: "#E88B3A", fontSize: "1.1rem" }}>🏷️</span>
                 <div style={{ flex: 1 }}>
@@ -799,9 +831,22 @@ const handleEditarExamen = (examen) => {
               </div>
             ))}
           </div>
+
+          {categoriasFiltradas.length > 0 && (
+            <PaginadorControl
+              paginaActual={paginaCategoriasSegura}
+              totalPaginas={totalPaginasCategorias}
+              totalItems={categoriasFiltradas.length}
+              itemsPorPagina={itemsPorPaginaCategorias}
+              inicioIndice={inicioCategorias}
+              onCambiarPagina={setPaginaCategorias}
+              onCambiarItemsPorPagina={setItemsPorPaginaCategorias}
+              etiqueta="categoría"
+              etiquetaPlural="categorías"
+            />
+          )}
         </>
       )}
-      {/* Modal eliminar EXAMEN */}
       {confirmarEliminarExamen && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:"1rem" }}>
           <div style={{ background:"#FFF", borderRadius:"16px", width:"100%", maxWidth:"420px", overflow:"hidden", boxShadow:"0 24px 60px rgba(0,0,0,0.25)", fontFamily:"'Barlow', sans-serif" }}>
@@ -926,6 +971,76 @@ function NotifModal({ data, onClose }) {
             {cfg.btnLabel}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PAGINADOR ────────────────────────────────────────────────────────────────
+function PaginadorControl({
+  paginaActual, totalPaginas, totalItems, itemsPorPagina,
+  inicioIndice, onCambiarPagina, onCambiarItemsPorPagina,
+  etiqueta = "elemento", etiquetaPlural,
+}) {
+  const plural = etiquetaPlural || `${etiqueta}s`;
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      flexWrap: "wrap", gap: "0.75rem", marginTop: "1rem", padding: "0 0.1rem"
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.8rem", color: "#6B7280", fontFamily: "'Barlow', sans-serif" }}>
+        <span>
+          Mostrando {inicioIndice + 1}–{Math.min(inicioIndice + itemsPorPagina, totalItems)} de {totalItems} {totalItems === 1 ? etiqueta : plural}
+        </span>
+        <select
+          value={itemsPorPagina}
+          onChange={(e) => onCambiarItemsPorPagina(Number(e.target.value))}
+          style={{
+            border: "1.5px solid #E5E7EB", borderRadius: "7px", padding: "0.3rem 0.5rem",
+            fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", color: "#1F2937",
+            background: "#FAFAFA", cursor: "pointer", outline: "none"
+          }}
+        >
+          {[12, 24, 48, 96].map(n => (
+            <option key={n} value={n}>{n} por página</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+        <button
+          onClick={() => onCambiarPagina(1)}
+          disabled={paginaActual === 1}
+          style={{ ...registrarCatBtnStyle, background: "#F3F4F6", color: paginaActual === 1 ? "#D1D5DB" : "#1F2937", padding: "0.4rem 0.65rem", cursor: paginaActual === 1 ? "not-allowed" : "pointer" }}
+        >
+          «
+        </button>
+        <button
+          onClick={() => onCambiarPagina(Math.max(1, paginaActual - 1))}
+          disabled={paginaActual === 1}
+          style={{ ...registrarCatBtnStyle, background: "#F3F4F6", color: paginaActual === 1 ? "#D1D5DB" : "#1F2937", padding: "0.4rem 0.75rem", cursor: paginaActual === 1 ? "not-allowed" : "pointer" }}
+        >
+          ‹ Anterior
+        </button>
+
+        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.8rem", color: "#1F2937", fontWeight: 700, padding: "0 0.5rem" }}>
+          Página {paginaActual} de {totalPaginas}
+        </span>
+
+        <button
+          onClick={() => onCambiarPagina(Math.min(totalPaginas, paginaActual + 1))}
+          disabled={paginaActual === totalPaginas}
+          style={{ ...registrarCatBtnStyle, background: "#F3F4F6", color: paginaActual === totalPaginas ? "#D1D5DB" : "#1F2937", padding: "0.4rem 0.75rem", cursor: paginaActual === totalPaginas ? "not-allowed" : "pointer" }}
+        >
+          Siguiente ›
+        </button>
+        <button
+          onClick={() => onCambiarPagina(totalPaginas)}
+          disabled={paginaActual === totalPaginas}
+          style={{ ...registrarCatBtnStyle, background: "#F3F4F6", color: paginaActual === totalPaginas ? "#D1D5DB" : "#1F2937", padding: "0.4rem 0.65rem", cursor: paginaActual === totalPaginas ? "not-allowed" : "pointer" }}
+        >
+          »
+        </button>
       </div>
     </div>
   );

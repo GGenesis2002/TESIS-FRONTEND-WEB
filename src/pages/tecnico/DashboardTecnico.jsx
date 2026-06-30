@@ -42,6 +42,14 @@ function getRolColor(rol) {
   return "#6B7280";
 }
 
+// ── Un examen se considera "de tipo PDF" si así lo indica su tipo de resultado
+//    o si tiene un archivo PDF asociado. Estos exámenes NO requieren parámetros
+//    de referencia.
+const esExamenPdf = (ex) =>
+  (ex.tipo_resultado && String(ex.tipo_resultado).toLowerCase().includes("pdf")) ||
+  ex.archivo_pdf === true ||
+  ex.es_pdf === true;
+
 /* ── Animación de número contando ── */
 function useCountUp(target, duration = 700, active = true) {
   const [val, setVal] = useState(0);
@@ -234,8 +242,15 @@ export default function DashboardTecnico() {
   });
   const [personal, setPersonal]     = useState([]);
   const [auditoria, setAuditoria]   = useState([]);
+  const [examenesList, setExamenesList]   = useState([]);
+  const [categoriasList, setCategoriasList] = useState([]);
+  const [parametrosList, setParametrosList] = useState([]);
   const [examenesSinParam, setExamenesSinParam] = useState([]);
   const [personaDetalle, setPersonaDetalle]      = useState(null);
+  const [kpiModalTipo, setKpiModalTipo]          = useState(null);
+  const [kpiBusqueda, setKpiBusqueda]            = useState("");
+  const [activosHoyList, setActivosHoyList]      = useState([]);
+  const [cargandoActivosHoy, setCargandoActivosHoy] = useState(false);
   const [notifs, setNotifs]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [showNotif, setShowNotif]   = useState(false);
@@ -293,14 +308,6 @@ export default function DashboardTecnico() {
       const dash   = resDash.data       || {};
       const dk     = dash.kpis          || {};
 
-      // ── Un examen se considera "de tipo PDF" si así lo indica su tipo de resultado
-      //    o si tiene un archivo PDF asociado. Estos exámenes NO requieren parámetros
-      //    de referencia, así que se excluyen siempre de este análisis.
-      const esExamenPdf = (ex) =>
-        (ex.tipo_resultado && String(ex.tipo_resultado).toLowerCase().includes("pdf")) ||
-        ex.archivo_pdf === true ||
-        ex.es_pdf === true;
-
       const examsActivos = exams.filter(ex => ex.estado === true || ex.estado === 1 || ex.activo === true);
       const idsConParametros = new Set((params || []).map(p => p.id_examen));
       const examsSinParametros = examsActivos.filter(ex => !esExamenPdf(ex) && !idsConParametros.has(ex.id_examen));
@@ -318,6 +325,9 @@ export default function DashboardTecnico() {
         usuariosActivosHoy: parseInt(dk.usuarios_activos_hoy ?? 0,             10),
       });
       setExamenesSinParam(examsSinParametros);
+      setExamenesList(exams);
+      setCategoriasList(cats);
+      setParametrosList(params);
 
       setPersonal(pers);
       setAuditoria(dash.auditoriaDetallada || []);
@@ -336,6 +346,25 @@ export default function DashboardTecnico() {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  /* ── Abrir el detalle de un KPI ── */
+  const abrirKpiModal = (tipo) => {
+    setKpiBusqueda("");
+    setKpiModalTipo(tipo);
+    if (tipo === "activosHoy" && activosHoyList.length === 0) cargarActivosHoy();
+  };
+
+  const cargarActivosHoy = async () => {
+    setCargandoActivosHoy(true);
+    try {
+      const { data } = await API.get("/dashboard/usuarios-activos-hoy");
+      setActivosHoyList(Array.isArray(data) ? data : []);
+    } catch {
+      setActivosHoyList([]);
+    } finally {
+      setCargandoActivosHoy(false);
     }
   };
 
@@ -409,6 +438,43 @@ export default function DashboardTecnico() {
   const totalPags  = Math.max(1, Math.ceil(auditFilt.length / POR_PAG));
   const auditPag   = auditFilt.slice((pagina-1)*POR_PAG, pagina*POR_PAG);
   const sinLeer = notifs.filter(n => n.tipo !== "success" && !leidas.has(n.id)).length;
+
+  /* ── Detalle de KPI: arma la lista + título según el KPI clickeado ── */
+  const idsConParametrosSet = new Set((parametrosList || []).map(p => p.id_examen));
+  const kq = kpiBusqueda.toLowerCase();
+
+  const KPI_MODAL = {
+    totalUsuarios: { titulo: "👥 Total de Usuarios", lista: personal },
+    activos:       { titulo: "✅ Usuarios Activos",  lista: personal.filter(p => p.estado) },
+    inactivos:     { titulo: "⏸️ Usuarios Inactivos", lista: personal.filter(p => !p.estado) },
+    activosHoy:    { titulo: "🕐 Usuarios Activos Hoy", lista: activosHoyList },
+    examenes:      { titulo: "🧪 Catálogo de Exámenes", lista: examenesList },
+    categorias:    { titulo: "🗂️ Categorías de Exámenes", lista: categoriasList },
+    parametros:    { titulo: "🛠️ Parámetros de Referencia", lista: parametrosList },
+    sinParametros: { titulo: "⚡ Exámenes sin Parámetros", lista: examenesSinParam },
+  };
+  const kpiActivo = kpiModalTipo ? KPI_MODAL[kpiModalTipo] : null;
+
+  let kpiListaFiltrada = [];
+  if (kpiActivo) {
+    if (["totalUsuarios", "activos", "inactivos"].includes(kpiModalTipo)) {
+      kpiListaFiltrada = kpiActivo.lista.filter(p => !kq || `${p.nombres} ${p.apellidos} ${p.username}`.toLowerCase().includes(kq));
+    } else if (kpiModalTipo === "activosHoy") {
+      kpiListaFiltrada = kpiActivo.lista.filter(p => !kq || `${p.nombres} ${p.apellidos} ${p.username}`.toLowerCase().includes(kq));
+    } else if (kpiModalTipo === "examenes" || kpiModalTipo === "sinParametros") {
+      kpiListaFiltrada = kpiActivo.lista.filter(ex => !kq || (ex.nombre_examen || ex.nombre || "").toLowerCase().includes(kq));
+    } else if (kpiModalTipo === "categorias") {
+      kpiListaFiltrada = kpiActivo.lista.filter(c => !kq || (c.nombre || c.nombre_categoria || "").toLowerCase().includes(kq));
+    } else if (kpiModalTipo === "parametros") {
+      kpiListaFiltrada = kpiActivo.lista.filter(pa => {
+        const examNombre = (examenesList.find(e => e.id_examen === pa.id_examen) || {}).nombre_examen || "";
+        return !kq || (pa.nombre_parametro || "").toLowerCase().includes(kq) || examNombre.toLowerCase().includes(kq);
+      });
+    }
+  }
+  const KPI_LIMITE = 200;
+  const kpiListaVisible = kpiListaFiltrada.slice(0, KPI_LIMITE);
+
 
   /* ════════════════════════════════════════════════════
      RENDER
@@ -488,19 +554,19 @@ export default function DashboardTecnico() {
             {/* ── KPIs USUARIOS ── */}
             <p style={S.grpLabel}>ESTADO DE USUARIOS</p>
             <div style={S.kpiGrid}>
-              <KpiCard anim={animKpis} delay={0}   icon="👥" label="Total Usuarios"   value={kpis.totalUsuarios}      color="#E88B3A" desc="Personal registrado" />
-              <KpiCard anim={animKpis} delay={60}  icon="✅" label="Activos"          value={kpis.usuariosActivos}    color="#10B981" desc="Con acceso habilitado" />
-              <KpiCard anim={animKpis} delay={120} icon="⏸️" label="Inactivos"        value={kpis.usuariosInactivos}  color="#6B7280" desc="Deshabilitados" />
-              <KpiCard anim={animKpis} delay={180} icon="🕐" label="Activos Hoy"      value={kpis.usuariosActivosHoy} color="#3B82F6" desc="Con sesión hoy" />
+              <KpiCard anim={animKpis} delay={0}   icon="👥" label="Total Usuarios"   value={kpis.totalUsuarios}      color="#E88B3A" desc="Personal registrado" onClick={() => abrirKpiModal("totalUsuarios")} />
+              <KpiCard anim={animKpis} delay={60}  icon="✅" label="Activos"          value={kpis.usuariosActivos}    color="#10B981" desc="Con acceso habilitado" onClick={() => abrirKpiModal("activos")} />
+              <KpiCard anim={animKpis} delay={120} icon="⏸️" label="Inactivos"        value={kpis.usuariosInactivos}  color="#6B7280" desc="Deshabilitados" onClick={() => abrirKpiModal("inactivos")} />
+              <KpiCard anim={animKpis} delay={180} icon="🕐" label="Activos Hoy"      value={kpis.usuariosActivosHoy} color="#3B82F6" desc="Con sesión hoy" onClick={() => abrirKpiModal("activosHoy")} />
             </div>
 
             {/* ── KPIs CATÁLOGO ── */}
             <p style={S.grpLabel}>CATÁLOGO Y CONFIGURACIÓN</p>
             <div style={S.kpiGrid}>
-              <KpiCard anim={animKpis} delay={0}   icon="🧪" label="Exámenes"         value={kpis.totalExamenes}   color="#8B5CF6" desc="En catálogo activo" />
-              <KpiCard anim={animKpis} delay={60}  icon="🗂️" label="Categorías"       value={kpis.totalCategorias} color="#3B82F6" desc="Especialidades" />
-              <KpiCard anim={animKpis} delay={120} icon="🛠️" label="Parámetros"       value={kpis.totalParametros} color="#10B981" desc="Rangos de referencia" />
-              <KpiCard anim={animKpis} delay={180} icon="⚡" label="Sin Parámetros"   value={kpis.exSinParametros} color={kpis.exSinParametros>0?"#F59E0B":"#10B981"} desc="Requieren configuración (excluye PDF)" onClick={() => sinParamRef.current?.scrollIntoView({ behavior:"smooth", block:"start" })} />
+              <KpiCard anim={animKpis} delay={0}   icon="🧪" label="Exámenes"         value={kpis.totalExamenes}   color="#8B5CF6" desc="En catálogo activo" onClick={() => abrirKpiModal("examenes")} />
+              <KpiCard anim={animKpis} delay={60}  icon="🗂️" label="Categorías"       value={kpis.totalCategorias} color="#3B82F6" desc="Especialidades" onClick={() => abrirKpiModal("categorias")} />
+              <KpiCard anim={animKpis} delay={120} icon="🛠️" label="Parámetros"       value={kpis.totalParametros} color="#10B981" desc="Rangos de referencia" onClick={() => abrirKpiModal("parametros")} />
+              <KpiCard anim={animKpis} delay={180} icon="⚡" label="Sin Parámetros"   value={kpis.exSinParametros} color={kpis.exSinParametros>0?"#F59E0B":"#10B981"} desc="Requieren configuración (excluye PDF)" onClick={() => abrirKpiModal("sinParametros")} />
             </div>
 
             {/* ── GRÁFICOS ── */}
@@ -657,6 +723,174 @@ export default function DashboardTecnico() {
           </>
         )}
       </div>
+
+      {/* ══════════════════════════════════════════════════════
+          MODAL — DETALLE DE KPI (genérico para los 8 indicadores)
+      ══════════════════════════════════════════════════════ */}
+      {kpiModalTipo && (
+        <div style={S.overlay} onClick={() => setKpiModalTipo(null)}>
+          <div style={S.modal} onClick={e => e.stopPropagation()}>
+            <div style={S.mHead}>
+              <div>
+                <h3 style={S.mTitle}>{kpiActivo.titulo}</h3>
+                <p style={S.mSub}>{kpiListaFiltrada.length} registro{kpiListaFiltrada.length !== 1 ? "s" : ""}</p>
+              </div>
+              <button onClick={() => setKpiModalTipo(null)} style={S.closeBtn}>✕</button>
+            </div>
+
+            {kpiModalTipo !== "sinParametros" && (
+              <input
+                type="text"
+                placeholder="🔍  Buscar…"
+                value={kpiBusqueda}
+                onChange={e => setKpiBusqueda(e.target.value)}
+                style={{ ...S.sInput, marginBottom: "0.85rem" }}
+                autoFocus
+              />
+            )}
+
+            <div style={{ maxHeight: "440px", overflowY: "auto" }}>
+              {/* ── Usuarios (Total / Activos / Inactivos) ── */}
+              {["totalUsuarios", "activos", "inactivos"].includes(kpiModalTipo) && (
+                kpiListaVisible.length === 0 ? (
+                  <p style={S.empty}>Sin resultados</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {kpiListaVisible.map((p, i) => (
+                      <div key={p.id_usuario || i}
+                        onClick={() => { setKpiModalTipo(null); setPersonaDetalle(p); }}
+                        style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.55rem 0.7rem", borderRadius: 8, cursor: "pointer", background: i % 2 === 0 ? "#FAFAFA" : "#FFF" }}
+                        onMouseEnter={e => e.currentTarget.style.background = "#FFF7ED"}
+                        onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "#FAFAFA" : "#FFF"}
+                      >
+                        <div style={{ ...S.avatar, background: p.estado ? "rgba(16,185,129,0.15)" : "rgba(156,163,175,0.15)", color: p.estado ? "#059669" : "#9CA3AF" }}>
+                          {(p.nombres || "?")[0].toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontWeight: 600, color: "#1F2937", fontSize: "0.87rem", margin: 0 }}>{p.nombres} {p.apellidos}</p>
+                          <p style={{ fontSize: "0.72rem", color: "#9CA3AF", margin: 0 }}>@{p.username || "—"}</p>
+                        </div>
+                        <span style={{ ...S.pill, background: p.estado ? "rgba(16,185,129,0.1)" : "rgba(107,114,128,0.1)", color: p.estado ? "#059669" : "#6B7280" }}>
+                          {p.estado ? "● Activo" : "○ Inactivo"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* ── Activos Hoy ── */}
+              {kpiModalTipo === "activosHoy" && (
+                cargandoActivosHoy ? (
+                  <div style={{ ...S.loadBox, padding: "2.5rem 0" }}><div style={S.spinner} /></div>
+                ) : kpiListaVisible.length === 0 ? (
+                  <p style={S.empty}>Nadie ha iniciado sesión hoy</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {kpiListaVisible.map((p, i) => (
+                      <div key={p.id_usuario || i} style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.55rem 0.7rem", borderRadius: 8, background: i % 2 === 0 ? "#FAFAFA" : "#FFF" }}>
+                        <div style={{ ...S.avatar, background: "rgba(59,130,246,0.15)", color: "#3B82F6" }}>{(p.nombres || "?")[0].toUpperCase()}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontWeight: 600, color: "#1F2937", fontSize: "0.87rem", margin: 0 }}>{p.nombres} {p.apellidos}</p>
+                          <p style={{ fontSize: "0.72rem", color: "#9CA3AF", margin: 0 }}>@{p.username || "—"}{p.rol ? ` · ${p.rol}` : ""}</p>
+                        </div>
+                        <span style={{ fontSize: "0.75rem", color: "#3B82F6" }}>{fmtFull(p.ultimo_acceso) || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* ── Exámenes / Sin Parámetros ── */}
+              {(kpiModalTipo === "examenes" || kpiModalTipo === "sinParametros") && (
+                kpiListaVisible.length === 0 ? (
+                  <p style={S.empty}>{kpiModalTipo === "sinParametros" ? "✅ Todos los exámenes (no PDF) tienen parámetros" : "Sin resultados"}</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {kpiListaVisible.map((ex, i) => {
+                      const tieneParams = idsConParametrosSet.has(ex.id_examen);
+                      const esPdf = esExamenPdf(ex);
+                      return (
+                        <div key={ex.id_examen || i} style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.7rem", borderRadius: 8, background: i % 2 === 0 ? "#FAFAFA" : "#FFF" }}>
+                          <span style={{ fontSize: "1rem" }}>{esPdf ? "📄" : "🧪"}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontWeight: 600, color: "#1F2937", fontSize: "0.85rem", margin: 0 }}>{ex.nombre_examen || ex.nombre || "—"}</p>
+                          </div>
+                          {esPdf ? (
+                            <span style={{ ...S.pill, background: "rgba(139,92,246,0.1)", color: "#7C3AED" }}>📄 PDF</span>
+                          ) : tieneParams ? (
+                            <span style={{ ...S.pill, background: "rgba(16,185,129,0.1)", color: "#059669" }}>✓ Con parámetros</span>
+                          ) : (
+                            <span style={{ ...S.pill, background: "rgba(245,158,11,0.1)", color: "#D97706" }}>⚡ Sin parámetros</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+
+              {/* ── Categorías ── */}
+              {kpiModalTipo === "categorias" && (
+                kpiListaVisible.length === 0 ? (
+                  <p style={S.empty}>Sin resultados</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {kpiListaVisible.map((c, i) => (
+                      <div key={c.id_categoria || i} style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.7rem", borderRadius: 8, background: i % 2 === 0 ? "#FAFAFA" : "#FFF" }}>
+                        <span>🗂️</span>
+                        <p style={{ flex: 1, fontWeight: 600, color: "#1F2937", fontSize: "0.85rem", margin: 0 }}>{c.nombre || c.nombre_categoria || "—"}</p>
+                        {c.estado != null && (
+                          <span style={{ ...S.pill, background: c.estado ? "rgba(16,185,129,0.1)" : "rgba(107,114,128,0.1)", color: c.estado ? "#059669" : "#6B7280" }}>
+                            {c.estado ? "● Activa" : "○ Inactiva"}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* ── Parámetros ── */}
+              {kpiModalTipo === "parametros" && (
+                kpiListaVisible.length === 0 ? (
+                  <p style={S.empty}>Sin resultados</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {kpiListaVisible.map((pa, i) => {
+                      const examNombre = (examenesList.find(e => e.id_examen === pa.id_examen) || {}).nombre_examen;
+                      return (
+                        <div key={pa.id_parametro || i} style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.7rem", borderRadius: 8, background: i % 2 === 0 ? "#FAFAFA" : "#FFF" }}>
+                          <span>🛠️</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontWeight: 600, color: "#1F2937", fontSize: "0.85rem", margin: 0 }}>{pa.nombre_parametro || "—"}</p>
+                            <p style={{ fontSize: "0.71rem", color: "#9CA3AF", margin: 0 }}>{examNombre || "Examen sin identificar"}</p>
+                          </div>
+                          {(pa.rango_min != null || pa.rango_max != null) && (
+                            <span style={{ fontSize: "0.74rem", color: "#374151", whiteSpace: "nowrap" }}>
+                              {pa.rango_min ?? "–"} – {pa.rango_max ?? "–"} {pa.unidad || ""}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+
+              {kpiListaFiltrada.length > KPI_LIMITE && (
+                <p style={{ textAlign: "center", fontSize: "0.74rem", color: "#9CA3AF", padding: "0.75rem 0 0" }}>
+                  Mostrando {KPI_LIMITE} de {kpiListaFiltrada.length} · refina la búsqueda para ver más
+                </p>
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
+              <button onClick={() => setKpiModalTipo(null)} style={S.btnSec}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════
           MODAL — DETALLE DE PERSONAL

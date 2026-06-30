@@ -140,6 +140,71 @@ function BarraProgreso({ label, value, total, color, icon }) {
   );
 }
 
+/* ── Mini gráfico de barras verticales (tendencia semanal) ── */
+function TendenciaBars({ data, color = "#8B5CF6" }) {
+  const max = Math.max(1, ...data.map(d => d.value));
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setAnimated(true), 150); return () => clearTimeout(t); }, []);
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: "0.5rem", height: 110, padding: "0 0.2rem" }}>
+      {data.map((d, i) => {
+        const h = animated ? Math.max(4, (d.value / max) * 88) : 0;
+        return (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3rem" }}>
+            <span style={{ fontSize: "0.66rem", fontWeight: 700, color: d.value > 0 ? color : "#D1D5DB", fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {d.value > 0 ? d.value : ""}
+            </span>
+            <div title={`${d.value} orden${d.value !== 1 ? "es" : ""}`} style={{
+              width: "100%", height: h, background: d.isHoy ? color : `${color}55`,
+              borderRadius: "4px 4px 2px 2px", transition: "height 0.6s cubic-bezier(.4,0,.2,1)",
+              minHeight: 4,
+            }} />
+            <span style={{ fontSize: "0.62rem", color: d.isHoy ? color : "#9CA3AF", fontWeight: d.isHoy ? 700 : 400, fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase" }}>
+              {d.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Controles de paginación ── */
+function Paginacion({ pagina, totalPaginas, onChange, totalItems, porPagina }) {
+  if (totalPaginas <= 1) return null;
+  const desde = (pagina - 1) * porPagina + 1;
+  const hasta = Math.min(pagina * porPagina, totalItems);
+  const paginas = [];
+  const ventana = 1;
+  for (let p = 1; p <= totalPaginas; p++) {
+    if (p === 1 || p === totalPaginas || (p >= pagina - ventana && p <= pagina + ventana)) paginas.push(p);
+    else if (paginas[paginas.length - 1] !== "…") paginas.push("…");
+  }
+  const btn = (active) => ({
+    minWidth: 30, height: 30, padding: "0 0.4rem", borderRadius: 7,
+    border: `1px solid ${active ? "#8B5CF6" : "#E5E7EB"}`,
+    background: active ? "#8B5CF6" : "#FFF", color: active ? "#FFF" : "#6B7280",
+    fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.78rem",
+    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+  });
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", marginTop: "1.1rem", paddingTop: "1rem", borderTop: "1px solid #F1F5F9" }}>
+      <span style={{ fontSize: "0.76rem", color: "#9CA3AF" }}>
+        Mostrando <strong style={{ color: "#374151" }}>{desde}–{hasta}</strong> de <strong style={{ color: "#374151" }}>{totalItems}</strong>
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+        <button onClick={() => onChange(Math.max(1, pagina - 1))} disabled={pagina === 1} style={{ ...btn(false), opacity: pagina === 1 ? 0.4 : 1, cursor: pagina === 1 ? "default" : "pointer" }}>‹</button>
+        {paginas.map((p, i) => p === "…" ? (
+          <span key={`e${i}`} style={{ color: "#CBD5E1", fontSize: "0.78rem", padding: "0 0.2rem" }}>…</span>
+        ) : (
+          <button key={p} onClick={() => onChange(p)} style={btn(p === pagina)}>{p}</button>
+        ))}
+        <button onClick={() => onChange(Math.min(totalPaginas, pagina + 1))} disabled={pagina === totalPaginas} style={{ ...btn(false), opacity: pagina === totalPaginas ? 0.4 : 1, cursor: pagina === totalPaginas ? "default" : "pointer" }}>›</button>
+      </div>
+    </div>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
 ══════════════════════════════════════════════════════════ */
@@ -155,6 +220,7 @@ export default function DashboardEspecialista() {
   const [vistaOrdenes, setVista]        = useState("cards");
   const [ordenExpandida, setExpand]     = useState(null);
   const [horaActual, setHoraActual]     = useState(new Date());
+  const [pagina, setPagina]             = useState(1);
   const notifRef = useRef(null);
 
   // Reloj en tiempo real
@@ -237,6 +303,48 @@ export default function DashboardEspecialista() {
     if (h < 18) return "Buenas tardes";
     return "Buenas noches";
   };
+
+  /* ── Tendencia: órdenes por día, últimos 7 días ── */
+  const tendenciaSemana = (() => {
+    const dias = [];
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      dias.push({ key, label: d.toLocaleDateString("es-EC", { weekday: "short" }).replace(".", ""), isHoy: key === hoyStr, value: 0 });
+    }
+    const porDia = {};
+    ordenes.forEach(o => {
+      if (!o.fecha_orden) return;
+      const key = String(o.fecha_orden).slice(0, 10);
+      porDia[key] = (porDia[key] || 0) + 1;
+    });
+    return dias.map(d => ({ ...d, value: porDia[d.key] || 0 }));
+  })();
+
+  /* ── Exámenes más frecuentes entre mis órdenes ── */
+  const examenesFrecuentes = (() => {
+    const conteo = {};
+    ordenes.forEach(o => (o.mis_examenes || []).forEach(e => {
+      const nombre = e.nombre_examen || "Sin nombre";
+      conteo[nombre] = (conteo[nombre] || 0) + 1;
+    }));
+    return Object.entries(conteo)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([nombre, cantidad]) => ({ nombre, cantidad }));
+  })();
+  const maxExamenFrecuente = Math.max(1, ...examenesFrecuentes.map(e => e.cantidad));
+
+  /* ── Paginación de "Mis Órdenes" ── */
+  const porPagina = vistaOrdenes === "cards" ? 9 : 10;
+  const totalPaginas = Math.max(1, Math.ceil(ordenesFiltradas.length / porPagina));
+  const paginaSegura = Math.min(pagina, totalPaginas);
+  const ordenesPaginadas = ordenesFiltradas.slice((paginaSegura - 1) * porPagina, paginaSegura * porPagina);
+
+  // Resetear a página 1 cuando cambian filtros, búsqueda o vista
+  useEffect(() => { setPagina(1); }, [filtroEstado, busqueda, vistaOrdenes]);
 
   /* ══════════════════════════════════════════════════════
      RENDER
@@ -435,6 +543,34 @@ export default function DashboardEspecialista() {
               </div>
             </div>
 
+            {/* ══ GRÁFICOS: TENDENCIA SEMANAL + EXÁMENES MÁS FRECUENTES ══ */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
+              <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
+                    📈 Tendencia · últimos 7 días
+                  </p>
+                  <span style={{ fontSize: "0.7rem", color: "#9CA3AF" }}>
+                    {tendenciaSemana.reduce((s, d) => s + d.value, 0)} órdenes
+                  </span>
+                </div>
+                <TendenciaBars data={tendenciaSemana} color="#8B5CF6" />
+              </div>
+
+              <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+                <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 0.85rem" }}>
+                  🧪 Exámenes más frecuentes
+                </p>
+                {examenesFrecuentes.length === 0 ? (
+                  <p style={{ fontSize: "0.78rem", color: "#9CA3AF", textAlign: "center", padding: "1.5rem 0" }}>Sin datos suficientes todavía</p>
+                ) : (
+                  examenesFrecuentes.map((e, i) => (
+                    <BarraProgreso key={e.nombre} label={e.nombre} value={e.cantidad} total={maxExamenFrecuente} color="#8B5CF6" icon="🧬" />
+                  ))
+                )}
+              </div>
+            </div>
+
             {/* ══ TABLA / CARDS DE ÓRDENES ══ */}
             <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.25rem 1.4rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
 
@@ -504,7 +640,7 @@ export default function DashboardEspecialista() {
 
                 /* ── VISTA CARDS ── */
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "0.85rem" }}>
-                  {ordenesFiltradas.map((o, i) => {
+                  {ordenesPaginadas.map((o, i) => {
                     const estadoEsp = getEstadoEsp(o);
                     const meta      = getMeta(estadoEsp);
                     const exams     = o.mis_examenes || [];
@@ -617,7 +753,7 @@ export default function DashboardEspecialista() {
                       </tr>
                     </thead>
                     <tbody>
-                      {ordenesFiltradas.map((o, i) => {
+                      {ordenesPaginadas.map((o, i) => {
                         const estadoEsp = getEstadoEsp(o);
                         const meta      = getMeta(estadoEsp);
                         const exams     = o.mis_examenes || [];
@@ -678,6 +814,14 @@ export default function DashboardEspecialista() {
                   </table>
                 </div>
               )}
+
+              <Paginacion
+                pagina={paginaSegura}
+                totalPaginas={totalPaginas}
+                onChange={setPagina}
+                totalItems={ordenesFiltradas.length}
+                porPagina={porPagina}
+              />
             </div>
           </>
         )}

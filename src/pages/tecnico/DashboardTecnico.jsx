@@ -100,7 +100,7 @@ function DonutChart({ data, size = 130 }) {
 }
 
 /* ── Sección de gráficos ── */
-function ChartsSection({ kpis }) {
+function ChartsSection({ kpis, auditoria }) {
   const usuariosData = [
     { label: "Activos",   value: kpis.usuariosActivos,   color: "#10B981" },
     { label: "Inactivos", value: kpis.usuariosInactivos, color: "#6B7280" },
@@ -113,8 +113,17 @@ function ChartsSection({ kpis }) {
   ];
   const maxCat = Math.max(...catalogoItems.map(c => c.value), 1);
 
+  // Distribución de acciones de auditoría (creados, editados, accesos, etc.)
+  const accionesCount = {};
+  (auditoria || []).forEach(a => {
+    const meta = getAccionMeta(a.accion);
+    if (!accionesCount[meta.label]) accionesCount[meta.label] = { value: 0, color: meta.color };
+    accionesCount[meta.label].value += 1;
+  });
+  const accionesData = Object.entries(accionesCount).map(([label, v]) => ({ label, value: v.value, color: v.color }));
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.4rem" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "1.4rem" }}>
 
       {/* Distribución de usuarios */}
       <div style={{ background: "#FFF", borderRadius: 12, border: "1px solid #F1F5F9", padding: "1.35rem", boxShadow: "0 2px 6px rgba(0,0,0,0.03)" }}>
@@ -166,6 +175,38 @@ function ChartsSection({ kpis }) {
         </div>
       </div>
 
+      {/* Distribución de acciones de auditoría */}
+      <div style={{ background: "#FFF", borderRadius: 12, border: "1px solid #F1F5F9", padding: "1.35rem", boxShadow: "0 2px 6px rgba(0,0,0,0.03)" }}>
+        <p style={{ ...S.grpLabel, margin: "0 0 1rem" }}>Actividad de Auditoría</p>
+        {accionesData.length === 0 ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 120 }}>
+            <span style={{ fontSize: "0.78rem", color: "#9CA3AF" }}>Sin registros de auditoría todavía</span>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+            <DonutChart data={accionesData} size={120} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              {accionesData.map((item, i) => {
+                const total = accionesData.reduce((s, d) => s + d.value, 0);
+                const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                return (
+                  <div key={i}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" }}>
+                      <span style={{ fontSize: "0.75rem", color: "#374151", fontFamily: "'Barlow', sans-serif", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: item.color, display: "inline-block" }} />
+                        {item.label}
+                      </span>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: item.color, fontFamily: "'Barlow Condensed', sans-serif" }}>{item.value} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>({pct}%)</span></span>
+                    </div>
+                    <BarAnim value={item.value} max={total || 1} color={item.color} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
@@ -193,6 +234,8 @@ export default function DashboardTecnico() {
   });
   const [personal, setPersonal]     = useState([]);
   const [auditoria, setAuditoria]   = useState([]);
+  const [examenesSinParam, setExamenesSinParam] = useState([]);
+  const [personaDetalle, setPersonaDetalle]      = useState(null);
   const [notifs, setNotifs]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [showNotif, setShowNotif]   = useState(false);
@@ -214,6 +257,7 @@ export default function DashboardTecnico() {
 
   const notifRef    = useRef(null);
   const intervalRef = useRef(null);
+  const sinParamRef = useRef(null);
 
   const [leidas, setLeidas] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("notifs_leidas") || "[]")); }
@@ -249,30 +293,38 @@ export default function DashboardTecnico() {
       const dash   = resDash.data       || {};
       const dk     = dash.kpis          || {};
 
+      // ── Un examen se considera "de tipo PDF" si así lo indica su tipo de resultado
+      //    o si tiene un archivo PDF asociado. Estos exámenes NO requieren parámetros
+      //    de referencia, así que se excluyen siempre de este análisis.
+      const esExamenPdf = (ex) =>
+        (ex.tipo_resultado && String(ex.tipo_resultado).toLowerCase().includes("pdf")) ||
+        ex.archivo_pdf === true ||
+        ex.es_pdf === true;
+
+      const examsActivos = exams.filter(ex => ex.estado === true || ex.estado === 1 || ex.activo === true);
+      const idsConParametros = new Set((params || []).map(p => p.id_examen));
+      const examsSinParametros = examsActivos.filter(ex => !esExamenPdf(ex) && !idsConParametros.has(ex.id_examen));
+
       setKpis({
         totalUsuarios:      parseInt(dk.total_usuarios       ?? pers.length,   10),
         usuariosActivos:    parseInt(dk.usuarios_activos     ?? pers.filter(p=>p.estado).length, 10),
         usuariosInactivos:  parseInt(dk.usuarios_inactivos   ?? pers.filter(p=>!p.estado).length, 10),
-        totalExamenes:      parseInt(dk.total_examenes       ?? exams.filter(ex => ex.estado === true || ex.estado === 1 || ex.activo === true).length, 10),
+        totalExamenes:      parseInt(dk.total_examenes       ?? examsActivos.length, 10),
         totalCategorias:    parseInt(dk.total_categorias     ?? cats.length,   10),
         totalParametros:    parseInt(dk.total_parametros     ?? params.length, 10),
-        exSinParametros:    parseInt(dk.ex_sin_parametros    ?? 0,             10),
+        // Se calcula siempre en el cliente para garantizar que los exámenes PDF queden excluidos,
+        // sin depender de que el backend aplique la misma regla.
+        exSinParametros:    examsSinParametros.length,
         usuariosActivosHoy: parseInt(dk.usuarios_activos_hoy ?? 0,             10),
       });
+      setExamenesSinParam(examsSinParametros);
 
       setPersonal(pers);
       setAuditoria(dash.auditoriaDetallada || []);
 
       const ns = [];
       const inact = pers.filter(p => !p.estado).length;
-      const examsSinParams = exams.filter(ex =>
-        !ex.tipo_resultado?.toLowerCase().includes("pdf") &&
-        !ex.archivo_pdf &&
-        !ex.es_pdf
-      );
-      const sinParamsCount = dk.ex_sin_parametros != null
-        ? parseInt(dk.ex_sin_parametros, 10)
-        : examsSinParams.filter(ex => !(params||[]).some(p => p.id_examen === ex.id_examen)).length;
+      const sinParamsCount = examsSinParametros.length;
 
       if (inact > 0)         ns.push({ id:"inact",         tipo:"warn",    icon:"⚠️", texto:`${inact} usuario(s) inactivo(s)`, ruta:"/tecnico/usuarios" });
       if (sinParamsCount > 0) ns.push({ id:`sinp-${sinParamsCount}`, tipo:"warn", icon:"🧪", texto:`${sinParamsCount} examen(es) sin parámetros`, ruta:"/tecnico/parametros-examenes" });
@@ -448,11 +500,48 @@ export default function DashboardTecnico() {
               <KpiCard anim={animKpis} delay={0}   icon="🧪" label="Exámenes"         value={kpis.totalExamenes}   color="#8B5CF6" desc="En catálogo activo" />
               <KpiCard anim={animKpis} delay={60}  icon="🗂️" label="Categorías"       value={kpis.totalCategorias} color="#3B82F6" desc="Especialidades" />
               <KpiCard anim={animKpis} delay={120} icon="🛠️" label="Parámetros"       value={kpis.totalParametros} color="#10B981" desc="Rangos de referencia" />
-              <KpiCard anim={animKpis} delay={180} icon="⚡" label="Sin Parámetros"   value={kpis.exSinParametros} color={kpis.exSinParametros>0?"#F59E0B":"#10B981"} desc="Requieren configuración" />
+              <KpiCard anim={animKpis} delay={180} icon="⚡" label="Sin Parámetros"   value={kpis.exSinParametros} color={kpis.exSinParametros>0?"#F59E0B":"#10B981"} desc="Requieren configuración (excluye PDF)" onClick={() => sinParamRef.current?.scrollIntoView({ behavior:"smooth", block:"start" })} />
             </div>
 
             {/* ── GRÁFICOS ── */}
-            <ChartsSection kpis={kpis} />
+            <ChartsSection kpis={kpis} auditoria={auditoria} />
+
+            {/* ── EXÁMENES SIN PARÁMETROS (excluye exámenes de tipo PDF) ── */}
+            <div style={S.section} ref={sinParamRef}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.95rem", flexWrap:"wrap", gap:"0.5rem" }}>
+                <h3 style={{ ...S.secTitle, margin:0 }}>🧪 Exámenes sin Parámetros Configurados</h3>
+                <span style={{ fontSize:"0.74rem", color:"#9CA3AF" }}>Los exámenes de resultado en PDF no requieren parámetros y no se listan aquí</span>
+              </div>
+              {examenesSinParam.length === 0 ? (
+                <div style={{ textAlign:"center", color:"#059669", padding:"1.75rem", fontSize:"0.85rem", background:"rgba(16,185,129,0.06)", borderRadius:10 }}>
+                  ✅ Todos los exámenes activos (no PDF) tienen parámetros configurados
+                </div>
+              ) : (
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(240px, 1fr))", gap:"0.65rem" }}>
+                  {examenesSinParam.map((ex, i) => (
+                    <div key={ex.id_examen ?? i}
+                      onClick={() => window.location.assign(`/tecnico/parametros-examenes?examen=${ex.id_examen}`)}
+                      style={{
+                        display:"flex", alignItems:"center", gap:"0.6rem", padding:"0.75rem 0.9rem",
+                        border:"1px solid rgba(245,158,11,0.3)", background:"rgba(245,158,11,0.05)",
+                        borderRadius:9, cursor:"pointer", transition:"all 0.15s",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background="rgba(245,158,11,0.1)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background="rgba(245,158,11,0.05)"; }}
+                    >
+                      <span style={{ fontSize:"1.1rem" }}>⚡</span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, fontSize:"0.85rem", color:"#1F2937", margin:0, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                          {ex.nombre_examen || ex.nombre || "Examen sin nombre"}
+                        </p>
+                        <p style={{ fontSize:"0.71rem", color:"#D97706", margin:0 }}>Sin parámetros de referencia</p>
+                      </div>
+                      <span style={{ color:"#D97706" }}>→</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* ── ACCESOS RÁPIDOS ── */}
             <div style={S.section}>
@@ -468,7 +557,10 @@ export default function DashboardTecnico() {
             {/* ── TABLA PERSONAL ── */}
             <div style={S.section}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1rem", flexWrap:"wrap", gap:"0.75rem" }}>
-                <h3 style={{ ...S.secTitle, margin:0 }}>Registros de Personal</h3>
+                <div>
+                  <h3 style={{ ...S.secTitle, margin:0 }}>Registros de Personal</h3>
+                  <p style={{ fontSize:"0.72rem", color:"#9CA3AF", margin:"0.15rem 0 0" }}>Clic en una fila para ver el detalle completo</p>
+                </div>
                 <input
                   type="text"
                   placeholder="🔍  Buscar por nombre o usuario…"
@@ -505,7 +597,8 @@ export default function DashboardTecnico() {
                         return (
                           <tr
                             key={p.id_usuario || i}
-                            style={{ background:i%2===0?"#FAFAFA":"#FFF", transition:"background 0.15s" }}
+                            onClick={() => setPersonaDetalle(p)}
+                            style={{ background:i%2===0?"#FAFAFA":"#FFF", transition:"background 0.15s", cursor:"pointer" }}
                             onMouseEnter={e => e.currentTarget.style.background="#FFF7ED"}
                             onMouseLeave={e => e.currentTarget.style.background=i%2===0?"#FAFAFA":"#FFF"}
                           >
@@ -564,6 +657,80 @@ export default function DashboardTecnico() {
           </>
         )}
       </div>
+
+      {/* ══════════════════════════════════════════════════════
+          MODAL — DETALLE DE PERSONAL
+      ══════════════════════════════════════════════════════ */}
+      {personaDetalle && (
+        <div style={S.overlay} onClick={() => setPersonaDetalle(null)}>
+          <div style={{ ...S.modal, maxWidth:"480px" }} onClick={e => e.stopPropagation()}>
+            <div style={S.mHead}>
+              <div style={{ display:"flex", alignItems:"center", gap:"0.8rem" }}>
+                <div style={{
+                  ...S.avatar, width:48, height:48, fontSize:"1.2rem",
+                  background: personaDetalle.estado ? "rgba(16,185,129,0.15)" : "rgba(156,163,175,0.15)",
+                  color: personaDetalle.estado ? "#059669" : "#9CA3AF",
+                }}>
+                  {(personaDetalle.nombres || "?")[0].toUpperCase()}
+                </div>
+                <div>
+                  <h3 style={S.mTitle}>{personaDetalle.nombres} {personaDetalle.apellidos}</h3>
+                  <p style={S.mSub}>@{personaDetalle.username || "—"}</p>
+                </div>
+              </div>
+              <button onClick={() => setPersonaDetalle(null)} style={S.closeBtn}>✕</button>
+            </div>
+
+            <div style={{ display:"flex", flexDirection:"column", gap:"0.7rem" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.55rem 0", borderBottom:"1px solid #F8FAFC" }}>
+                <span style={{ fontSize:"0.78rem", color:"#9CA3AF" }}>Estado</span>
+                <span style={{ ...S.pill, background:personaDetalle.estado?"rgba(16,185,129,0.1)":"rgba(107,114,128,0.1)", color:personaDetalle.estado?"#059669":"#6B7280" }}>
+                  {personaDetalle.estado ? "● Activo" : "○ Inactivo"}
+                </span>
+              </div>
+              {personaDetalle.rol && (
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.55rem 0", borderBottom:"1px solid #F8FAFC" }}>
+                  <span style={{ fontSize:"0.78rem", color:"#9CA3AF" }}>Rol</span>
+                  <span style={{ ...S.pill, background:getRolColor(personaDetalle.rol)+"22", color:getRolColor(personaDetalle.rol) }}>👤 {String(personaDetalle.rol).toUpperCase()}</span>
+                </div>
+              )}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.55rem 0", borderBottom:"1px solid #F8FAFC" }}>
+                <span style={{ fontSize:"0.78rem", color:"#9CA3AF" }}>Correo</span>
+                <span style={{ fontSize:"0.82rem", color:"#374151" }}>{personaDetalle.correo || "—"}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.55rem 0", borderBottom:"1px solid #F8FAFC" }}>
+                <span style={{ fontSize:"0.78rem", color:"#9CA3AF" }}>Registrado por</span>
+                <span style={{ fontSize:"0.82rem", color:"#374151" }}>{personaDetalle.registrado_por ? `@${personaDetalle.registrado_por}` : "Sistema"}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.55rem 0", borderBottom:"1px solid #F8FAFC" }}>
+                <span style={{ fontSize:"0.78rem", color:"#9CA3AF" }}>Fecha de registro</span>
+                <span style={{ fontSize:"0.82rem", color:"#374151" }}>{fmt(personaDetalle.fecha_creacion) || "—"}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.55rem 0" }}>
+                <span style={{ fontSize:"0.78rem", color:"#9CA3AF" }}>Último acceso</span>
+                <span style={{ fontSize:"0.82rem", color: personaDetalle.ultimo_acceso ? "#3B82F6" : "#D1D5DB" }}>
+                  {personaDetalle.ultimo_acceso ? fmtFull(personaDetalle.ultimo_acceso) : "Sin acceso registrado"}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", justifyContent:"flex-end", gap:"0.6rem", marginTop:"1.25rem" }}>
+              <button
+                onClick={() => {
+                  setBusqueda(personaDetalle.username || "");
+                  setPersonaDetalle(null);
+                  setShowModal(true);
+                  setPagina(1);
+                }}
+                style={S.btnSec}
+              >
+                Ver auditoría →
+              </button>
+              <button onClick={() => setPersonaDetalle(null)} style={S.btnPri}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════
           MODAL — AUDITORÍA DEL SISTEMA

@@ -239,6 +239,10 @@ export default function GestionUsuarios() {
   };
 
   const handleEdit = async (u) => {
+    // ── DIAGNÓSTICO TEMPORAL: quitar estos console.log una vez resuelto ──────
+    console.log("🔍 [DEBUG] Usuario completo recibido en handleEdit:", u);
+    console.log("🔍 [DEBUG] u.roles crudo desde el backend:", JSON.stringify(u.roles));
+
     let rolPrincipal = "";
     if (u.roles) {
       const rolesArr = u.roles.split(", ").map(r => r.trim());
@@ -253,11 +257,18 @@ export default function GestionUsuarios() {
         }).filter(Boolean)
       : [];
 
+    // ── DIAGNÓSTICO TEMPORAL: quitar estos console.log una vez resuelto ──────
+    console.log("🔍 [DEBUG] rolesActuales calculados:", rolesActuales);
+    console.log("🔍 [DEBUG] ¿Incluye rol Especialista ('3')?:", rolesActuales.includes("3"));
+
     let examenesPrevios = [];
 if (rolesActuales.includes("3")) {
+  console.log("🔍 [DEBUG] Entrando a pedir /asignaciones para id_usuario:", u.id_usuario);
   try {
     const res = await API.get(`/asignaciones?id_usuario=${u.id_usuario}`);
+    console.log("🔍 [DEBUG] Respuesta cruda de /asignaciones:", res.data);
     examenesPrevios = (res.data || []).map(ex => String(ex.id_examen));
+    console.log("🔍 [DEBUG] examenesPrevios ya normalizados:", examenesPrevios);
   } catch (err) {
     console.error(
       "Error al cargar exámenes asignados:",
@@ -267,6 +278,9 @@ if (rolesActuales.includes("3")) {
     showToast("error", "No se pudieron cargar los exámenes asignados de este especialista.");
   }
 }
+
+    // ── DIAGNÓSTICO TEMPORAL: quitar este console.log una vez resuelto ──────
+    console.log("🔍 [DEBUG] examenes_asignados final antes de setFormData:", examenesPrevios);
 
     setFormData({
       id_usuario: u.id_usuario,

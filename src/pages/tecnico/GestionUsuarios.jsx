@@ -212,12 +212,15 @@ export default function GestionUsuarios() {
     setFormData({ ...formData, id_roles: nuevosRoles });
   };
 
+  // ── FIX: normalizamos siempre a String para evitar mismatch de tipos
+  // (number vs string) entre lo que devuelve /examenes y /asignaciones.
   const handleToggleExamen = (idExamen) => {
+    const id = String(idExamen);
     let nuevosExamenes = [...formData.examenes_asignados];
-    if (nuevosExamenes.includes(idExamen)) {
-      nuevosExamenes = nuevosExamenes.filter(id => id !== idExamen);
+    if (nuevosExamenes.includes(id)) {
+      nuevosExamenes = nuevosExamenes.filter(x => x !== id);
     } else {
-      nuevosExamenes.push(idExamen);
+      nuevosExamenes.push(id);
     }
     setFormData({ ...formData, examenes_asignados: nuevosExamenes });
   };
@@ -254,8 +257,22 @@ export default function GestionUsuarios() {
     if (rolesActuales.includes("3")) {
       try {
         const res = await API.get(`/asignaciones?id_usuario=${u.id_usuario}`);
-        examenesPrevios = (res.data || []).map(ex => ex.id_examen);
-      } catch (_) {}
+        // ── FIX: normalizamos a String para que coincida con el tipo usado
+        // al comparar en el render (String(ex.id_examen)) y evitar que los
+        // checkboxes queden sin marcar por un mismatch number/string.
+        examenesPrevios = (res.data || []).map(ex => String(ex.id_examen));
+      } catch (err) {
+        // ── FIX: ya no se traga el error en silencio. Antes un catch (_) {}
+        // vacío ocultaba cualquier falla de red/ruta (404, 500, CORS, etc.)
+        // y el formulario simplemente abría con examenes_asignados vacío,
+        // sin ninguna pista de qué pasó. Ahora se loguea y se avisa al usuario.
+        console.error(
+          "Error al cargar exámenes asignados:",
+          err.response?.status,
+          err.response?.data || err.message
+        );
+        showToast("error", "No se pudieron cargar los exámenes asignados de este especialista.");
+      }
     }
 
     setFormData({
@@ -339,20 +356,30 @@ export default function GestionUsuarios() {
     payload.id_roles = Array.from(setRoles);
 
     const esEspecialista = tieneRolEspecialista(formData.id_rol, formData.id_roles);
-    if (!esEspecialista) payload.examenes_asignados = [];
+    if (!esEspecialista) {
+      payload.examenes_asignados = [];
+    } else {
+      // ── FIX: los exámenes se guardan como String en el estado del form
+      // (para poder compararlos bien con .includes()), pero el backend
+      // espera los IDs en su tipo numérico original. Los convertimos de
+      // vuelta a Number justo antes de enviar el payload.
+      payload.examenes_asignados = formData.examenes_asignados.map(Number);
+    }
 
     try {
       if (formData.id_usuario) {
-        await API.put(`/personal/${formData.id_usuario}`, payload);
-        showToast("success", "Personal actualizado correctamente.");
+        const res = await API.put(`/personal/${formData.id_usuario}`, payload);
+        showToast("success", res.data?.msg || "Personal actualizado correctamente.");
       } else {
-        await API.post("/personal/registro", payload);
-        showToast("success", "Personal registrado correctamente.");
+        const res = await API.post("/personal/registro", payload);
+        showToast("success", res.data?.msg || "Personal registrado correctamente.");
       }
       setShowModal(false);
       fetchUsuarios();
     } catch (err) {
-      showToast("error", err.response?.data?.msg || "Error al procesar la solicitud.");
+      // El backend responde los errores como { error: "..." }, no { msg: "..." }
+      const backendMsg = err.response?.data?.error || err.response?.data?.msg;
+      showToast("error", backendMsg || "Error al procesar la solicitud.");
     }
   };
 
@@ -801,7 +828,11 @@ export default function GestionUsuarios() {
                             </div>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem" }}>
                               {examenesPorCategoria[categoria].map((ex) => {
-                                const seleccionado = formData.examenes_asignados.includes(ex.id_examen);
+                                // ── FIX: comparamos como String contra el arreglo
+                                // formData.examenes_asignados (que ahora siempre
+                                // guarda strings), sin importar si ex.id_examen
+                                // viene como number o string desde el backend.
+                                const seleccionado = formData.examenes_asignados.includes(String(ex.id_examen));
                                 return (
                                   <label key={ex.id_examen} style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.78rem", color: DARK, cursor: "pointer", padding: "0.3rem", borderRadius: "5px", background: seleccionado ? "#FEF3C7" : "transparent" }}>
                                     <input

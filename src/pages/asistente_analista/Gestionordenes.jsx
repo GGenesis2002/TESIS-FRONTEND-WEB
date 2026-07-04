@@ -850,7 +850,9 @@ export default function GestionOrdenes() {
                 )}
 
                 {/* ── Registro rápido: solo aparece si la cédula no existe en absoluto ── */}
-                {cedulaInput.trim() && !pacienteEncontrado && !pacienteInactivo && (
+                {/* (o si ya generamos credenciales para ella: así no se oculta apenas
+                    "cargar()" refresca la lista y el paciente recién creado aparece) */}
+                {cedulaInput.trim() && (credencialesGeneradas || (!pacienteEncontrado && !pacienteInactivo)) && (
                   <div style={{ marginTop: "0.6rem" }}>
                     {credencialesGeneradas ? (
                       <div style={{ background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)", border: "1.5px solid #86EFAC", borderRadius: "10px", padding: "0.9rem" }}>

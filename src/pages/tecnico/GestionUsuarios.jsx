@@ -173,6 +173,7 @@ export default function GestionUsuarios() {
   const [userToToggle, setUserToToggle] = useState(null);
   const [paginaActual, setPaginaActual] = useState(1);
   const [itemsPorPagina, setItemsPorPagina] = useState(10);
+  const [buscandoDoc, setBuscandoDoc] = useState(false);
 
   const [formData, setFormData] = useState({
     id_usuario: null, tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "",
@@ -211,6 +212,27 @@ export default function GestionUsuarios() {
   };
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+  // Autocompleta nombres/apellidos consultando el servicio gratuito del SRI.
+  // Solo aplica para cédula (no pasaporte); los campos quedan siempre editables.
+  const buscarDatosPorCedula = async () => {
+    const cedula = (formData.cedula || "").trim();
+    if (formData.tipo_documento !== "cedula" || !/^\d{10}$/.test(cedula)) return;
+    setBuscandoDoc(true);
+    try {
+      const { data } = await API.get(`/documento/consultar/${cedula}`);
+      setFormData(f => ({
+        ...f,
+        nombres: data.nombres || f.nombres,
+        apellidos: data.apellidos || f.apellidos,
+      }));
+      showToast("success", "Datos encontrados. Verifica que estén correctos antes de guardar.");
+    } catch (err) {
+      showToast("error", err.response?.data?.error || "No se encontraron datos para esta cédula.");
+    } finally {
+      setBuscandoDoc(false);
+    }
+  };
 
   const handleToggleRolSecundario = (rolValue) => {
     let nuevosRoles = [...formData.id_roles];
@@ -738,14 +760,31 @@ if (rolesActuales.includes("3")) {
                 </div>
                 <div>
                   <label style={styles.fieldLabel}>{formData.tipo_documento === "pasaporte" ? "Pasaporte *" : "Cédula *"}</label>
-                  <input
-                    type="text"
-                    name="cedula"
-                    value={formData.cedula}
-                    onChange={e => setFormData({ ...formData, cedula: limpiarDocumento(formData.tipo_documento, e.target.value) })}
-                    maxLength={formData.tipo_documento === "pasaporte" ? 15 : 10}
-                    style={errStyle("cedula")}
-                  />
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    <input
+                      type="text"
+                      name="cedula"
+                      value={formData.cedula}
+                      onChange={e => setFormData({ ...formData, cedula: limpiarDocumento(formData.tipo_documento, e.target.value) })}
+                      maxLength={formData.tipo_documento === "pasaporte" ? 15 : 10}
+                      style={errStyle("cedula")}
+                    />
+                    {formData.tipo_documento === "cedula" && (
+                      <button
+                        type="button"
+                        onClick={buscarDatosPorCedula}
+                        disabled={buscandoDoc || (formData.cedula || "").length !== 10}
+                        title="Buscar nombres con la cédula (servicio gratuito del SRI)"
+                        style={{
+                          background: "#1F2937", color: "#FFF", border: "none", borderRadius: "8px",
+                          padding: "0 0.85rem", cursor: buscandoDoc || (formData.cedula || "").length !== 10 ? "not-allowed" : "pointer",
+                          opacity: buscandoDoc || (formData.cedula || "").length !== 10 ? 0.5 : 1, flexShrink: 0,
+                        }}
+                      >
+                        {buscandoDoc ? "..." : "🔍"}
+                      </button>
+                    )}
+                  </div>
                   {formErrors.cedula && <span style={styles.errTxt}>{formErrors.cedula}</span>}
                 </div>
               </div>

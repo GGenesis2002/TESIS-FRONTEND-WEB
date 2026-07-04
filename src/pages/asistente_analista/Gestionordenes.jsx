@@ -84,6 +84,7 @@ export default function GestionOrdenes() {
   });
   const [guardandoRegistro, setGuardandoRegistro] = useState(false);
   const [msgRegistro, setMsgRegistro] = useState(null);
+  const [buscandoDoc, setBuscandoDoc] = useState(false);
   const [credencialesGeneradas, setCredencialesGeneradas] = useState(null); // { username, password }
 
   // Reactivar paciente inactivo (desde el modal de Nueva Orden)
@@ -223,6 +224,27 @@ export default function GestionOrdenes() {
     const sufijoCedula    = (cedula || "").toString().replace(/\D/g, "").slice(-3);
     const base = `${primerNombre}${inicialApellido}` || "usuario";
     return `${base}${sufijoCedula}`;
+  };
+
+  // Autocompleta nombres/apellidos consultando el servicio gratuito del SRI.
+  // Solo aplica para cédula (no pasaporte); los campos quedan siempre editables.
+  const buscarDatosPorCedula = async () => {
+    const cedula = cedulaInput.trim();
+    if (tipoDocumentoInput !== "cedula" || !/^\d{10}$/.test(cedula)) return;
+    setBuscandoDoc(true);
+    try {
+      const { data } = await API.get(`/documento/consultar/${cedula}`);
+      setFormRegistro(f => ({
+        ...f,
+        nombres: data.nombres || f.nombres,
+        apellidos: data.apellidos || f.apellidos,
+      }));
+      showToast("success", "Datos encontrados. Verifica que estén correctos antes de guardar.");
+    } catch (err) {
+      showToast("error", err.response?.data?.error || "No se encontraron datos para esta cédula.");
+    } finally {
+      setBuscandoDoc(false);
+    }
   };
 
   const handleRegistroRapido = async () => {
@@ -861,6 +883,19 @@ export default function GestionOrdenes() {
                           El usuario y la contraseña se generan automáticamente; se los mostraremos al terminar.
                         </p>
                         {msgRegistro && <Alert msg={msgRegistro} />}
+                        {tipoDocumentoInput === "cedula" && (
+                          <button
+                            type="button"
+                            onClick={buscarDatosPorCedula}
+                            disabled={buscandoDoc}
+                            style={{
+                              ...s.btnSecondary, width: "100%", textAlign: "center", marginBottom: "0.6rem",
+                              opacity: buscandoDoc ? 0.6 : 1,
+                            }}
+                          >
+                            {buscandoDoc ? "Buscando..." : "🔍 Autocompletar nombres con la cédula"}
+                          </button>
+                        )}
                         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "0.5rem", marginBottom: "0.5rem" }}>
                           <input type="text" placeholder="Nombres *" value={formRegistro.nombres} onChange={e => setFormRegistro(f => ({ ...f, nombres: e.target.value }))} style={s.input} />
                           <input type="text" placeholder="Apellidos *" value={formRegistro.apellidos} onChange={e => setFormRegistro(f => ({ ...f, apellidos: e.target.value }))} style={s.input} />

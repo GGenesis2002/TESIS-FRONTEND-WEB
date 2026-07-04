@@ -86,6 +86,8 @@ export default function GestionPacientes() {
   const [paginaActual, setPaginaActual] = useState(1);
   const [itemsPorPagina, setItemsPorPagina] = useState(10);
   const [credencialesGeneradas, setCredencialesGeneradas] = useState(null); // { username, password }
+  const [buscandoDoc, setBuscandoDoc] = useState(false);
+  const [buscandoCedula, setBuscandoCedula] = useState(false);
 
   const [form, setForm] = useState({
     tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "", correo: "",
@@ -113,6 +115,29 @@ export default function GestionPacientes() {
       const { data } = await API.get("/pacientes");
       setPacientes(data);
     } catch (err) { console.error("Error al cargar:", err); }
+  };
+
+  // Autocompleta nombres/apellidos consultando el servicio gratuito del SRI.
+  // Solo aplica para cédula (no pasaporte) y solo trae el nombre completo;
+  // los campos siempre quedan editables por si hace falta corregir algo.
+  const buscarDatosPorCedula = async () => {
+    const cedula = (form.cedula || "").trim();
+    if (form.tipo_documento !== "cedula" || !/^\d{10}$/.test(cedula)) return;
+    setBuscandoDoc(true);
+    try {
+      const { data } = await API.get(`/documento/consultar/${cedula}`);
+      setForm(f => ({
+        ...f,
+        nombres: data.nombres || f.nombres,
+        apellidos: data.apellidos || f.apellidos,
+      }));
+      showToast("success", "Datos encontrados. Verifica que estén correctos antes de guardar.");
+    } catch (err) {
+      const msg = err.response?.data?.error || "No se encontraron datos para esta cédula.";
+      showToast("error", msg);
+    } finally {
+      setBuscandoDoc(false);
+    }
   };
 
   useEffect(() => { cargarPacientes(); }, []);
@@ -499,16 +524,37 @@ export default function GestionPacientes() {
                         <option value="pasaporte">Pasaporte</option>
                       </select>
                     </div>
-                    <Field
-                      label={form.tipo_documento === "pasaporte" ? "Pasaporte *" : "Cédula *"}
-                      name="cedula"
-                      error={errors.cedula}
-                      placeholder={form.tipo_documento === "pasaporte" ? "AB123456" : "0000000000"}
-                      value={form.cedula || ""}
-                      // VALIDACIÓN EN VIVO: limita los caracteres según el tipo de documento seleccionado
-                      onChange={e => setForm({ ...form, cedula: limpiarDocumento(form.tipo_documento, e.target.value) })}
-                      maxLength={form.tipo_documento === "pasaporte" ? 15 : 10}
-                    />
+                    <div style={s.fieldGroup}>
+                      <label style={s.label}>{form.tipo_documento === "pasaporte" ? "Pasaporte *" : "Cédula *"}</label>
+                      <div style={{ display: "flex", gap: "0.4rem", alignItems: "flex-start" }}>
+                        <input
+                          name="cedula"
+                          placeholder={form.tipo_documento === "pasaporte" ? "AB123456" : "0000000000"}
+                          value={form.cedula || ""}
+                          // VALIDACIÓN EN VIVO: limita los caracteres según el tipo de documento seleccionado
+                          onChange={e => setForm({ ...form, cedula: limpiarDocumento(form.tipo_documento, e.target.value) })}
+                          maxLength={form.tipo_documento === "pasaporte" ? 15 : 10}
+                          style={{ ...s.input, borderColor: errors.cedula ? "#EF4444" : "#E5E7EB" }}
+                        />
+                        {form.tipo_documento === "cedula" && (
+                          <button
+                            type="button"
+                            onClick={buscarDatosPorCedula}
+                            disabled={buscandoDoc || (form.cedula || "").length !== 10}
+                            title="Buscar nombres con la cédula (servicio gratuito del SRI)"
+                            style={{
+                              ...s.btnPrimary, padding: "0.6rem 0.75rem", fontSize: "0.78rem",
+                              whiteSpace: "nowrap", flexShrink: 0,
+                              opacity: buscandoDoc || (form.cedula || "").length !== 10 ? 0.5 : 1,
+                              cursor: buscandoDoc || (form.cedula || "").length !== 10 ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {buscandoDoc ? "..." : "🔍"}
+                          </button>
+                        )}
+                      </div>
+                      {errors.cedula && <span style={s.errTxt}>{errors.cedula}</span>}
+                    </div>
                     {isEditing && (
                       <Field
                         label="Username Móvil"

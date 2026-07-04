@@ -106,7 +106,17 @@ export default function LoginPage() {
       navigate("/admin/dashboard");
     } else if (rolNormalizado === "especialista") {
       navigate("/especialista/dashboard");
+    } else if (rolNormalizado === "paciente") {
+      // Este panel web es solo para personal del laboratorio. Si el ÚNICO rol
+      // activo del usuario es "Paciente" (ej. alguien que solo se registró
+      // desde la app móvil), no lo dejamos "flotando" en la raíz sin explicación:
+      // le avisamos que use la app móvil y limpiamos lo que se haya guardado.
+      localStorage.clear();
+      setError("Esta cuenta es de Paciente. Por favor ingresa desde la app móvil.");
+      setLoading(false);
+      setMostrarSelector(false);
     } else {
+      // Rol realmente no reconocido (typo, rol nuevo sin ruta asignada, etc.)
       console.warn(`[Login] Rol "${rol}" no reconocido en el enrutamiento. Redirigiendo a raíz.`);
       navigate("/");
     }

@@ -257,10 +257,6 @@ export default function GestionUsuarios() {
         }).filter(Boolean)
       : [];
 
-    // ── DIAGNÓSTICO TEMPORAL: quitar estos console.log una vez resuelto ──────
-    console.log("🔍 [DEBUG] rolesActuales calculados:", rolesActuales);
-    console.log("🔍 [DEBUG] ¿Incluye rol Especialista ('3')?:", rolesActuales.includes("3"));
-
     let examenesPrevios = [];
 if (rolesActuales.includes("3")) {
   console.log("🔍 [DEBUG] Entrando a pedir /asignaciones para id_usuario:", u.id_usuario);

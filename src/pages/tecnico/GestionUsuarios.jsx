@@ -31,6 +31,29 @@ const limpiarDocumento = (tipoDocumento, v) =>
 const validarCorreo    = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || "").trim());
 const validarPassword  = (v) => (v || "").length >= 6;
 
+// Genera una contraseña temporal legible (sin caracteres ambiguos como 0/O, 1/l/I)
+const generarPasswordTemporal = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+};
+
+// Genera un username legible mezclando nombre + apellido + dígitos del documento
+// (en vez de dejarlo como solo números), ej: "jennyg268"
+const generarUsername = (nombres, apellidos, cedula) => {
+  const limpiar = (txt) => (txt || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quita acentos
+    .trim().toLowerCase()
+    .split(/\s+/)[0]                                   // solo la primera palabra
+    ?.replace(/[^a-z]/g, "") || "";
+  const primerNombre    = limpiar(nombres);
+  const inicialApellido = limpiar(apellidos).charAt(0);
+  const sufijoDoc        = (cedula || "").toString().replace(/[^a-zA-Z0-9]/g, "").slice(-3);
+  const base = `${primerNombre}${inicialApellido}` || "usuario";
+  return `${base}${sufijoDoc}`;
+};
+
 function camposExtraDeRol(id_rol, id_roles = []) {
   const rolStr = String(id_rol || "");
   // Unimos el rol principal + los roles adicionales marcados, para que
@@ -174,6 +197,8 @@ export default function GestionUsuarios() {
   const [paginaActual, setPaginaActual] = useState(1);
   const [itemsPorPagina, setItemsPorPagina] = useState(10);
   const [buscandoDoc, setBuscandoDoc] = useState(false);
+  const [credencialesGeneradas, setCredencialesGeneradas] = useState(null); // { username, password }
+  const [guardando, setGuardando] = useState(false);
 
   const [formData, setFormData] = useState({
     id_usuario: null, tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "",
@@ -212,6 +237,27 @@ export default function GestionUsuarios() {
   };
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+  // ── Usuario y contraseña automáticos ─────────────────────────────────────────
+  // Solo aplica cuando se está REGISTRANDO personal nuevo (no en edición): la
+  // secretaria/admin ya no necesita inventar ni escribir usuario/contraseña,
+  // se generan solos combinando nombre + apellido + documento, y una clave
+  // temporal aleatoria, apenas hay datos suficientes para generarlos.
+  useEffect(() => {
+    if (formData.id_usuario) return; // en edición no se autogenera nada
+    const cedula = (formData.cedula || "").trim();
+    const listo = formData.nombres.trim() && formData.apellidos.trim() && validarDocumento(formData.tipo_documento, cedula);
+    if (!listo) return;
+
+    setFormData(f => {
+      if (f.id_usuario) return f;
+      const nuevoUsername = generarUsername(f.nombres, f.apellidos, cedula);
+      const nuevoPassword = f.password || generarPasswordTemporal();
+      if (f.username === nuevoUsername && f.password === nuevoPassword) return f;
+      return { ...f, username: nuevoUsername, password: nuevoPassword };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.nombres, formData.apellidos, formData.cedula, formData.tipo_documento, formData.id_usuario]);
 
   // Autocompleta nombres/apellidos consultando el servicio gratuito del SRI.
   // Solo aplica para cédula (no pasaporte); los campos quedan siempre editables.
@@ -267,7 +313,13 @@ export default function GestionUsuarios() {
     setFormErrors({});
     setFiltroExamen("");
     setShowPassword(false);
+    setCredencialesGeneradas(null);
     setShowModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setCredencialesGeneradas(null);
   };
 
   const handleEdit = async (u) => {
@@ -329,6 +381,7 @@ if (rolesActuales.includes("3")) {
     setFormErrors({});
     setFiltroExamen("");
     setShowPassword(false);
+    setCredencialesGeneradas(null);
     setShowModal(true);
   };
 
@@ -404,20 +457,47 @@ if (rolesActuales.includes("3")) {
       payload.examenes_asignados = formData.examenes_asignados.map(Number);
     }
 
+    const esRegistroNuevo = !formData.id_usuario;
+    const intentarGuardar = (usernameFinal) => {
+      const payloadFinal = { ...payload, username: usernameFinal };
+      return esRegistroNuevo
+        ? API.post("/personal/registro", payloadFinal)
+        : API.put(`/personal/${formData.id_usuario}`, payloadFinal);
+    };
+
+    setGuardando(true);
     try {
-      if (formData.id_usuario) {
-        const res = await API.put(`/personal/${formData.id_usuario}`, payload);
-        showToast("success", res.data?.msg || "Personal actualizado correctamente.");
-      } else {
-        const res = await API.post("/personal/registro", payload);
-        showToast("success", res.data?.msg || "Personal registrado correctamente.");
+      let usernameFinal = formData.username;
+      let res;
+      try {
+        res = await intentarGuardar(usernameFinal);
+      } catch (err) {
+        // Si el username autogenerado ya está en uso, reintenta una vez con un sufijo numérico.
+        const msg = err.response?.data?.error || "";
+        if (esRegistroNuevo && msg.toLowerCase().includes("usuario ya está en uso")) {
+          usernameFinal = `${usernameFinal}${Math.floor(10 + Math.random() * 90)}`;
+          res = await intentarGuardar(usernameFinal);
+        } else {
+          throw err;
+        }
       }
-      setShowModal(false);
+
+      showToast("success", res.data?.msg || (esRegistroNuevo ? "Personal registrado correctamente." : "Personal actualizado correctamente."));
       fetchUsuarios();
+
+      if (esRegistroNuevo) {
+        // Mostramos usuario/contraseña generados para que se los entreguen al técnico,
+        // en vez de cerrar el modal de inmediato.
+        setCredencialesGeneradas({ username: usernameFinal, password: formData.password });
+      } else {
+        setShowModal(false);
+      }
     } catch (err) {
       // El backend responde los errores como { error: "..." }, no { msg: "..." }
       const backendMsg = err.response?.data?.error || err.response?.data?.msg;
       showToast("error", backendMsg || "Error al procesar la solicitud.");
+    } finally {
+      setGuardando(false);
     }
   };
 
@@ -709,14 +789,35 @@ if (rolesActuales.includes("3")) {
 
       {/* ── MODAL EDITAR / REGISTRAR ──────────────────────────────────────── */}
       {showModal && (
-        <div style={styles.modalOverlay} onClick={() => setShowModal(false)}>
+        <div style={styles.modalOverlay} onClick={handleCloseModal}>
           <div style={{ ...styles.modalContainer, maxWidth: "580px" }} onClick={e => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h3 style={{ fontFamily: FONTC, fontSize: "1.4rem", margin: 0, fontWeight: 700, color: DARK }}>
-                {formData.id_usuario ? "✏️ EDITAR PERSONAL" : "➕ REGISTRAR NUEVO PERSONAL"}
+                {credencialesGeneradas ? "✅ PERSONAL REGISTRADO" : formData.id_usuario ? "✏️ EDITAR PERSONAL" : "➕ REGISTRAR NUEVO PERSONAL"}
               </h3>
-              <button onClick={() => setShowModal(false)} style={styles.btnCloseX}>✕</button>
+              <button onClick={handleCloseModal} style={styles.btnCloseX}>✕</button>
             </div>
+
+            {credencialesGeneradas ? (
+              // ── VISTA DE ÉXITO: credenciales generadas automáticamente ──────
+              <div style={styles.modalBody}>
+                <div style={{ background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)", border: "1.5px solid #86EFAC", borderRadius: "10px", padding: "1rem" }}>
+                  <p style={{ margin: "0 0 0.6rem", fontFamily: FONTC, fontWeight: 700, fontSize: "0.9rem", color: "#166534" }}>
+                    ✓ Cuenta creada — entrégale estos datos de acceso al técnico
+                  </p>
+                  <div style={{ background: "#FFF", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "0.75rem 0.9rem", marginBottom: "0.6rem" }}>
+                    <p style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", color: DARK }}><b>Usuario:</b> {credencialesGeneradas.username}</p>
+                    <p style={{ margin: 0, fontSize: "0.9rem", color: DARK }}><b>Contraseña temporal:</b> {credencialesGeneradas.password}</p>
+                  </div>
+                  <p style={{ margin: "0 0 0.75rem", fontSize: "0.78rem", color: "#166534" }}>
+                    La persona podrá cambiar esta contraseña luego desde su perfil.
+                  </p>
+                  <button type="button" onClick={handleCloseModal} style={styles.btnSaveFull}>
+                    Listo, cerrar
+                  </button>
+                </div>
+              </div>
+            ) : (
 
             <form onSubmit={handleSave} style={{ ...styles.modalBody, maxHeight: "80vh", overflowY: "auto" }}>
 
@@ -797,27 +898,52 @@ if (rolesActuales.includes("3")) {
                 </div>
                 <div>
                   <label style={styles.fieldLabel}>Nombre de Usuario *</label>
-                  <input type="text" name="username" value={formData.username} onChange={handleChange} style={errStyle("username")} />
+                  {formData.id_usuario ? (
+                    <input type="text" name="username" value={formData.username} onChange={handleChange} style={errStyle("username")} />
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.username}
+                      readOnly
+                      placeholder="Se genera solo con nombres + apellido + documento"
+                      style={{ ...errStyle("username"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" }}
+                    />
+                  )}
                   {formErrors.username && <span style={styles.errTxt}>{formErrors.username}</span>}
+                  {!formData.id_usuario && <span style={{ fontSize: "0.7rem", color: "#9CA3AF", display: "block", marginTop: "0.2rem" }}>Autogenerado, no hace falta escribirlo.</span>}
                 </div>
               </div>
 
               <div style={styles.grid2}>
                 <div>
-                  <label style={styles.fieldLabel}>Contraseña {formData.id_usuario ? "(Opcional — mín. 6 chars si cambia)" : "* (mín. 6 caracteres)"}</label>
+                  <label style={styles.fieldLabel}>
+                    {formData.id_usuario ? "Contraseña (Opcional — mín. 6 chars si cambia)" : "Contraseña Temporal (autogenerada)"}
+                  </label>
                   <div style={{ position: "relative" }}>
                     <input
                       type={showPassword ? "text" : "password"}
                       name="password"
                       value={formData.password}
                       onChange={handleChange}
-                      style={errStyle("password")}
+                      readOnly={!formData.id_usuario}
+                      style={!formData.id_usuario ? { ...errStyle("password"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed", paddingRight: "4.4rem" } : { ...errStyle("password"), paddingRight: "2.4rem" }}
                     />
+                    {!formData.id_usuario && (
+                      <button
+                        type="button"
+                        title="Generar otra contraseña"
+                        onClick={() => setFormData(f => ({ ...f, password: generarPasswordTemporal() }))}
+                        style={{ ...styles.eyeBtn, right: "2.2rem" }}
+                      >
+                        🔄
+                      </button>
+                    )}
                     <button type="button" onClick={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
                       {showPassword ? "🙈" : "👁️"}
                     </button>
                   </div>
                   {formErrors.password && <span style={styles.errTxt}>{formErrors.password}</span>}
+                  {!formData.id_usuario && <span style={{ fontSize: "0.7rem", color: "#9CA3AF", display: "block", marginTop: "0.2rem" }}>Se la mostraremos completa al terminar el registro para que se la entregues a la persona.</span>}
                 </div>
               </div>
 
@@ -936,10 +1062,11 @@ if (rolesActuales.includes("3")) {
                 </>
               )}
 
-              <button type="submit" style={styles.btnSaveFull}>
-                {formData.id_usuario ? "💾 Guardar Cambios" : "✅ Completar Registro"}
+              <button type="submit" disabled={guardando} style={{ ...styles.btnSaveFull, opacity: guardando ? 0.7 : 1, cursor: guardando ? "not-allowed" : "pointer" }}>
+                {guardando ? "Guardando..." : formData.id_usuario ? "💾 Guardar Cambios" : "✅ Completar Registro"}
               </button>
             </form>
+            )}
           </div>
         </div>
       )}

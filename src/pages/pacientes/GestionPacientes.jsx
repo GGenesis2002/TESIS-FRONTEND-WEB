@@ -88,6 +88,7 @@ export default function GestionPacientes() {
   const [credencialesGeneradas, setCredencialesGeneradas] = useState(null); // { username, password }
   const [buscandoDoc, setBuscandoDoc] = useState(false);
   const [buscandoCedula, setBuscandoCedula] = useState(false);
+  const [usuarioExistente, setUsuarioExistente] = useState(false); // true si la cédula ya pertenece a un usuario con otro rol
 
   const [form, setForm] = useState({
     tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "", correo: "",
@@ -117,13 +118,44 @@ export default function GestionPacientes() {
     } catch (err) { console.error("Error al cargar:", err); }
   };
 
-  // Autocompleta nombres/apellidos consultando el servicio gratuito del SRI.
-  // Solo aplica para cédula (no pasaporte) y solo trae el nombre completo;
-  // los campos siempre quedan editables por si hace falta corregir algo.
+  // Autocompleta datos al ingresar la cédula.
+  // 1) Primero consulta INTERNAMENTE si esa cédula ya pertenece a un usuario
+  //    existente (ej. ya registrado como personal del laboratorio); si lo
+  //    encuentra, rellena todos los datos conocidos (incluidos los propios de
+  //    paciente si ya los tuviera) y marca usuarioExistente para que, al
+  //    guardar, no se sobrescriba su usuario/contraseña actuales.
+  // 2) Si no existe internamente, consulta el servicio gratuito del SRI para
+  //    autocompletar solo nombres/apellidos (comportamiento original).
+  // Los campos siempre quedan editables por si hace falta corregir algo.
   const buscarDatosPorCedula = async () => {
     const cedula = (form.cedula || "").trim();
     if (form.tipo_documento !== "cedula" || !/^\d{10}$/.test(cedula)) return;
     setBuscandoDoc(true);
+    setUsuarioExistente(false);
+
+    try {
+      const { data } = await API.get(`/pacientes/consultar-cedula/${cedula}`);
+      if (data?.existe) {
+        setForm(f => ({
+          ...f,
+          nombres: data.nombres || f.nombres,
+          apellidos: data.apellidos || f.apellidos,
+          correo: data.correo || f.correo,
+          telefono: data.telefono || f.telefono,
+          direccion: data.direccion || f.direccion,
+          genero: data.genero || f.genero,
+          fecha_nacimiento: data.fecha_nacimiento ? data.fecha_nacimiento.slice(0, 10) : f.fecha_nacimiento,
+          username: data.username || f.username,
+        }));
+        setUsuarioExistente(true);
+        showToast("success", `Esta cédula ya está registrada (${data.roles || "otro rol"}). Se completaron los datos conocidos; al guardar solo se le añadirá el rol de Paciente, sin tocar su usuario/contraseña actuales.`);
+        setBuscandoDoc(false);
+        return;
+      }
+    } catch (errInterno) {
+      // 404 = no existe internamente todavía; seguimos con la consulta al SRI.
+    }
+
     try {
       const { data } = await API.get(`/documento/consultar/${cedula}`);
       setForm(f => ({
@@ -210,6 +242,15 @@ export default function GestionPacientes() {
       setShowModal(false);
       resetForm();
       cargarPacientes();
+    } else if (usuarioExistente) {
+      // La cédula ya pertenece a un usuario existente (ej. personal del laboratorio):
+      // NO generamos usuario/contraseña nuevos, para no pisar su acceso actual.
+      // El backend detecta la cédula repetida y solo le suma el rol de Paciente.
+      await API.post("/pacientes/registro", payload);
+
+      showToast("success", "Se vinculó el rol de Paciente a la cuenta existente. Su usuario y contraseña no cambiaron.");
+      setCredencialesGeneradas({ username: form.username, vinculado: true });
+      cargarPacientes();
     } else {
       // Usuario y contraseña se generan automáticamente: nadie tiene que inventarlos.
       const password = generarPasswordTemporal();
@@ -272,6 +313,7 @@ export default function GestionPacientes() {
     setForm({ tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "", correo: "", telefono: "", fecha_nacimiento: "", genero: "M", username: "", password: "", direccion: "" });
     setErrors({});
     setIsEditing(false);
+    setUsuarioExistente(false);
   };
 
   const filtrados = pacientes.filter(p =>
@@ -488,14 +530,18 @@ export default function GestionPacientes() {
                     border: "1.5px solid #86EFAC", borderRadius: "10px", padding: "1rem",
                   }}>
                     <p style={{ margin: "0 0 0.6rem", fontFamily: FONTC, fontWeight: 700, fontSize: "0.9rem", color: "#166534" }}>
-                      ✓ Paciente registrado — entrégale estos datos de acceso
+                      ✓ {credencialesGeneradas.vinculado ? "Rol de Paciente vinculado a la cuenta existente" : "Paciente registrado — entrégale estos datos de acceso"}
                     </p>
                     <div style={{ background: "#FFF", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "0.75rem 0.9rem", marginBottom: "0.6rem" }}>
-                      <p style={{ margin: "0 0 0.3rem", fontSize: "0.88rem", color: DARK }}><b>Usuario:</b> {credencialesGeneradas.username}</p>
-                      <p style={{ margin: 0, fontSize: "0.88rem", color: DARK }}><b>Contraseña temporal:</b> {credencialesGeneradas.password}</p>
+                      <p style={{ margin: credencialesGeneradas.vinculado ? 0 : "0 0 0.3rem", fontSize: "0.88rem", color: DARK }}><b>Usuario:</b> {credencialesGeneradas.username || "(el que ya tenía)"}</p>
+                      {!credencialesGeneradas.vinculado && (
+                        <p style={{ margin: 0, fontSize: "0.88rem", color: DARK }}><b>Contraseña temporal:</b> {credencialesGeneradas.password}</p>
+                      )}
                     </div>
                     <p style={{ margin: 0, fontSize: "0.78rem", color: "#166534" }}>
-                      El paciente podrá cambiar esta contraseña luego desde su perfil.
+                      {credencialesGeneradas.vinculado
+                        ? "Como la cédula ya tenía cuenta, no se generó contraseña nueva: debe seguir usando la que ya tenía."
+                        : "El paciente podrá cambiar esta contraseña luego desde su perfil."}
                     </p>
                   </div>
                   <div style={s.modalActions}>

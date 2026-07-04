@@ -5,6 +5,16 @@ const SEXOS = [{ label: "Masculino", value: "M" }, { label: "Femenino", value: "
 
 // ─── VALIDADORES ──────────────────────────────────────────────────────────────
 const validarCedula = (cedula) => /^\d{10}$/.test((cedula || "").trim());
+// Pasaporte: alfanumérico, entre 5 y 15 caracteres (letras y números, sin espacios)
+const validarPasaporte = (pasaporte) => /^[A-Za-z0-9]{5,15}$/.test((pasaporte || "").trim());
+// Valida el documento según el tipo seleccionado (cédula o pasaporte)
+const validarDocumento = (tipoDocumento, valor) =>
+  tipoDocumento === "pasaporte" ? validarPasaporte(valor) : validarCedula(valor);
+// Filtra en vivo los caracteres permitidos según el tipo de documento
+const limpiarDocumento = (tipoDocumento, valor) =>
+  tipoDocumento === "pasaporte"
+    ? (valor || "").toUpperCase().replace(/[^A-Z0-9]/g, "")
+    : (valor || "").replace(/\D/g, "");
 const validarCorreo = (correo) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((correo || "").trim());
 const validarSoloLetras = (texto) => /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test((texto || "").trim());
 const validarTelefono = (telefono) => /^\d{10}$/.test((telefono || "").trim());
@@ -78,7 +88,7 @@ export default function GestionPacientes() {
   const [credencialesGeneradas, setCredencialesGeneradas] = useState(null); // { username, password }
 
   const [form, setForm] = useState({
-    cedula: "", nombres: "", apellidos: "", correo: "",
+    tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "", correo: "",
     telefono: "", fecha_nacimiento: "", genero: "M",
     username: "", password: "", direccion: ""
   });
@@ -110,11 +120,13 @@ export default function GestionPacientes() {
   const validarForm = () => {
     const e = {};
     
-    // Cédula
+    // Cédula / Pasaporte
     if (!(form.cedula || "").trim()) {
-      e.cedula = "La cédula es obligatoria.";
-    } else if (!validarCedula(form.cedula)) {
-      e.cedula = "La cédula debe tener exactamente 10 dígitos numéricos.";
+      e.cedula = form.tipo_documento === "pasaporte" ? "El pasaporte es obligatorio." : "La cédula es obligatoria.";
+    } else if (!validarDocumento(form.tipo_documento, form.cedula)) {
+      e.cedula = form.tipo_documento === "pasaporte"
+        ? "El pasaporte debe tener entre 5 y 15 caracteres alfanuméricos."
+        : "La cédula debe tener exactamente 10 dígitos numéricos.";
     }
 
     // Nombres
@@ -232,7 +244,7 @@ export default function GestionPacientes() {
   };
 
   const resetForm = () => {
-    setForm({ cedula: "", nombres: "", apellidos: "", correo: "", telefono: "", fecha_nacimiento: "", genero: "M", username: "", password: "", direccion: "" });
+    setForm({ tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "", correo: "", telefono: "", fecha_nacimiento: "", genero: "M", username: "", password: "", direccion: "" });
     setErrors({});
     setIsEditing(false);
   };
@@ -328,6 +340,7 @@ export default function GestionPacientes() {
                         : "";
                       setForm({ 
                         ...p, 
+                        tipo_documento: p.tipo_documento || "cedula",
                         cedula: p.cedula || "",
                         nombres: p.nombres || "",
                         apellidos: p.apellidos || "",
@@ -469,15 +482,32 @@ export default function GestionPacientes() {
               ) : (
                 <>
                   <div style={s.grid}>
+                    <div style={s.fieldGroup}>
+                      <label style={s.label}>Tipo de documento *</label>
+                      <select
+                        name="tipo_documento"
+                        value={form.tipo_documento || "cedula"}
+                        onChange={e => {
+                          const nuevoTipo = e.target.value;
+                          // Al cambiar de tipo, se limpia el valor para evitar mezclar formatos.
+                          setForm({ ...form, tipo_documento: nuevoTipo, cedula: "" });
+                          setErrors({ ...errors, cedula: undefined });
+                        }}
+                        style={s.select}
+                      >
+                        <option value="cedula">Cédula</option>
+                        <option value="pasaporte">Pasaporte</option>
+                      </select>
+                    </div>
                     <Field
-                      label="Cédula *"
+                      label={form.tipo_documento === "pasaporte" ? "Pasaporte *" : "Cédula *"}
                       name="cedula"
                       error={errors.cedula}
-                      placeholder="0000000000"
+                      placeholder={form.tipo_documento === "pasaporte" ? "AB123456" : "0000000000"}
                       value={form.cedula || ""}
-                      // VALIDACIÓN EN VIVO: Elimina cualquier cosa que no sea número
-                      onChange={e => setForm({ ...form, cedula: e.target.value.replace(/\D/g, '') })}
-                      maxLength={10}
+                      // VALIDACIÓN EN VIVO: limita los caracteres según el tipo de documento seleccionado
+                      onChange={e => setForm({ ...form, cedula: limpiarDocumento(form.tipo_documento, e.target.value) })}
+                      maxLength={form.tipo_documento === "pasaporte" ? 15 : 10}
                     />
                     {isEditing && (
                       <Field

@@ -16,6 +16,18 @@ const EC = {
 const PUEDE_EDITAR   = ["Generada"];
 const PUEDE_ELIMINAR = ["Generada", "Cancelada"];
 
+// ─── VALIDADORES DE DOCUMENTO ─────────────────────────────────────────────────
+const validarCedula    = (v) => /^\d{10}$/.test((v || "").trim());
+// Pasaporte: alfanumérico, entre 5 y 15 caracteres (letras y números, sin espacios)
+const validarPasaporte = (v) => /^[A-Za-z0-9]{5,15}$/.test((v || "").trim());
+const validarDocumento = (tipoDocumento, v) =>
+  tipoDocumento === "pasaporte" ? validarPasaporte(v) : validarCedula(v);
+// Filtra en vivo los caracteres permitidos según el tipo de documento
+const limpiarDocumento = (tipoDocumento, v) =>
+  tipoDocumento === "pasaporte"
+    ? (v || "").toUpperCase().replace(/[^A-Z0-9]/g, "")
+    : (v || "").replace(/\D/g, "");
+
 const FONT  = "'Barlow', sans-serif";
 const FONTC = "'Barlow Condensed', sans-serif";
 const DARK  = "#1F2937";
@@ -55,6 +67,7 @@ export default function GestionOrdenes() {
 
   // Crear orden
   const [showCrear, setShowCrear]   = useState(false);
+  const [tipoDocumentoInput, setTipoDocumentoInput] = useState("cedula");
   const [cedulaInput, setCedulaInput] = useState("");
   const [busquedaExamen, setBusquedaExamen] = useState("");
   const [form, setForm] = useState({ id_paciente: "", examenes: [] });
@@ -157,7 +170,7 @@ export default function GestionOrdenes() {
 
   // ── CREAR ORDEN ──────────────────────────────────────────────────────────────
   const handleCrearOrden = async () => {
-    if (!form.id_paciente) return setMsgCrear({ type: "error", text: "Ingrese una cédula válida de un paciente registrado." });
+    if (!form.id_paciente) return setMsgCrear({ type: "error", text: "Ingrese un documento válido de un paciente registrado." });
     if (form.examenes.length === 0) return setMsgCrear({ type: "error", text: "Agrega al menos un examen." });
     setGuardando(true); setMsgCrear(null);
     try {
@@ -172,7 +185,7 @@ export default function GestionOrdenes() {
       setQrResult(data);
       setShowCrear(false);
       setForm({ id_paciente: "", examenes: [] });
-      setCedulaInput(""); setBusquedaExamen("");
+      setCedulaInput(""); setTipoDocumentoInput("cedula"); setBusquedaExamen("");
       resetFormRegistro();
       cargar();
     } catch (err) {
@@ -215,7 +228,17 @@ export default function GestionOrdenes() {
   const handleRegistroRapido = async () => {
     const { nombres, apellidos, correo, fecha_nacimiento } = formRegistro;
     const cedula = cedulaInput.trim();
-    if (!cedula) return setMsgRegistro({ type: "error", text: "Falta la cédula." });
+    if (!cedula) {
+      return setMsgRegistro({ type: "error", text: tipoDocumentoInput === "pasaporte" ? "Falta el pasaporte." : "Falta la cédula." });
+    }
+    if (!validarDocumento(tipoDocumentoInput, cedula)) {
+      return setMsgRegistro({
+        type: "error",
+        text: tipoDocumentoInput === "pasaporte"
+          ? "El pasaporte debe tener entre 5 y 15 caracteres alfanuméricos."
+          : "La cédula debe tener exactamente 10 dígitos numéricos.",
+      });
+    }
     if (!nombres || !apellidos || !correo || !fecha_nacimiento) {
       return setMsgRegistro({ type: "error", text: "Completa nombres, apellidos, correo y fecha de nacimiento." });
     }
@@ -226,7 +249,7 @@ export default function GestionOrdenes() {
     let username = generarUsername(nombres, apellidos, cedula);
 
     const intentarRegistro = async (usernameFinal) =>
-      API.post("/pacientes/registro", { cedula, username: usernameFinal, password, ...formRegistro });
+      API.post("/pacientes/registro", { cedula, tipo_documento: tipoDocumentoInput, username: usernameFinal, password, ...formRegistro });
 
     try {
       try {
@@ -730,8 +753,25 @@ export default function GestionOrdenes() {
             <div style={s.modalBody}>
               {msgCrear && <Alert msg={msgCrear} />}
               <div style={{ marginBottom: "1rem" }}>
-                <label style={s.label}>Cédula del Paciente *</label>
-                <input type="text" placeholder="Escribe el número de cédula..." value={cedulaInput} onChange={e => setCedulaInput(e.target.value)} style={{ ...s.input, width: "100%", marginBottom: "0.5rem" }} />
+                <label style={s.label}>Documento del Paciente *</label>
+                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                  <select
+                    value={tipoDocumentoInput}
+                    onChange={e => { setTipoDocumentoInput(e.target.value); setCedulaInput(""); }}
+                    style={{ ...s.input, width: "140px", flexShrink: 0 }}
+                  >
+                    <option value="cedula">Cédula</option>
+                    <option value="pasaporte">Pasaporte</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder={tipoDocumentoInput === "pasaporte" ? "Escribe el pasaporte..." : "Escribe el número de cédula..."}
+                    value={cedulaInput}
+                    onChange={e => setCedulaInput(limpiarDocumento(tipoDocumentoInput, e.target.value))}
+                    maxLength={tipoDocumentoInput === "pasaporte" ? 15 : 10}
+                    style={{ ...s.input, width: "100%" }}
+                  />
+                </div>
 
                 {cedulaInput.trim() && (() => {
                   // Tres estados posibles para la cédula ingresada:
@@ -815,7 +855,7 @@ export default function GestionOrdenes() {
                     ) : (
                       <div style={{ background: "#F8FAFC", border: "1.5px solid #E5E7EB", borderRadius: "10px", padding: "0.9rem", marginTop: "0.4rem" }}>
                         <p style={{ margin: "0 0 0.75rem", fontFamily: FONTC, fontWeight: 700, fontSize: "0.85rem", color: DARK }}>
-                          📝 Registro rápido — Cédula <span style={{ color: ORANGE }}>{cedulaInput.trim()}</span>
+                          📝 Registro rápido — {tipoDocumentoInput === "pasaporte" ? "Pasaporte" : "Cédula"} <span style={{ color: ORANGE }}>{cedulaInput.trim()}</span>
                         </p>
                         <p style={{ margin: "0 0 0.6rem", fontSize: "0.75rem", color: "#6B7280" }}>
                           El usuario y la contraseña se generan automáticamente; se los mostraremos al terminar.

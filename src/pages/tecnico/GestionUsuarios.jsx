@@ -18,6 +18,16 @@ const ESPECIALIDADES = [
 
 // ─── VALIDADORES ──────────────────────────────────────────────────────────────
 const validarCedula    = (v) => /^\d{10}$/.test((v || "").trim());
+// Pasaporte: alfanumérico, entre 5 y 15 caracteres (letras y números, sin espacios)
+const validarPasaporte = (v) => /^[A-Za-z0-9]{5,15}$/.test((v || "").trim());
+// Valida el documento según el tipo seleccionado (cédula o pasaporte)
+const validarDocumento = (tipoDocumento, v) =>
+  tipoDocumento === "pasaporte" ? validarPasaporte(v) : validarCedula(v);
+// Filtra en vivo los caracteres permitidos según el tipo de documento
+const limpiarDocumento = (tipoDocumento, v) =>
+  tipoDocumento === "pasaporte"
+    ? (v || "").toUpperCase().replace(/[^A-Z0-9]/g, "")
+    : (v || "").replace(/\D/g, "");
 const validarCorreo    = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || "").trim());
 const validarPassword  = (v) => (v || "").length >= 6;
 
@@ -165,7 +175,7 @@ export default function GestionUsuarios() {
   const [itemsPorPagina, setItemsPorPagina] = useState(10);
 
   const [formData, setFormData] = useState({
-    id_usuario: null, cedula: "", nombres: "", apellidos: "",
+    id_usuario: null, tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "",
     correo: "", username: "", password: "",
     id_rol: "", cargo: "", especialidad: "", turno: "",
     id_roles: [], examenes_asignados: []
@@ -227,7 +237,7 @@ export default function GestionUsuarios() {
 
   const handleOpenRegister = () => {
     setFormData({
-      id_usuario: null, cedula: "", nombres: "", apellidos: "",
+      id_usuario: null, tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "",
       correo: "", username: "", password: "",
       id_rol: "", cargo: "", especialidad: "", turno: "",
       id_roles: [], examenes_asignados: []
@@ -280,6 +290,7 @@ if (rolesActuales.includes("3")) {
 
     setFormData({
       id_usuario: u.id_usuario,
+      tipo_documento: u.tipo_documento || "cedula",
       cedula: u.cedula || "",
       nombres: u.nombres || "",
       apellidos: u.apellidos || "",
@@ -311,9 +322,11 @@ if (rolesActuales.includes("3")) {
     if (!formData.apellidos.trim()) e.apellidos = "Campo obligatorio.";
 
     if (!formData.cedula.trim()) {
-      e.cedula = "La cédula es obligatoria.";
-    } else if (!validarCedula(formData.cedula)) {
-      e.cedula = "La cédula debe tener exactamente 10 dígitos numéricos.";
+      e.cedula = formData.tipo_documento === "pasaporte" ? "El pasaporte es obligatorio." : "La cédula es obligatoria.";
+    } else if (!validarDocumento(formData.tipo_documento, formData.cedula)) {
+      e.cedula = formData.tipo_documento === "pasaporte"
+        ? "El pasaporte debe tener entre 5 y 15 caracteres alfanuméricos."
+        : "La cédula debe tener exactamente 10 dígitos numéricos.";
     }
 
     if (!formData.correo.trim()) {
@@ -707,23 +720,50 @@ if (rolesActuales.includes("3")) {
 
               <div style={styles.grid2}>
                 <div>
-                  <label style={styles.fieldLabel}>Cédula *</label>
-                  <input type="text" name="cedula" value={formData.cedula} onChange={handleChange} maxLength={10} style={errStyle("cedula")} />
-                  {formErrors.cedula && <span style={styles.errTxt}>{formErrors.cedula}</span>}
+                  <label style={styles.fieldLabel}>Tipo de documento *</label>
+                  <select
+                    name="tipo_documento"
+                    value={formData.tipo_documento || "cedula"}
+                    onChange={e => {
+                      const nuevoTipo = e.target.value;
+                      // Al cambiar de tipo, se limpia el valor para evitar mezclar formatos.
+                      setFormData({ ...formData, tipo_documento: nuevoTipo, cedula: "" });
+                      setFormErrors({ ...formErrors, cedula: undefined });
+                    }}
+                    style={errStyle("tipo_documento")}
+                  >
+                    <option value="cedula">Cédula</option>
+                    <option value="pasaporte">Pasaporte</option>
+                  </select>
                 </div>
                 <div>
-                  <label style={styles.fieldLabel}>Correo Electrónico *</label>
-                  <input type="email" name="correo" value={formData.correo} onChange={handleChange} style={errStyle("correo")} />
-                  {formErrors.correo && <span style={styles.errTxt}>{formErrors.correo}</span>}
+                  <label style={styles.fieldLabel}>{formData.tipo_documento === "pasaporte" ? "Pasaporte *" : "Cédula *"}</label>
+                  <input
+                    type="text"
+                    name="cedula"
+                    value={formData.cedula}
+                    onChange={e => setFormData({ ...formData, cedula: limpiarDocumento(formData.tipo_documento, e.target.value) })}
+                    maxLength={formData.tipo_documento === "pasaporte" ? 15 : 10}
+                    style={errStyle("cedula")}
+                  />
+                  {formErrors.cedula && <span style={styles.errTxt}>{formErrors.cedula}</span>}
                 </div>
               </div>
 
               <div style={styles.grid2}>
                 <div>
+                  <label style={styles.fieldLabel}>Correo Electrónico *</label>
+                  <input type="email" name="correo" value={formData.correo} onChange={handleChange} style={errStyle("correo")} />
+                  {formErrors.correo && <span style={styles.errTxt}>{formErrors.correo}</span>}
+                </div>
+                <div>
                   <label style={styles.fieldLabel}>Nombre de Usuario *</label>
                   <input type="text" name="username" value={formData.username} onChange={handleChange} style={errStyle("username")} />
                   {formErrors.username && <span style={styles.errTxt}>{formErrors.username}</span>}
                 </div>
+              </div>
+
+              <div style={styles.grid2}>
                 <div>
                   <label style={styles.fieldLabel}>Contraseña {formData.id_usuario ? "(Opcional — mín. 6 chars si cambia)" : "* (mín. 6 caracteres)"}</label>
                   <div style={{ position: "relative" }}>

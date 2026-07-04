@@ -17,6 +17,21 @@ const generarPasswordTemporal = () => {
   return out;
 };
 
+// Genera un username legible mezclando nombre + apellido + dígitos de la cédula
+// (en vez de dejarlo como solo números), ej: "jennyg268"
+const generarUsername = (nombres, apellidos, cedula) => {
+  const limpiar = (txt) => (txt || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quita acentos
+    .trim().toLowerCase()
+    .split(/\s+/)[0]                                   // solo la primera palabra
+    ?.replace(/[^a-z]/g, "") || "";
+  const primerNombre    = limpiar(nombres);
+  const inicialApellido = limpiar(apellidos).charAt(0);
+  const sufijoCedula     = (cedula || "").toString().replace(/\D/g, "").slice(-3);
+  const base = `${primerNombre}${inicialApellido}` || "usuario";
+  return `${base}${sufijoCedula}`;
+};
+
 // ─── TOAST ────────────────────────────────────────────────────────────────────
 function Toast({ toast }) {
   if (!toast) return null;
@@ -161,7 +176,7 @@ export default function GestionPacientes() {
     } else {
       // Usuario y contraseña se generan automáticamente: nadie tiene que inventarlos.
       const password = generarPasswordTemporal();
-      let username = payload.cedula;
+      let username = generarUsername(payload.nombres, payload.apellidos, payload.cedula);
 
       const intentarRegistro = (usernameFinal) =>
         API.post("/pacientes/registro", { ...payload, username: usernameFinal, password });
@@ -169,10 +184,10 @@ export default function GestionPacientes() {
       try {
         await intentarRegistro(username);
       } catch (err) {
-        // Si esa cédula ya está en uso como username de otra cuenta, reintenta una vez con un sufijo.
+        // Si ese nombre de usuario ya está en uso por otra cuenta, reintenta una vez con un sufijo numérico.
         const msg = err.response?.data?.error || err.response?.data?.msg || "";
         if (msg.toLowerCase().includes("usuario ya está en uso")) {
-          username = `${payload.cedula}${Math.floor(10 + Math.random() * 90)}`;
+          username = `${username}${Math.floor(10 + Math.random() * 90)}`;
           await intentarRegistro(username);
         } else {
           throw err;

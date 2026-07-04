@@ -197,6 +197,21 @@ export default function GestionOrdenes() {
     return out;
   };
 
+  // Genera un username legible mezclando nombre + apellido + dígitos de la cédula
+  // (en vez de dejarlo como solo números), ej: "jennyg268"
+  const generarUsername = (nombres, apellidos, cedula) => {
+    const limpiar = (txt) => (txt || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quita acentos
+      .trim().toLowerCase()
+      .split(/\s+/)[0]                                   // solo la primera palabra
+      ?.replace(/[^a-z]/g, "") || "";
+    const primerNombre   = limpiar(nombres);
+    const inicialApellido = limpiar(apellidos).charAt(0);
+    const sufijoCedula    = (cedula || "").toString().replace(/\D/g, "").slice(-3);
+    const base = `${primerNombre}${inicialApellido}` || "usuario";
+    return `${base}${sufijoCedula}`;
+  };
+
   const handleRegistroRapido = async () => {
     const { nombres, apellidos, correo, fecha_nacimiento } = formRegistro;
     const cedula = cedulaInput.trim();
@@ -208,7 +223,7 @@ export default function GestionOrdenes() {
 
     // Usuario y contraseña se generan automáticamente: la secretaria no tiene que inventarlos.
     const password = generarPasswordTemporal();
-    let username = cedula;
+    let username = generarUsername(nombres, apellidos, cedula);
 
     const intentarRegistro = async (usernameFinal) =>
       API.post("/pacientes/registro", { cedula, username: usernameFinal, password, ...formRegistro });
@@ -217,10 +232,10 @@ export default function GestionOrdenes() {
       try {
         await intentarRegistro(username);
       } catch (err) {
-        // Si el nombre de usuario (cédula) ya está en uso por otra cuenta, reintenta una vez con un sufijo.
+        // Si ese nombre de usuario ya está en uso por otra cuenta, reintenta una vez con un sufijo numérico.
         const msg = err.response?.data?.error || "";
         if (msg.toLowerCase().includes("usuario ya está en uso")) {
-          username = `${cedula}${Math.floor(10 + Math.random() * 90)}`;
+          username = `${username}${Math.floor(10 + Math.random() * 90)}`;
           await intentarRegistro(username);
         } else {
           throw err;
@@ -806,7 +821,7 @@ export default function GestionOrdenes() {
                           El usuario y la contraseña se generan automáticamente; se los mostraremos al terminar.
                         </p>
                         {msgRegistro && <Alert msg={msgRegistro} />}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "0.5rem", marginBottom: "0.5rem" }}>
                           <input type="text" placeholder="Nombres *" value={formRegistro.nombres} onChange={e => setFormRegistro(f => ({ ...f, nombres: e.target.value }))} style={s.input} />
                           <input type="text" placeholder="Apellidos *" value={formRegistro.apellidos} onChange={e => setFormRegistro(f => ({ ...f, apellidos: e.target.value }))} style={s.input} />
                           <input type="email" placeholder="Correo *" value={formRegistro.correo} onChange={e => setFormRegistro(f => ({ ...f, correo: e.target.value }))} style={{ ...s.input, gridColumn: "1 / -1" }} />
@@ -818,7 +833,7 @@ export default function GestionOrdenes() {
                             + Más datos (opcional)
                           </button>
                         ) : (
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "0.5rem", marginBottom: "0.5rem" }}>
                             <input type="text" placeholder="Teléfono" value={formRegistro.telefono} onChange={e => setFormRegistro(f => ({ ...f, telefono: e.target.value }))} style={s.input} />
                             <select value={formRegistro.genero} onChange={e => setFormRegistro(f => ({ ...f, genero: e.target.value }))} style={s.select}>
                               <option value="">Género</option>
@@ -1253,7 +1268,7 @@ const s = {
   empty:        { padding: "3rem", textAlign: "center", color: "#9CA3AF", fontSize: "0.9rem" },
   ticketBadge:  { background: `${ORANGE}15`, color: ORANGE, padding: "0.2rem 0.5rem", borderRadius: "4px", fontSize: "0.8rem", fontWeight: 700, fontFamily: FONTC },
   modalBody:    { background: "#FFF", padding: "1.25rem", borderBottomLeftRadius: "14px", borderBottomRightRadius: "14px", boxSizing: "border-box", overflowY: "auto" },
-  modalContainer: { background: "#FFF", borderRadius: "14px", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", width: "420px", maxWidth: "calc(100vw - 2rem)", maxHeight: "90vh", overflowY: "auto", display: "flex", flexDirection: "column" },
+  modalContainer: { background: "#FFF", borderRadius: "14px", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", width: "520px", maxWidth: "calc(100vw - 2rem)", maxHeight: "94vh", overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" },
   alertError:   { background: "#FEF2F2", color: "#EF4444", border: "1px solid #FCA5A5", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.85rem", marginBottom: "1rem", textAlign: "center" },
   qrInvalidBox: { background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: "12px", padding: "1.5rem 1.25rem", display: "flex", flexDirection: "column", alignItems: "center" },
   qrInvalidIcon: { fontSize: "2.5rem", marginBottom: "0.75rem" },

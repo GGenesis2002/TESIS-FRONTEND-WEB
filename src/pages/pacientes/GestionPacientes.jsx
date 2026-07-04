@@ -9,6 +9,14 @@ const validarCorreo = (correo) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((correo || "
 const validarSoloLetras = (texto) => /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test((texto || "").trim());
 const validarTelefono = (telefono) => /^\d{10}$/.test((telefono || "").trim());
 
+// Genera una contraseña temporal legible (sin caracteres ambiguos como 0/O, 1/l/I)
+const generarPasswordTemporal = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+};
+
 // ─── TOAST ────────────────────────────────────────────────────────────────────
 function Toast({ toast }) {
   if (!toast) return null;
@@ -52,6 +60,7 @@ export default function GestionPacientes() {
   const [confirmEstado, setConfirmEstado] = useState(null);
   const [paginaActual, setPaginaActual] = useState(1);
   const [itemsPorPagina, setItemsPorPagina] = useState(10);
+  const [credencialesGeneradas, setCredencialesGeneradas] = useState(null); // { username, password }
 
   const [form, setForm] = useState({
     cedula: "", nombres: "", apellidos: "", correo: "",
@@ -119,11 +128,8 @@ export default function GestionPacientes() {
       e.correo = "Ingresa un correo electrónico válido.";
     }
 
-    // Credenciales (Solo requeridas en creación)
-    if (!isEditing) {
-      if (!(form.username || "").trim()) e.username = "El usuario móvil es obligatorio.";
-      if (!(form.password || "").trim()) e.password = "La contraseña es obligatoria.";
-    }
+    // Usuario y contraseña ya no se piden manualmente: se generan automáticamente al registrar.
+
 
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -149,14 +155,34 @@ export default function GestionPacientes() {
     if (isEditing) {
       await API.put(`/pacientes/${form.id_usuario}`, payload);
       showToast("success", "Paciente actualizado correctamente.");
+      setShowModal(false);
+      resetForm();
+      cargarPacientes();
     } else {
-      // Enviamos el payload limpio al backend
-      await API.post("/pacientes/registro", payload);
+      // Usuario y contraseña se generan automáticamente: nadie tiene que inventarlos.
+      const password = generarPasswordTemporal();
+      let username = payload.cedula;
+
+      const intentarRegistro = (usernameFinal) =>
+        API.post("/pacientes/registro", { ...payload, username: usernameFinal, password });
+
+      try {
+        await intentarRegistro(username);
+      } catch (err) {
+        // Si esa cédula ya está en uso como username de otra cuenta, reintenta una vez con un sufijo.
+        const msg = err.response?.data?.error || err.response?.data?.msg || "";
+        if (msg.toLowerCase().includes("usuario ya está en uso")) {
+          username = `${payload.cedula}${Math.floor(10 + Math.random() * 90)}`;
+          await intentarRegistro(username);
+        } else {
+          throw err;
+        }
+      }
+
       showToast("success", "Paciente registrado correctamente.");
+      setCredencialesGeneradas({ username, password });
+      cargarPacientes();
     }
-    setShowModal(false);
-    resetForm();
-    cargarPacientes();
   } catch (err) {
     // CORRECCIÓN CRÍTICA: Ahora lee tanto 'error' como 'msg' del backend
     const mensajeDeError = err.response?.data?.error || err.response?.data?.msg || "Error al guardar el paciente";
@@ -164,6 +190,12 @@ export default function GestionPacientes() {
     console.error("Detalle completo del error 400:", err.response?.data);
   }
 };
+
+  const cerrarModalRegistro = () => {
+    setShowModal(false);
+    setCredencialesGeneradas(null);
+    resetForm();
+  };
 
   const handleCambiarEstado = async () => {
     if (!confirmEstado) return;
@@ -392,121 +424,143 @@ export default function GestionPacientes() {
                   {isEditing ? "Actualiza la información del paciente" : "Completa los datos para registrar un nuevo paciente"}
                 </p>
               </div>
-              <button onClick={() => { setShowModal(false); resetForm(); }} style={s.closeBtn}>✕</button>
+              <button onClick={cerrarModalRegistro} style={s.closeBtn}>✕</button>
             </div>
 
             <div style={s.modalBody}>
-              <div style={s.grid}>
-                <Field
-                  label="Cédula *"
-                  name="cedula"
-                  error={errors.cedula}
-                  placeholder="0000000000"
-                  value={form.cedula || ""}
-                  // VALIDACIÓN EN VIVO: Elimina cualquier cosa que no sea número
-                  onChange={e => setForm({ ...form, cedula: e.target.value.replace(/\D/g, '') })}
-                  maxLength={10}
-                />
-                <Field
-                  label="Username Móvil *"
-                  name="username"
-                  error={errors.username}
-                  placeholder="usuario_movil"
-                  value={form.username || ""}
-                  disabled={isEditing}
-                  onChange={e => setForm({ ...form, username: e.target.value })}
-                  style={{ background: isEditing ? "#F3F4F6" : "#FAFAFA", color: isEditing ? "#9CA3AF" : "#1F2937" }}
-                />
-                <Field
-                  label="Nombres *"
-                  name="nombres"
-                  error={errors.nombres}
-                  placeholder="Nombres completos"
-                  value={form.nombres || ""}
-                  // VALIDACIÓN EN VIVO: Elimina números y caracteres especiales
-                  onChange={e => setForm({ ...form, nombres: e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '') })}
-                />
-                <Field
-                  label="Apellidos *"
-                  name="apellidos"
-                  error={errors.apellidos}
-                  placeholder="Apellidos completos"
-                  value={form.apellidos || ""}
-                  // VALIDACIÓN EN VIVO: Elimina números y caracteres especiales
-                  onChange={e => setForm({ ...form, apellidos: e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '') })}
-                />
-                <Field
-                  label="Correo *"
-                  name="correo"
-                  error={errors.correo}
-                  placeholder="correo@ejemplo.com"
-                  value={form.correo || ""}
-                  onChange={e => setForm({ ...form, correo: e.target.value })}
-                  type="email"
-                />
-                <div style={s.fieldGroup}>
-                  <label style={s.label}>Fecha de Nacimiento</label>
-                  <input
-                    type="date"
-                    value={form.fecha_nacimiento || ""}
-                    onChange={e => setForm({ ...form, fecha_nacimiento: e.target.value })}
-                    style={s.input}
-                  />
-                </div>
-                <div style={s.fieldGroup}>
-                  <label style={s.label}>Teléfono</label>
-                  <input
-                    placeholder="0999999999"
-                    value={form.telefono || ""}
-                    // VALIDACIÓN EN VIVO: Elimina cualquier cosa que no sea número
-                    onChange={e => setForm({ ...form, telefono: e.target.value.replace(/\D/g, '') })}
-                    maxLength={10}
-                    style={{ ...s.input, borderColor: errors.telefono ? "#EF4444" : "#E5E7EB" }}
-                  />
-                  {errors.telefono && <span style={s.errTxt}>{errors.telefono}</span>}
-                </div>
-                {!isEditing && (
-                  <Field
-                    label="Contraseña *"
-                    name="password"
-                    error={errors.password}
-                    type="password"
-                    placeholder="Contraseña de acceso"
-                    value={form.password || ""}
-                    onChange={e => setForm({ ...form, password: e.target.value })}
-                  />
-                )}
-              </div>
+              {credencialesGeneradas ? (
+                <>
+                  <div style={{
+                    background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)",
+                    border: "1.5px solid #86EFAC", borderRadius: "10px", padding: "1rem",
+                  }}>
+                    <p style={{ margin: "0 0 0.6rem", fontFamily: FONTC, fontWeight: 700, fontSize: "0.9rem", color: "#166534" }}>
+                      ✓ Paciente registrado — entrégale estos datos de acceso
+                    </p>
+                    <div style={{ background: "#FFF", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "0.75rem 0.9rem", marginBottom: "0.6rem" }}>
+                      <p style={{ margin: "0 0 0.3rem", fontSize: "0.88rem", color: DARK }}><b>Usuario:</b> {credencialesGeneradas.username}</p>
+                      <p style={{ margin: 0, fontSize: "0.88rem", color: DARK }}><b>Contraseña temporal:</b> {credencialesGeneradas.password}</p>
+                    </div>
+                    <p style={{ margin: 0, fontSize: "0.78rem", color: "#166534" }}>
+                      El paciente podrá cambiar esta contraseña luego desde su perfil.
+                    </p>
+                  </div>
+                  <div style={s.modalActions}>
+                    <button onClick={cerrarModalRegistro} style={s.btnSave}>
+                      ENTENDIDO
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={s.grid}>
+                    <Field
+                      label="Cédula *"
+                      name="cedula"
+                      error={errors.cedula}
+                      placeholder="0000000000"
+                      value={form.cedula || ""}
+                      // VALIDACIÓN EN VIVO: Elimina cualquier cosa que no sea número
+                      onChange={e => setForm({ ...form, cedula: e.target.value.replace(/\D/g, '') })}
+                      maxLength={10}
+                    />
+                    {isEditing && (
+                      <Field
+                        label="Username Móvil"
+                        name="username"
+                        placeholder="usuario_movil"
+                        value={form.username || ""}
+                        disabled
+                        style={{ background: "#F3F4F6", color: "#9CA3AF" }}
+                      />
+                    )}
+                    <Field
+                      label="Nombres *"
+                      name="nombres"
+                      error={errors.nombres}
+                      placeholder="Nombres completos"
+                      value={form.nombres || ""}
+                      // VALIDACIÓN EN VIVO: Elimina números y caracteres especiales
+                      onChange={e => setForm({ ...form, nombres: e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '') })}
+                    />
+                    <Field
+                      label="Apellidos *"
+                      name="apellidos"
+                      error={errors.apellidos}
+                      placeholder="Apellidos completos"
+                      value={form.apellidos || ""}
+                      // VALIDACIÓN EN VIVO: Elimina números y caracteres especiales
+                      onChange={e => setForm({ ...form, apellidos: e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '') })}
+                    />
+                    <Field
+                      label="Correo *"
+                      name="correo"
+                      error={errors.correo}
+                      placeholder="correo@ejemplo.com"
+                      value={form.correo || ""}
+                      onChange={e => setForm({ ...form, correo: e.target.value })}
+                      type="email"
+                    />
+                    <div style={s.fieldGroup}>
+                      <label style={s.label}>Fecha de Nacimiento</label>
+                      <input
+                        type="date"
+                        value={form.fecha_nacimiento || ""}
+                        onChange={e => setForm({ ...form, fecha_nacimiento: e.target.value })}
+                        style={s.input}
+                      />
+                    </div>
+                    <div style={s.fieldGroup}>
+                      <label style={s.label}>Teléfono</label>
+                      <input
+                        placeholder="0999999999"
+                        value={form.telefono || ""}
+                        // VALIDACIÓN EN VIVO: Elimina cualquier cosa que no sea número
+                        onChange={e => setForm({ ...form, telefono: e.target.value.replace(/\D/g, '') })}
+                        maxLength={10}
+                        style={{ ...s.input, borderColor: errors.telefono ? "#EF4444" : "#E5E7EB" }}
+                      />
+                      {errors.telefono && <span style={s.errTxt}>{errors.telefono}</span>}
+                    </div>
+                  </div>
 
-              <div style={s.fieldGroup}>
-                <label style={s.label}>Dirección</label>
-                <input
-                  placeholder="Dirección completa"
-                  value={form.direccion || ""}
-                  onChange={e => setForm({ ...form, direccion: e.target.value })}
-                  style={s.input}
-                />
-              </div>
+                  {!isEditing && (
+                    <p style={{ margin: "0.1rem 0 0", fontSize: "0.78rem", color: "#6B7280" }}>
+                      El usuario y la contraseña de acceso se generan automáticamente; te los mostraremos al terminar de registrar.
+                    </p>
+                  )}
 
-              <div style={s.fieldGroup}>
-                <label style={s.label}>Género</label>
-                <select
-                  value={form.genero || "M"}
-                  onChange={e => setForm({ ...form, genero: e.target.value })}
-                  style={s.select}
-                >
-                  {SEXOS.map(sx => <option key={sx.value} value={sx.value}>{sx.label}</option>)}
-                </select>
-              </div>
+                  <div style={s.fieldGroup}>
+                    <label style={s.label}>Dirección</label>
+                    <input
+                      placeholder="Dirección completa"
+                      value={form.direccion || ""}
+                      onChange={e => setForm({ ...form, direccion: e.target.value })}
+                      style={s.input}
+                    />
+                  </div>
 
-              <div style={s.modalActions}>
-                <button onClick={() => { setShowModal(false); resetForm(); }} style={s.btnCancel}>
-                  CANCELAR
-                </button>
-                <button onClick={handleGuardar} style={s.btnSave}>
-                  {isEditing ? "ACTUALIZAR PACIENTE" : "REGISTRAR PACIENTE"}
-                </button>
-              </div>
+                  <div style={s.fieldGroup}>
+                    <label style={s.label}>Género</label>
+                    <select
+                      value={form.genero || "M"}
+                      onChange={e => setForm({ ...form, genero: e.target.value })}
+                      style={s.select}
+                    >
+                      {SEXOS.map(sx => <option key={sx.value} value={sx.value}>{sx.label}</option>)}
+                    </select>
+                  </div>
+
+                  <div style={s.modalActions}>
+                    <button onClick={cerrarModalRegistro} style={s.btnCancel}>
+                      CANCELAR
+                    </button>
+                    <button onClick={handleGuardar} style={s.btnSave}>
+                      {isEditing ? "ACTUALIZAR PACIENTE" : "REGISTRAR PACIENTE"}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

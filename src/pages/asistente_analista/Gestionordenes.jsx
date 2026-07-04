@@ -62,6 +62,20 @@ export default function GestionOrdenes() {
   const [qrResult, setQrResult]   = useState(null);
   const [msgCrear, setMsgCrear]   = useState(null);
 
+  // Registro rápido de paciente (desde el modal de Nueva Orden)
+  const [showRegistroRapido, setShowRegistroRapido] = useState(false);
+  const [showMasDatosRegistro, setShowMasDatosRegistro] = useState(false);
+  const [formRegistro, setFormRegistro] = useState({
+    nombres: "", apellidos: "", correo: "",
+    fecha_nacimiento: "", telefono: "", direccion: "", genero: "",
+  });
+  const [guardandoRegistro, setGuardandoRegistro] = useState(false);
+  const [msgRegistro, setMsgRegistro] = useState(null);
+  const [credencialesGeneradas, setCredencialesGeneradas] = useState(null); // { username, password }
+
+  // Reactivar paciente inactivo (desde el modal de Nueva Orden)
+  const [reactivando, setReactivando] = useState(false);
+
   // Ver detalle
   const [showDetalle, setShowDetalle] = useState(null);
   const [detalleExamenes, setDetalleExamenes] = useState([]);
@@ -116,6 +130,10 @@ export default function GestionOrdenes() {
   const pacienteEncontrado = pacientes.find(
     p => p.estado && p.cedula?.toString().trim() === cedulaInput.trim()
   );
+  // Si la cédula pertenece a un paciente que existe pero está en la papelera (inactivo)
+  const pacienteInactivo = pacientes.find(
+    p => !p.estado && p.cedula?.toString().trim() === cedulaInput.trim()
+  );
   useEffect(() => {
     setForm(f => ({ ...f, id_paciente: pacienteEncontrado
       ? (pacienteEncontrado.id_paciente || pacienteEncontrado.id_usuario)
@@ -155,10 +173,77 @@ export default function GestionOrdenes() {
       setShowCrear(false);
       setForm({ id_paciente: "", examenes: [] });
       setCedulaInput(""); setBusquedaExamen("");
+      resetFormRegistro();
       cargar();
     } catch (err) {
       setMsgCrear({ type: "error", text: err.response?.data?.error || "Error al crear la orden." });
     } finally { setGuardando(false); }
+  };
+
+  // ── REGISTRO RÁPIDO DE PACIENTE (desde Nueva Orden) ──────────────────────────
+  const resetFormRegistro = () => {
+    setFormRegistro({ nombres: "", apellidos: "", correo: "", fecha_nacimiento: "", telefono: "", direccion: "", genero: "" });
+    setMsgRegistro(null);
+    setShowRegistroRapido(false);
+    setShowMasDatosRegistro(false);
+    setCredencialesGeneradas(null);
+  };
+
+  // Genera una contraseña temporal legible (sin caracteres ambiguos como 0/O, 1/l/I)
+  const generarPasswordTemporal = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let out = "";
+    for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out;
+  };
+
+  const handleRegistroRapido = async () => {
+    const { nombres, apellidos, correo, fecha_nacimiento } = formRegistro;
+    const cedula = cedulaInput.trim();
+    if (!cedula) return setMsgRegistro({ type: "error", text: "Falta la cédula." });
+    if (!nombres || !apellidos || !correo || !fecha_nacimiento) {
+      return setMsgRegistro({ type: "error", text: "Completa nombres, apellidos, correo y fecha de nacimiento." });
+    }
+    setGuardandoRegistro(true); setMsgRegistro(null);
+
+    // Usuario y contraseña se generan automáticamente: la secretaria no tiene que inventarlos.
+    const password = generarPasswordTemporal();
+    let username = cedula;
+
+    const intentarRegistro = async (usernameFinal) =>
+      API.post("/pacientes/registro", { cedula, username: usernameFinal, password, ...formRegistro });
+
+    try {
+      try {
+        await intentarRegistro(username);
+      } catch (err) {
+        // Si el nombre de usuario (cédula) ya está en uso por otra cuenta, reintenta una vez con un sufijo.
+        const msg = err.response?.data?.error || "";
+        if (msg.toLowerCase().includes("usuario ya está en uso")) {
+          username = `${cedula}${Math.floor(10 + Math.random() * 90)}`;
+          await intentarRegistro(username);
+        } else {
+          throw err;
+        }
+      }
+      setCredencialesGeneradas({ username, password });
+      await cargar(); // recarga pacientes para que el paciente recién creado quede seleccionado automáticamente
+    } catch (err) {
+      setMsgRegistro({ type: "error", text: err.response?.data?.error || "Error al registrar el paciente." });
+    } finally { setGuardandoRegistro(false); }
+  };
+
+  // ── REACTIVAR PACIENTE INACTIVO (desde Nueva Orden) ──────────────────────────
+  const handleReactivarDesdeOrden = async () => {
+    if (!pacienteInactivo) return;
+    setReactivando(true);
+    try {
+      await API.put(`/pacientes/reactivar/${pacienteInactivo.id_usuario}`);
+      showToast("success", "Paciente reactivado. Ya puedes continuar con la orden.");
+      await cargar();
+    } catch (err) {
+      showToast("error", err.response?.data?.msg || "Error al reactivar el paciente.");
+    } finally { setReactivando(false); }
   };
 
   // ── VER DETALLE ──────────────────────────────────────────────────────────────
@@ -624,38 +709,139 @@ export default function GestionOrdenes() {
           MODAL — CREAR ORDEN
       ════════════════════════════════════════════════════════════ */}
       {showCrear && (
-        <Overlay onClose={() => setShowCrear(false)}>
+        <Overlay onClose={() => { setShowCrear(false); resetFormRegistro(); }}>
           <div style={s.modalContainer}>
-            <ModalHeader title="NUEVA" titleOrange="ORDEN" subtitle="Ingresa los datos para generar la solicitud" onClose={() => setShowCrear(false)} />
+            <ModalHeader title="NUEVA" titleOrange="ORDEN" subtitle="Ingresa los datos para generar la solicitud" onClose={() => { setShowCrear(false); resetFormRegistro(); }} />
             <div style={s.modalBody}>
               {msgCrear && <Alert msg={msgCrear} />}
               <div style={{ marginBottom: "1rem" }}>
                 <label style={s.label}>Cédula del Paciente *</label>
                 <input type="text" placeholder="Escribe el número de cédula..." value={cedulaInput} onChange={e => setCedulaInput(e.target.value)} style={{ ...s.input, width: "100%", marginBottom: "0.5rem" }} />
 
-                {cedulaInput.trim() && (
-                  <div style={{
-                    background: pacienteEncontrado ? "linear-gradient(135deg, #F0FDF4, #DCFCE7)" : "#FEF2F2",
-                    padding: "0.75rem 1rem", borderRadius: "10px",
-                    border: `1.5px solid ${pacienteEncontrado ? "#86EFAC" : "#FCA5A5"}`,
-                    display: "flex", alignItems: "center", gap: "0.65rem",
-                  }}>
-                    <div style={{ width: "32px", height: "32px", borderRadius: "50%", flexShrink: 0, background: pacienteEncontrado ? "#16A34A" : "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFF", fontSize: "1rem" }}>
-                      {pacienteEncontrado ? "✓" : "✕"}
+                {cedulaInput.trim() && (() => {
+                  // Tres estados posibles para la cédula ingresada:
+                  const estado = pacienteEncontrado ? "encontrado" : pacienteInactivo ? "inactivo" : "no_encontrado";
+                  const colores = {
+                    encontrado:    { bg: "linear-gradient(135deg, #F0FDF4, #DCFCE7)", border: "#86EFAC", dot: "#16A34A" },
+                    inactivo:      { bg: "linear-gradient(135deg, #FFFBEB, #FEF3C7)", border: "#FCD34D", dot: "#D97706" },
+                    no_encontrado: { bg: "#FEF2F2",                                    border: "#FCA5A5", dot: "#DC2626" },
+                  }[estado];
+                  return (
+                    <div style={{
+                      background: colores.bg, padding: "0.75rem 1rem", borderRadius: "10px",
+                      border: `1.5px solid ${colores.border}`,
+                      display: "flex", alignItems: "center", gap: "0.65rem",
+                    }}>
+                      <div style={{ width: "32px", height: "32px", borderRadius: "50%", flexShrink: 0, background: colores.dot, display: "flex", alignItems: "center", justifyContent: "center", color: "#FFF", fontSize: "1rem" }}>
+                        {estado === "encontrado" ? "✓" : estado === "inactivo" ? "!" : "✕"}
+                      </div>
+                      <div>
+                        {estado === "encontrado" && (
+                          <>
+                            <p style={{ margin: 0, fontFamily: FONTC, fontSize: "0.65rem", fontWeight: 700, color: "#166534", letterSpacing: "0.08em", textTransform: "uppercase" }}>Paciente encontrado</p>
+                            <p style={{ margin: 0, fontFamily: FONTC, fontSize: "1rem", fontWeight: 800, color: "#15803D" }}>{pacienteEncontrado.nombres} {pacienteEncontrado.apellidos}</p>
+                          </>
+                        )}
+                        {estado === "inactivo" && (
+                          <>
+                            <p style={{ margin: 0, fontFamily: FONTC, fontSize: "0.65rem", fontWeight: 700, color: "#92400E", letterSpacing: "0.08em", textTransform: "uppercase" }}>Paciente inactivo</p>
+                            <p style={{ margin: 0, fontFamily: FONTC, fontSize: "0.95rem", fontWeight: 800, color: "#B45309" }}>{pacienteInactivo.nombres} {pacienteInactivo.apellidos}</p>
+                            <p style={{ margin: "0.1rem 0 0", fontSize: "0.78rem", color: "#92400E" }}>Está en la papelera. Reactívalo para poder generarle una orden.</p>
+                          </>
+                        )}
+                        {estado === "no_encontrado" && (
+                          <>
+                            <p style={{ margin: 0, fontFamily: FONTC, fontSize: "0.65rem", fontWeight: 700, color: "#991B1B", letterSpacing: "0.08em", textTransform: "uppercase" }}>No encontrado</p>
+                            <p style={{ margin: 0, fontSize: "0.82rem", color: "#B91C1C" }}>Este paciente no está registrado</p>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      {pacienteEncontrado ? (
-                        <>
-                          <p style={{ margin: 0, fontFamily: FONTC, fontSize: "0.65rem", fontWeight: 700, color: "#166534", letterSpacing: "0.08em", textTransform: "uppercase" }}>Paciente encontrado</p>
-                          <p style={{ margin: 0, fontFamily: FONTC, fontSize: "1rem", fontWeight: 800, color: "#15803D" }}>{pacienteEncontrado.nombres} {pacienteEncontrado.apellidos}</p>
-                        </>
-                      ) : (
-                        <>
-                          <p style={{ margin: 0, fontFamily: FONTC, fontSize: "0.65rem", fontWeight: 700, color: "#991B1B", letterSpacing: "0.08em", textTransform: "uppercase" }}>No encontrado</p>
-                          <p style={{ margin: 0, fontSize: "0.82rem", color: "#B91C1C" }}>Paciente no registrado o inactivo</p>
-                        </>
-                      )}
-                    </div>
+                  );
+                })()}
+
+                {/* ── Reactivar: la cédula pertenece a un paciente en la papelera ── */}
+                {cedulaInput.trim() && pacienteInactivo && (
+                  <button
+                    type="button"
+                    onClick={handleReactivarDesdeOrden}
+                    disabled={reactivando}
+                    style={{ ...s.btnSecondary, width: "100%", textAlign: "center", marginTop: "0.6rem", opacity: reactivando ? 0.7 : 1 }}
+                  >
+                    {reactivando ? "Reactivando..." : "♻️ Reactivar este paciente"}
+                  </button>
+                )}
+
+                {/* ── Registro rápido: solo aparece si la cédula no existe en absoluto ── */}
+                {cedulaInput.trim() && !pacienteEncontrado && !pacienteInactivo && (
+                  <div style={{ marginTop: "0.6rem" }}>
+                    {credencialesGeneradas ? (
+                      <div style={{ background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)", border: "1.5px solid #86EFAC", borderRadius: "10px", padding: "0.9rem" }}>
+                        <p style={{ margin: "0 0 0.5rem", fontFamily: FONTC, fontWeight: 700, fontSize: "0.85rem", color: "#166534" }}>
+                          ✓ Paciente registrado — entrégale estos datos de acceso
+                        </p>
+                        <div style={{ background: "#FFF", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "0.6rem 0.75rem", marginBottom: "0.6rem" }}>
+                          <p style={{ margin: "0 0 0.25rem", fontSize: "0.82rem", color: DARK }}><b>Usuario:</b> {credencialesGeneradas.username}</p>
+                          <p style={{ margin: 0, fontSize: "0.82rem", color: DARK }}><b>Contraseña temporal:</b> {credencialesGeneradas.password}</p>
+                        </div>
+                        <p style={{ margin: "0 0 0.6rem", fontSize: "0.75rem", color: "#166534" }}>El paciente podrá cambiar esta contraseña luego desde su perfil.</p>
+                        <button type="button" onClick={resetFormRegistro} style={{ ...s.btnFull, padding: "0.6rem", fontSize: "0.85rem" }}>
+                          Continuar con la orden
+                        </button>
+                      </div>
+                    ) : !showRegistroRapido ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowRegistroRapido(true)}
+                        style={{ ...s.btnSecondary, width: "100%", textAlign: "center" }}
+                      >
+                        ➕ Registrar este paciente ahora
+                      </button>
+                    ) : (
+                      <div style={{ background: "#F8FAFC", border: "1.5px solid #E5E7EB", borderRadius: "10px", padding: "0.9rem", marginTop: "0.4rem" }}>
+                        <p style={{ margin: "0 0 0.75rem", fontFamily: FONTC, fontWeight: 700, fontSize: "0.85rem", color: DARK }}>
+                          📝 Registro rápido — Cédula <span style={{ color: ORANGE }}>{cedulaInput.trim()}</span>
+                        </p>
+                        <p style={{ margin: "0 0 0.6rem", fontSize: "0.75rem", color: "#6B7280" }}>
+                          El usuario y la contraseña se generan automáticamente; se los mostraremos al terminar.
+                        </p>
+                        {msgRegistro && <Alert msg={msgRegistro} />}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                          <input type="text" placeholder="Nombres *" value={formRegistro.nombres} onChange={e => setFormRegistro(f => ({ ...f, nombres: e.target.value }))} style={s.input} />
+                          <input type="text" placeholder="Apellidos *" value={formRegistro.apellidos} onChange={e => setFormRegistro(f => ({ ...f, apellidos: e.target.value }))} style={s.input} />
+                          <input type="email" placeholder="Correo *" value={formRegistro.correo} onChange={e => setFormRegistro(f => ({ ...f, correo: e.target.value }))} style={{ ...s.input, gridColumn: "1 / -1" }} />
+                          <input type="date" placeholder="Fecha de nacimiento *" value={formRegistro.fecha_nacimiento} onChange={e => setFormRegistro(f => ({ ...f, fecha_nacimiento: e.target.value }))} style={{ ...s.input, gridColumn: "1 / -1" }} />
+                        </div>
+
+                        {!showMasDatosRegistro ? (
+                          <button type="button" onClick={() => setShowMasDatosRegistro(true)} style={{ background: "none", border: "none", color: ORANGE, fontFamily: FONTC, fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", padding: "0.2rem 0", marginBottom: "0.5rem" }}>
+                            + Más datos (opcional)
+                          </button>
+                        ) : (
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                            <input type="text" placeholder="Teléfono" value={formRegistro.telefono} onChange={e => setFormRegistro(f => ({ ...f, telefono: e.target.value }))} style={s.input} />
+                            <select value={formRegistro.genero} onChange={e => setFormRegistro(f => ({ ...f, genero: e.target.value }))} style={s.select}>
+                              <option value="">Género</option>
+                              <option value="M">Masculino</option>
+                              <option value="F">Femenino</option>
+                            </select>
+                            <input type="text" placeholder="Dirección" value={formRegistro.direccion} onChange={e => setFormRegistro(f => ({ ...f, direccion: e.target.value }))} style={{ ...s.input, gridColumn: "1 / -1" }} />
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button
+                            type="button"
+                            onClick={handleRegistroRapido}
+                            disabled={guardandoRegistro}
+                            style={{ ...s.btnFull, flex: 1, padding: "0.6rem", fontSize: "0.85rem", opacity: guardandoRegistro ? 0.7 : 1 }}
+                          >
+                            {guardandoRegistro ? "Registrando..." : "✓ Registrar paciente"}
+                          </button>
+                          <button type="button" onClick={resetFormRegistro} style={{ ...s.btnCancel, padding: "0.6rem 0.9rem" }}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

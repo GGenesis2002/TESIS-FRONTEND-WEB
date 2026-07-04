@@ -254,26 +254,19 @@ export default function GestionUsuarios() {
       : [];
 
     let examenesPrevios = [];
-    if (rolesActuales.includes("3")) {
-      try {
-        const res = await API.get(`/asignaciones?id_usuario=${u.id_usuario}`);
-        // ── FIX: normalizamos a String para que coincida con el tipo usado
-        // al comparar en el render (String(ex.id_examen)) y evitar que los
-        // checkboxes queden sin marcar por un mismatch number/string.
-        examenesPrevios = (res.data || []).map(ex => String(ex.id_examen));
-      } catch (err) {
-        // ── FIX: ya no se traga el error en silencio. Antes un catch (_) {}
-        // vacío ocultaba cualquier falla de red/ruta (404, 500, CORS, etc.)
-        // y el formulario simplemente abría con examenes_asignados vacío,
-        // sin ninguna pista de qué pasó. Ahora se loguea y se avisa al usuario.
-        console.error(
-          "Error al cargar exámenes asignados:",
-          err.response?.status,
-          err.response?.data || err.message
-        );
-        showToast("error", "No se pudieron cargar los exámenes asignados de este especialista.");
-      }
-    }
+if (rolesActuales.includes("3")) {
+  try {
+    const res = await API.get(`/asignaciones?id_usuario=${u.id_usuario}`);
+    examenesPrevios = (res.data || []).map(ex => String(ex.id_examen));
+  } catch (err) {
+    console.error(
+      "Error al cargar exámenes asignados:",
+      err.response?.status,
+      err.response?.data || err.message
+    );
+    showToast("error", "No se pudieron cargar los exámenes asignados de este especialista.");
+  }
+}
 
     setFormData({
       id_usuario: u.id_usuario,

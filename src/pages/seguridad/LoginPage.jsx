@@ -16,6 +16,9 @@ export default function LoginPage() {
   const [rolesDisponibles, setRolesDisponibles] = useState([]);
   const [mostrarSelector, setMostrarSelector] = useState(false);
 
+  // Estado para mostrar/ocultar la contraseña
+  const [mostrarPassword, setMostrarPassword] = useState(false);
+
   const handleLogin = async () => {
     if (!username || !password) return setError("Ingresa usuario y contraseña.");
     setError("");
@@ -144,14 +147,41 @@ export default function LoginPage() {
                   </span>
                 </div>
               </div>
-              <InputField
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              />
+
+              {/* Contenedor relativo para poder posicionar el botón de mostrar/ocultar */}
+              <div style={{ position: "relative" }}>
+                <InputField
+                  type={mostrarPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                  style={{ paddingRight: "2.75rem" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarPassword((prev) => !prev)}
+                  disabled={loading}
+                  aria-label={mostrarPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  title={mostrarPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  style={eyeButtonStyle}
+                >
+                  {mostrarPassword ? (
+                    // Ícono "ojo tachado" (ocultar)
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.29 20.29 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a20.29 20.29 0 0 1-3.22 4.53M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    // Ícono "ojo" (mostrar)
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
 
             <button style={btnPrimaryStyle} onClick={handleLogin} disabled={loading}>
@@ -244,3 +274,17 @@ const btnPrimaryStyle = { width: "100%", padding: "0.875rem", background: "#1F29
 const labelStyle = { fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.15em", color: "#6B7280", textTransform: "uppercase", marginBottom: "0.4rem", display: "block" };
 const linkForgotStyle = { fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#E88B3A", fontWeight: 500, cursor: "pointer" };
 const footerStyle = { marginTop: "2rem", textAlign: "center", fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", color: "#6B7280" };
+const eyeButtonStyle = {
+  position: "absolute",
+  right: "0.6rem",
+  top: "50%",
+  transform: "translateY(-50%)",
+  background: "transparent",
+  border: "none",
+  padding: "0.25rem",
+  cursor: "pointer",
+  color: "#6B7280",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center"
+};

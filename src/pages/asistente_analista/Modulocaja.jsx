@@ -194,15 +194,21 @@ export default function ModuloCaja() {
   // ── ABRIR TURNO ───────────────────────────────────────────────────────────
   const abrirModalTurno = () => {
     setMontoInicial("");
+    setDenomApertura({});
+    setModoApertura("conteo");
     setMsgAbrir(null);
     setShowAbrirTurno(true);
   };
 
   const handleAbrirTurno = async () => {
+    const monto = modoApertura === "conteo" ? totalDenominaciones(denomApertura) : (parseFloat(montoInicial) || 0);
+    if (modoApertura === "conteo" && !hayConteoDenominaciones(denomApertura)) {
+      return setMsgAbrir({ type: "error", text: "Cuenta al menos un billete o moneda, o cambia a 'monto directo'." });
+    }
     setProcesandoAbrir(true);
     setMsgAbrir(null);
     try {
-      const { data } = await API.post("/caja/abrir", { monto_inicial: parseFloat(montoInicial) || 0 });
+      const { data } = await API.post("/caja/abrir", { monto_inicial: monto });
       setTurnoActivo({ ...data.turno, total_efectivo_sistema: 0, total_transferencia_sistema: 0, num_pagos: 0, total_reembolsos_efectivo: 0, total_reembolsos_transferencia: 0, num_reembolsos: 0, efectivo_esperado_actual: parseFloat(data.turno.monto_inicial) });
       setShowAbrirTurno(false);
       setMsg(null);
@@ -218,23 +224,44 @@ export default function ModuloCaja() {
   const abrirModalCierre = () => {
     setEfectivoContado("");
     setObservacionesCierre("");
+    setDenomCierre({});
+    setModoCierre("conteo");
+    setConfirmarCierre(false);
     setMsgCierre(null);
     setShowCerrarTurno(true);
   };
 
-  const handleCerrarTurno = async () => {
-    if (!efectivoContado || parseFloat(efectivoContado) < 0) {
+  // Monto contado según el modo activo (conteo por denominación o monto directo)
+  const totalContadoActual = modoCierre === "conteo"
+    ? totalDenominaciones(denomCierre)
+    : (parseFloat(efectivoContado) || 0);
+
+  // Paso 1: valida y pasa a la pantalla de revisión (no cierra todavía)
+  const irARevisarCierre = () => {
+    if (modoCierre === "conteo" && !hayConteoDenominaciones(denomCierre)) {
+      return setMsgCierre({ type: "error", text: "Cuenta al menos un billete o moneda, o cambia a 'monto directo'." });
+    }
+    if (modoCierre === "directo" && (!efectivoContado || parseFloat(efectivoContado) < 0)) {
       return setMsgCierre({ type: "error", text: "Ingresa el monto de efectivo contado físicamente en caja." });
     }
+    setMsgCierre(null);
+    setConfirmarCierre(true);
+  };
+
+  // Paso 2: cierre definitivo, ya confirmado por la secretaria
+  const handleCerrarTurno = async () => {
     setProcesandoCierre(true);
     setMsgCierre(null);
     try {
+      const detalleDenom = modoCierre === "conteo" ? resumenDenominacionesTexto(denomCierre) : "";
+      const observacionesFinales = [observacionesCierre.trim(), detalleDenom].filter(Boolean).join("\n\n");
       const { data } = await API.post("/caja/cerrar", {
         id_cierre: turnoActivo.id_cierre,
-        efectivo_contado: parseFloat(efectivoContado),
-        observaciones: observacionesCierre.trim() || undefined,
+        efectivo_contado: totalContadoActual,
+        observaciones: observacionesFinales || undefined,
       });
       setShowCerrarTurno(false);
+      setConfirmarCierre(false);
       setTurnoActivo(null);
       cargarCaja();
       // Abrir automáticamente el comprobante de cierre recién generado
@@ -242,6 +269,7 @@ export default function ModuloCaja() {
       setComprobanteCierre(detalle.data);
     } catch (err) {
       setMsgCierre({ type: "error", text: err.response?.data?.error || "Error al cerrar el turno de caja." });
+      setConfirmarCierre(false);
     } finally {
       setProcesandoCierre(false);
     }
@@ -670,7 +698,7 @@ export default function ModuloCaja() {
                     <p style={{ fontWeight: 600, fontSize: "0.875rem", color: DARK, margin: 0 }}>
                       {p.nombres ? `${p.nombres} ${p.apellidos}` : `Orden #${p.id_orden}`}
                     </p>
-                    <p style={{ fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>@{p.secretaria || "—"}</p>
+                    <p style={{ fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>Cobrado por: {p.cobrado_por || p.secretaria_username || p.secretaria || "—"}</p>
                   </div>
                   <div style={{ flex: 1 }}>
                     <span style={{
@@ -1000,16 +1028,26 @@ export default function ModuloCaja() {
       {/* ══════════ MODAL ABRIR TURNO ══════════ */}
       {showAbrirTurno && (
         <Overlay onClose={() => !procesandoAbrir && setShowAbrirTurno(false)}>
-          <ModalHeader title="ABRIR" titleOrange="TURNO DE CAJA" subtitle="Ingresa el fondo inicial de efectivo" onClose={() => !procesandoAbrir && setShowAbrirTurno(false)} />
+          <ModalHeader title="ABRIR" titleOrange="TURNO DE CAJA" subtitle="Registra el fondo inicial de efectivo" onClose={() => !procesandoAbrir && setShowAbrirTurno(false)} />
           <div style={S.modalBody}>
             {msgAbrir && <Alert msg={msgAbrir} />}
-            <label style={S.label}>Fondo inicial de efectivo</label>
-            <input
-              type="number" min="0" step="0.01" placeholder="0.00"
-              value={montoInicial}
-              onChange={e => setMontoInicial(e.target.value)}
-              style={{ ...S.input, width: "100%", marginBottom: "1.25rem" }}
-            />
+
+            <ModoConteoToggle modo={modoApertura} setModo={setModoApertura} />
+
+            {modoApertura === "conteo" ? (
+              <ConteoDenominaciones cantidades={denomApertura} onChange={setDenomApertura} />
+            ) : (
+              <>
+                <label style={S.label}>Fondo inicial de efectivo</label>
+                <input
+                  type="number" min="0" step="0.01" placeholder="0.00"
+                  value={montoInicial}
+                  onChange={e => setMontoInicial(e.target.value)}
+                  style={{ ...S.input, width: "100%", marginBottom: "1.25rem" }}
+                />
+              </>
+            )}
+
             <div style={{ display: "flex", gap: "0.75rem" }}>
               <button onClick={handleAbrirTurno} disabled={procesandoAbrir} style={{ ...S.btnFull, flex: 1, opacity: procesandoAbrir ? 0.7 : 1 }}>
                 {procesandoAbrir ? "Abriendo..." : "🔓 ABRIR TURNO"}
@@ -1683,6 +1721,70 @@ const btnAccionQR = {
   letterSpacing: "0.04em", cursor: "pointer", transition: "opacity 0.15s",
   width: "100%", boxSizing: "border-box",
 };
+
+// ─── CONTEO INTERACTIVO DE DENOMINACIONES (arqueo de caja) ───────────────────
+// Grilla de billetes/monedas con conteo por unidades; calcula el total en vivo.
+// Es la forma estándar en que se maneja un arqueo físico de caja.
+function ConteoDenominaciones({ cantidades, onChange }) {
+  const grupos = ["Billetes", "Monedas"];
+  return (
+    <div style={{ background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E5E7EB", padding: "0.85rem", marginBottom: "0.75rem" }}>
+      {grupos.map(g => (
+        <div key={g} style={{ marginBottom: "0.65rem" }}>
+          <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.4rem" }}>{g}</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+            {DENOMINACIONES.filter(d => d.grupo === g).map(d => {
+              const cant = parseInt(cantidades?.[d.id], 10) || 0;
+              return (
+                <div key={d.id} style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: "#FFF", border: "1px solid #E5E7EB", borderRadius: "7px", padding: "0.35rem 0.5rem" }}>
+                  <span style={{ fontFamily: FONTC, fontWeight: 700, fontSize: "0.8rem", color: DARK, width: "44px" }}>{d.label}</span>
+                  <span style={{ color: "#D1D5DB", fontSize: "0.75rem" }}>×</span>
+                  <input
+                    type="number" min="0" step="1" placeholder="0" inputMode="numeric"
+                    value={cantidades?.[d.id] ?? ""}
+                    onChange={e => onChange({ ...cantidades, [d.id]: e.target.value.replace(/[^0-9]/g, "") })}
+                    style={{ width: "48px", border: "1px solid #E5E7EB", borderRadius: "5px", padding: "0.25rem 0.3rem", fontFamily: FONT, fontSize: "0.8rem", textAlign: "center", outline: "none" }}
+                  />
+                  <span style={{ marginLeft: "auto", fontSize: "0.76rem", color: "#6B7280", fontFamily: FONTC, fontWeight: 700 }}>${(cant * d.valor).toFixed(2)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <div style={{ borderTop: "1px dashed #E5E7EB", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem" }}>
+        <span>TOTAL CONTADO</span>
+        <span style={{ color: ORANGE }}>${totalDenominaciones(cantidades).toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+// Selector entre "contar billete por billete" (recomendado) o ingresar el monto directo.
+function ModoConteoToggle({ modo, setModo }) {
+  const opciones = [
+    { id: "conteo", label: "🧮 Contar denominaciones" },
+    { id: "directo", label: "✏️ Ingresar monto directo" },
+  ];
+  return (
+    <div style={{ display: "flex", gap: "0.4rem", marginBottom: "0.75rem" }}>
+      {opciones.map(op => (
+        <button
+          key={op.id}
+          type="button"
+          onClick={() => setModo(op.id)}
+          style={{
+            flex: 1, padding: "0.45rem 0.5rem", borderRadius: "7px",
+            border: `1.5px solid ${modo === op.id ? ORANGE : "#E5E7EB"}`,
+            background: modo === op.id ? "rgba(232,139,58,0.1)" : "#FFF",
+            color: modo === op.id ? ORANGE : "#6B7280",
+            fontFamily: FONTC, fontWeight: 700, fontSize: "0.75rem", letterSpacing: "0.02em", cursor: "pointer",
+          }}
+        >{op.label}</button>
+      ))}
+    </div>
+  );
+}
 
 function KpiBox({ icon, label, value, color }) {
   return (

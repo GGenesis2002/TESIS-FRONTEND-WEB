@@ -485,7 +485,7 @@ function ModalIngresos({ open, onClose }) {
   useEffect(() => { if (open) cargar(); }, [open, cargar]);
 
   const totalRecaudado = data
-    ? Number(data.arqueo?.efectivo || 0) + Number(data.arqueo?.transferencia || 0) + Number(data.arqueo?.tarjeta || 0)
+    ? Number(data.arqueo?.efectivo || 0) + Number(data.arqueo?.transferencia || 0) 
     : 0;
 
   const chartData = data?.porUsuario.map((u) => ({
@@ -527,7 +527,7 @@ function ModalIngresos({ open, onClose }) {
               {[
                 { label: "Efectivo",       value: data.arqueo?.efectivo,       color: "#10B981", icon: "💵" },
                 { label: "Transferencia",  value: data.arqueo?.transferencia,  color: "#3B82F6", icon: "🏦" },
-                { label: "Tarjeta",        value: data.arqueo?.tarjeta,        color: "#8B5CF6", icon: "💳" },
+              
               ].map((m) => (
                 <div key={m.label} style={{ background: `${m.color}10`, border: `1px solid ${m.color}30`, borderRadius: "10px", padding: "0.9rem 1rem" }}>
                   <p style={{ margin: "0 0 0.25rem", fontSize: "0.7rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif", textTransform: "uppercase", letterSpacing: "0.06em" }}>{m.icon} {m.label}</p>

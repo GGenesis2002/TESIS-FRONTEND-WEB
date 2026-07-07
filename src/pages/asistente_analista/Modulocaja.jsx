@@ -566,6 +566,7 @@ export default function ModuloCaja() {
 
   const ordenesFiltradas = ordenesGeneradas.filter(o => aplicarFiltros(o, "fecha_orden"));
   const pagosFiltrados   = pagosHistorial.filter(p => aplicarFiltros(p, "fecha_pago"));
+  const cierresFiltrados = cierresHistorial.filter(c => aplicarFiltros(c, "fecha_apertura"));
 
   // ── REEMBOLSOS: solo pagos de HOY con saldo pendiente por reembolsar ──────
   // (la política del negocio es fija: solo se reembolsa el mismo día del pago,
@@ -658,29 +659,27 @@ export default function ModuloCaja() {
       </div>
 
       {/* ── FILTROS ── */}
-      {vistaTab !== "cierre" && (
-        <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-          <div style={{ ...S.searchWrap, flex: "1 1 300px", maxWidth: "400px" }}>
-            <span style={{ color: "#9CA3AF" }}>🔍</span>
-            <input
-              placeholder="Buscar paciente, cédula, ticket o fecha..."
-              value={buscar}
-              onChange={e => setBuscar(e.target.value)}
-              style={S.searchInput}
-            />
-          </div>
-          {vistaTab !== "reembolsos" && (
-            <select value={filtroTiempo} onChange={e => setFiltroTiempo(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }}>
-              <option value="hoy">Solo Hoy</option>
-              <option value="todos">Todos los registros</option>
-              <option value="fecha">Fecha específica</option>
-            </select>
-          )}
-          {vistaTab !== "reembolsos" && filtroTiempo === "fecha" && (
-            <input type="date" value={fechaEspecifica} onChange={e => setFechaEspecifica(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }} />
-          )}
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+        <div style={{ ...S.searchWrap, flex: "1 1 300px", maxWidth: "400px" }}>
+          <span style={{ color: "#9CA3AF" }}>🔍</span>
+          <input
+            placeholder="Buscar paciente, cédula, ticket o fecha..."
+            value={buscar}
+            onChange={e => setBuscar(e.target.value)}
+            style={S.searchInput}
+          />
         </div>
-      )}
+        {vistaTab !== "reembolsos" && (
+          <select value={filtroTiempo} onChange={e => setFiltroTiempo(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }}>
+            <option value="hoy">Solo Hoy</option>
+            <option value="todos">Todos los registros</option>
+            <option value="fecha">Fecha específica</option>
+          </select>
+        )}
+        {vistaTab !== "reembolsos" && filtroTiempo === "fecha" && (
+          <input type="date" value={fechaEspecifica} onChange={e => setFechaEspecifica(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }} />
+        )}
+      </div>
 
       {/* ══════════ VISTA: COBRAR ══════════ */}
       {vistaTab === "cobrar" && (
@@ -1071,10 +1070,12 @@ export default function ModuloCaja() {
               <span style={{ flex: "0 0 110px", textAlign: "right" }}>DIFERENCIA</span>
               <span style={{ flex: "0 0 50px" }}></span>
             </div>
-            {cierresHistorial.filter(c => c.estado === "CERRADO").length === 0 ? (
-              <div style={S.empty}>Aún no se ha cerrado ningún turno de caja.</div>
+            {cierresFiltrados.filter(c => c.estado === "CERRADO").length === 0 ? (
+              <div style={S.empty}>
+                {buscar || filtroTiempo !== "todos" ? "Sin resultados para los filtros aplicados." : "Aún no se ha cerrado ningún turno de caja."}
+              </div>
             ) : (
-              cierresHistorial.filter(c => c.estado === "CERRADO").map((c, i) => {
+              cierresFiltrados.filter(c => c.estado === "CERRADO").map((c, i) => {
                 const dif = parseFloat(c.diferencia || 0);
                 return (
                   <div key={c.id_cierre} style={{ ...S.tableRow, background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}>
@@ -1333,39 +1334,78 @@ export default function ModuloCaja() {
               </div>
             </div>
 
-            <label style={S.label}>Efectivo contado físicamente</label>
-            <input
-              type="number" min="0" step="0.01" placeholder="0.00"
-              value={efectivoContado}
-              onChange={e => setEfectivoContado(e.target.value)}
-              style={{ ...S.input, width: "100%", marginBottom: "0.5rem" }}
-            />
-            {efectivoContado !== "" && !isNaN(parseFloat(efectivoContado)) && (
-              (() => {
-                const dif = parseFloat(efectivoContado) - parseFloat(turnoActivo.efectivo_esperado_actual || 0);
-                const ok = Math.abs(dif) < 0.01;
-                return (
-                  <p style={{ fontSize: "0.8rem", margin: "0 0 1rem", color: ok ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444"), fontFamily: FONTC, fontWeight: 700 }}>
-                    {ok ? "✓ Caja cuadrada" : dif > 0 ? `Sobrante de $${dif.toFixed(2)}` : `Faltante de $${Math.abs(dif).toFixed(2)}`}
+            {!confirmarCierre ? (
+              <>
+                <ModoConteoToggle modo={modoCierre} setModo={setModoCierre} />
+
+                {modoCierre === "conteo" ? (
+                  <ConteoDenominaciones cantidades={denomCierre} onChange={setDenomCierre} />
+                ) : (
+                  <>
+                    <label style={S.label}>Efectivo contado físicamente</label>
+                    <input
+                      type="number" min="0" step="0.01" placeholder="0.00"
+                      value={efectivoContado}
+                      onChange={e => setEfectivoContado(e.target.value)}
+                      style={{ ...S.input, width: "100%", marginBottom: "0.5rem" }}
+                    />
+                  </>
+                )}
+
+                {(() => {
+                  const dif = totalContadoActual - parseFloat(turnoActivo.efectivo_esperado_actual || 0);
+                  const ok = Math.abs(dif) < 0.01;
+                  return (
+                    <p style={{ fontSize: "0.8rem", margin: "0 0 1rem", color: ok ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444"), fontFamily: FONTC, fontWeight: 700 }}>
+                      {ok ? "✓ Caja cuadrada" : dif > 0 ? `Sobrante de $${dif.toFixed(2)}` : `Faltante de $${Math.abs(dif).toFixed(2)}`}
+                    </p>
+                  );
+                })()}
+
+                <label style={S.label}>Observaciones (opcional)</label>
+                <textarea
+                  rows={2} placeholder="Notas sobre el cierre, novedades, etc."
+                  value={observacionesCierre}
+                  onChange={e => setObservacionesCierre(e.target.value)}
+                  style={{ ...S.input, width: "100%", marginBottom: "1.25rem", resize: "vertical", fontFamily: FONT }}
+                />
+
+                <div style={{ display: "flex", gap: "0.75rem" }}>
+                  <button onClick={irARevisarCierre} style={{ ...S.btnFull, flex: 1, background: "#EF4444" }}>
+                    🔒 REVISAR Y CERRAR
+                  </button>
+                  <button onClick={() => setShowCerrarTurno(false)} style={S.btnCancel}>Cancelar</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "1rem", marginBottom: "1.25rem" }}>
+                  <p style={{ fontFamily: FONTC, fontSize: "0.8rem", fontWeight: 700, color: "#92400E", margin: "0 0 0.6rem", textTransform: "uppercase" }}>
+                    Confirma los datos antes de cerrar
                   </p>
-                );
-              })()
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", marginBottom: "0.3rem" }}>
+                    <span style={{ color: "#6B7280" }}>Efectivo contado</span>
+                    <span style={{ fontWeight: 700 }}>${totalContadoActual.toFixed(2)}</span>
+                  </div>
+                  {(() => {
+                    const dif = totalContadoActual - parseFloat(turnoActivo.efectivo_esperado_actual || 0);
+                    const ok = Math.abs(dif) < 0.01;
+                    return (
+                      <p style={{ fontSize: "0.8rem", margin: "0.3rem 0 0", color: ok ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444"), fontFamily: FONTC, fontWeight: 700 }}>
+                        {ok ? "✓ Caja cuadrada" : dif > 0 ? `Sobrante de $${dif.toFixed(2)}` : `Faltante de $${Math.abs(dif).toFixed(2)}`}
+                      </p>
+                    );
+                  })()}
+                </div>
+
+                <div style={{ display: "flex", gap: "0.75rem" }}>
+                  <button onClick={handleCerrarTurno} disabled={procesandoCierre} style={{ ...S.btnFull, flex: 1, background: "#EF4444", opacity: procesandoCierre ? 0.7 : 1 }}>
+                    {procesandoCierre ? "Cerrando..." : "✅ CONFIRMAR CIERRE DEFINITIVO"}
+                  </button>
+                  <button onClick={() => setConfirmarCierre(false)} disabled={procesandoCierre} style={S.btnCancel}>Volver</button>
+                </div>
+              </>
             )}
-
-            <label style={S.label}>Observaciones (opcional)</label>
-            <textarea
-              rows={2} placeholder="Notas sobre el cierre, novedades, etc."
-              value={observacionesCierre}
-              onChange={e => setObservacionesCierre(e.target.value)}
-              style={{ ...S.input, width: "100%", marginBottom: "1.25rem", resize: "vertical", fontFamily: FONT }}
-            />
-
-            <div style={{ display: "flex", gap: "0.75rem" }}>
-              <button onClick={handleCerrarTurno} disabled={procesandoCierre} style={{ ...S.btnFull, flex: 1, background: "#EF4444", opacity: procesandoCierre ? 0.7 : 1 }}>
-                {procesandoCierre ? "Cerrando..." : "🔒 CONFIRMAR CIERRE"}
-              </button>
-              <button onClick={() => setShowCerrarTurno(false)} disabled={procesandoCierre} style={S.btnCancel}>Cancelar</button>
-            </div>
           </div>
         </Overlay>
       )}

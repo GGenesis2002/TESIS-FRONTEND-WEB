@@ -70,6 +70,31 @@ export default function ModuloCaja() {
   // Modal detalle orden
   const [showDetalle, setShowDetalle] = useState(null);
 
+  // ── CIERRE DE CAJA ────────────────────────────────────────────────────────
+  const [turnoActivo, setTurnoActivo]         = useState(null);   // turno abierto de la secretaria (o null)
+  const [cierresHistorial, setCierresHistorial] = useState([]);
+  const [cargandoCaja, setCargandoCaja]       = useState(false);
+
+  const [showAbrirTurno, setShowAbrirTurno]   = useState(false);
+  const [montoInicial, setMontoInicial]       = useState("");
+  const [procesandoAbrir, setProcesandoAbrir] = useState(false);
+  const [msgAbrir, setMsgAbrir]               = useState(null);
+
+  const [showCerrarTurno, setShowCerrarTurno] = useState(false);
+  const [efectivoContado, setEfectivoContado] = useState("");
+  const [observacionesCierre, setObservacionesCierre] = useState("");
+  const [procesandoCierre, setProcesandoCierre] = useState(false);
+  const [msgCierre, setMsgCierre]             = useState(null);
+
+  const [comprobanteCierre, setComprobanteCierre] = useState(null); // detalle completo de un cierre ya cerrado
+
+  // ── REEMBOLSOS ────────────────────────────────────────────────────────────
+  const [reembolsosHistorial, setReembolsosHistorial] = useState([]);
+  const [showReembolso, setShowReembolso]     = useState(null);   // pago seleccionado del historial
+  const [formReembolso, setFormReembolso]     = useState({ monto: "", metodo_reembolso: "Efectivo", referencia: "", motivo: "" });
+  const [procesandoReembolso, setProcesandoReembolso] = useState(false);
+  const [msgReembolso, setMsgReembolso]       = useState(null);
+
   // QR Lector
   const videoRef  = useRef(null);
   const streamRef = useRef(null);
@@ -101,8 +126,147 @@ export default function ModuloCaja() {
 
   useEffect(() => { cargar(); }, []);
 
+  // ── CIERRE DE CAJA: CARGA ────────────────────────────────────────────────
+  const cargarCaja = async () => {
+    setCargandoCaja(true);
+    try {
+      const [resActual, resHistorial, resReembolsos] = await Promise.all([
+        API.get("/caja/actual").catch(() => ({ data: null })),
+        API.get("/caja/historial").catch(() => ({ data: [] })),
+        API.get("/pagos/reembolsos").catch(() => ({ data: [] })),
+      ]);
+      setTurnoActivo(resActual.data || null);
+      setCierresHistorial(Array.isArray(resHistorial.data) ? resHistorial.data : []);
+      setReembolsosHistorial(Array.isArray(resReembolsos.data) ? resReembolsos.data : []);
+    } catch (e) {
+      console.error("Error al cargar datos de cierre de caja:", e);
+    } finally {
+      setCargandoCaja(false);
+    }
+  };
+
+  useEffect(() => { cargarCaja(); }, []);
+
+  // ── ABRIR TURNO ───────────────────────────────────────────────────────────
+  const abrirModalTurno = () => {
+    setMontoInicial("");
+    setMsgAbrir(null);
+    setShowAbrirTurno(true);
+  };
+
+  const handleAbrirTurno = async () => {
+    setProcesandoAbrir(true);
+    setMsgAbrir(null);
+    try {
+      const { data } = await API.post("/caja/abrir", { monto_inicial: parseFloat(montoInicial) || 0 });
+      setTurnoActivo({ ...data.turno, total_efectivo_sistema: 0, total_transferencia_sistema: 0, num_pagos: 0, total_reembolsos_efectivo: 0, total_reembolsos_transferencia: 0, num_reembolsos: 0, efectivo_esperado_actual: parseFloat(data.turno.monto_inicial) });
+      setShowAbrirTurno(false);
+      setMsg(null);
+      cargarCaja();
+    } catch (err) {
+      setMsgAbrir({ type: "error", text: err.response?.data?.error || "Error al abrir el turno de caja." });
+    } finally {
+      setProcesandoAbrir(false);
+    }
+  };
+
+  // ── CERRAR TURNO ──────────────────────────────────────────────────────────
+  const abrirModalCierre = () => {
+    setEfectivoContado("");
+    setObservacionesCierre("");
+    setMsgCierre(null);
+    setShowCerrarTurno(true);
+  };
+
+  const handleCerrarTurno = async () => {
+    if (!efectivoContado || parseFloat(efectivoContado) < 0) {
+      return setMsgCierre({ type: "error", text: "Ingresa el monto de efectivo contado físicamente en caja." });
+    }
+    setProcesandoCierre(true);
+    setMsgCierre(null);
+    try {
+      const { data } = await API.post("/caja/cerrar", {
+        id_cierre: turnoActivo.id_cierre,
+        efectivo_contado: parseFloat(efectivoContado),
+        observaciones: observacionesCierre.trim() || undefined,
+      });
+      setShowCerrarTurno(false);
+      setTurnoActivo(null);
+      cargarCaja();
+      // Abrir automáticamente el comprobante de cierre recién generado
+      const detalle = await API.get(`/caja/cierre/${data.turno.id_cierre}`);
+      setComprobanteCierre(detalle.data);
+    } catch (err) {
+      setMsgCierre({ type: "error", text: err.response?.data?.error || "Error al cerrar el turno de caja." });
+    } finally {
+      setProcesandoCierre(false);
+    }
+  };
+
+  const verDetalleCierre = async (cierre) => {
+    try {
+      const { data } = await API.get(`/caja/cierre/${cierre.id_cierre}`);
+      setComprobanteCierre(data);
+    } catch (err) {
+      setMsg({ type: "error", text: "No se pudo cargar el detalle de ese cierre." });
+    }
+  };
+
+  // ── REEMBOLSOS ────────────────────────────────────────────────────────────
+  // Cuánto se ha reembolsado ya para una orden dada (para no dejar reembolsar de más desde el front)
+  const reembolsadoPorOrden = reembolsosHistorial.reduce((acc, r) => {
+    acc[r.id_orden] = (acc[r.id_orden] || 0) + parseFloat(r.monto || 0);
+    return acc;
+  }, {});
+
+  const abrirReembolso = (pago) => {
+    const yaReembolsado = reembolsadoPorOrden[pago.id_orden] || 0;
+    const disponible = Math.max(0, parseFloat(pago.monto || 0) - yaReembolsado);
+    setFormReembolso({ monto: disponible.toFixed(2), metodo_reembolso: "Efectivo", referencia: "", motivo: "" });
+    setMsgReembolso(null);
+    setShowReembolso(pago);
+  };
+
+  const handleProcesarReembolso = async () => {
+    const { monto, metodo_reembolso, referencia, motivo } = formReembolso;
+
+    if (!monto || parseFloat(monto) <= 0) {
+      return setMsgReembolso({ type: "error", text: "El monto del reembolso debe ser mayor a 0." });
+    }
+    if (metodo_reembolso === "Transferencia" && !referencia.trim()) {
+      return setMsgReembolso({ type: "error", text: "Ingresa el número de referencia de la transferencia." });
+    }
+    if (!motivo.trim()) {
+      return setMsgReembolso({ type: "error", text: "Indica el motivo del reembolso." });
+    }
+
+    setProcesandoReembolso(true);
+    setMsgReembolso(null);
+    try {
+      await API.post("/pagos/reembolsar", {
+        id_orden: showReembolso.id_orden,
+        monto: parseFloat(monto),
+        metodo_reembolso,
+        referencia: referencia.trim() || undefined,
+        motivo: motivo.trim(),
+      });
+      setShowReembolso(null);
+      cargar();
+      cargarCaja();
+    } catch (err) {
+      setMsgReembolso({ type: "error", text: err.response?.data?.error || "Error al procesar el reembolso." });
+    } finally {
+      setProcesandoReembolso(false);
+    }
+  };
+
   // ── COBRO ─────────────────────────────────────────────────────────────────
   const abrirCobro = (orden) => {
+    if (!turnoActivo) {
+      setVistaTab("cierre");
+      setMsg({ type: "error", text: "Debes abrir un turno de caja antes de registrar cobros." });
+      return;
+    }
     const total = parseFloat(orden.total || 0).toFixed(2);
     setFormCobro({
       modoPago: "simple",
@@ -344,6 +508,7 @@ export default function ModuloCaja() {
         {[
           { key: "cobrar",  label: `💳 Cobrar (${ordenesFiltradas.length})` },
           { key: "reporte", label: `📊 Reporte (${totalTransacciones})` },
+          { key: "cierre",  label: `🗄️ Cierre de Caja${turnoActivo ? " •" : ""}` },
         ].map(t => (
           <button key={t.key} onClick={() => setVistaTab(t.key)} style={{
             ...S.tabBtn,
@@ -356,25 +521,27 @@ export default function ModuloCaja() {
       </div>
 
       {/* ── FILTROS ── */}
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        <div style={{ ...S.searchWrap, flex: "1 1 300px", maxWidth: "400px" }}>
-          <span style={{ color: "#9CA3AF" }}>🔍</span>
-          <input
-            placeholder="Buscar paciente, cédula, ticket o fecha..."
-            value={buscar}
-            onChange={e => setBuscar(e.target.value)}
-            style={S.searchInput}
-          />
+      {vistaTab !== "cierre" && (
+        <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+          <div style={{ ...S.searchWrap, flex: "1 1 300px", maxWidth: "400px" }}>
+            <span style={{ color: "#9CA3AF" }}>🔍</span>
+            <input
+              placeholder="Buscar paciente, cédula, ticket o fecha..."
+              value={buscar}
+              onChange={e => setBuscar(e.target.value)}
+              style={S.searchInput}
+            />
+          </div>
+          <select value={filtroTiempo} onChange={e => setFiltroTiempo(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }}>
+            <option value="hoy">Solo Hoy</option>
+            <option value="todos">Todos los registros</option>
+            <option value="fecha">Fecha específica</option>
+          </select>
+          {filtroTiempo === "fecha" && (
+            <input type="date" value={fechaEspecifica} onChange={e => setFechaEspecifica(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }} />
+          )}
         </div>
-        <select value={filtroTiempo} onChange={e => setFiltroTiempo(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }}>
-          <option value="hoy">Solo Hoy</option>
-          <option value="todos">Todos los registros</option>
-          <option value="fecha">Fecha específica</option>
-        </select>
-        {filtroTiempo === "fecha" && (
-          <input type="date" value={fechaEspecifica} onChange={e => setFechaEspecifica(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }} />
-        )}
-      </div>
+      )}
 
       {/* ══════════ VISTA: COBRAR ══════════ */}
       {vistaTab === "cobrar" && (
@@ -443,7 +610,7 @@ export default function ModuloCaja() {
               <span style={{ flex: 1 }}>MÉTODO</span>
               <span style={{ flex: 1 }}>FECHA / HORA</span>
               <span style={{ flex: "0 0 110px", textAlign: "right" }}>MONTO</span>
-              <span style={{ flex: "0 0 50px" }}></span>
+              <span style={{ flex: "0 0 90px" }}></span>
             </div>
             {loading ? (
               <div style={S.empty}>Cargando...</div>
@@ -477,12 +644,19 @@ export default function ModuloCaja() {
                   <div style={{ flex: "0 0 110px", textAlign: "right" }}>
                     <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: "#10B981" }}>${parseFloat(p.monto || 0).toFixed(2)}</span>
                   </div>
-                  <div style={{ flex: "0 0 50px", display: "flex", justifyContent: "center" }}>
+                  <div style={{ flex: "0 0 90px", display: "flex", justifyContent: "center", gap: "0.35rem" }}>
                     <button
                       title="Ver / imprimir comprobante"
                       onClick={() => setComprobanteHistorial(p)}
                       style={S.btnVer}
                     >🖨️</button>
+                    {(parseFloat(p.monto || 0) - (reembolsadoPorOrden[p.id_orden] || 0)) > 0.01 && (
+                      <button
+                        title="Reembolsar"
+                        onClick={() => abrirReembolso(p)}
+                        style={{ ...S.btnVer, background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.25)", color: "#EF4444" }}
+                      >↩️</button>
+                    )}
                   </div>
                 </div>
               ))
@@ -521,6 +695,85 @@ export default function ModuloCaja() {
               </span>
             </div>
           )}
+        </>
+      )}
+
+      {/* ══════════ VISTA: CIERRE DE CAJA ══════════ */}
+      {vistaTab === "cierre" && (
+        <>
+          {msg && <Alert msg={msg} />}
+          {cargandoCaja && !turnoActivo && cierresHistorial.length === 0 ? (
+            <div style={S.empty}>Cargando...</div>
+          ) : !turnoActivo ? (
+            <div style={{ ...S.tableCard, padding: "2.5rem 1.5rem", textAlign: "center" }}>
+              <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🗄️</div>
+              <p style={{ fontFamily: FONTC, fontSize: "1.15rem", fontWeight: 800, color: DARK, margin: "0 0 0.4rem", textTransform: "uppercase" }}>
+                No tienes un turno de caja abierto
+              </p>
+              <p style={{ fontSize: "0.85rem", color: "#6B7280", margin: "0 0 1.25rem" }}>
+                Debes abrir un turno antes de poder registrar cobros. Indica el fondo inicial de efectivo con el que arrancas.
+              </p>
+              <button onClick={abrirModalTurno} style={{ ...S.btnFull2, padding: "0.75rem 1.5rem" }}>🔓 ABRIR TURNO DE CAJA</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "0.85rem", marginBottom: "1rem" }}>
+                <KpiBox icon="🏦" label="Fondo Inicial"        value={`$${parseFloat(turnoActivo.monto_inicial || 0).toFixed(2)}`} color="#6B7280" />
+                <KpiBox icon="💵" label="Efectivo Cobrado"     value={`$${parseFloat(turnoActivo.total_efectivo_sistema || 0).toFixed(2)}`} color="#10B981" />
+                <KpiBox icon="🏧" label="Transferencia"        value={`$${parseFloat(turnoActivo.total_transferencia_sistema || 0).toFixed(2)}`} color="#3B82F6" />
+                <KpiBox icon="↩️" label="Reembolsos Efectivo" value={`$${parseFloat(turnoActivo.total_reembolsos_efectivo || 0).toFixed(2)}`} color="#EF4444" />
+                <KpiBox icon="🧮" label="Efectivo Esperado"    value={`$${parseFloat(turnoActivo.efectivo_esperado_actual || 0).toFixed(2)}`} color={ORANGE} />
+              </div>
+
+              <div style={{ ...S.tableCard, padding: "1.25rem", marginBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+                <div>
+                  <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.25rem" }}>Turno abierto</p>
+                  <p style={{ fontFamily: FONT, fontSize: "0.85rem", color: DARK, margin: 0 }}>
+                    #{turnoActivo.id_cierre} · Desde {new Date(turnoActivo.fecha_apertura).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · {turnoActivo.num_pagos || 0} cobro(s)
+                  </p>
+                </div>
+                <button onClick={abrirModalCierre} style={{ ...S.btnFull2, background: "#EF4444" }}>🔒 CERRAR TURNO</button>
+              </div>
+            </>
+          )}
+
+          {/* Historial de cierres */}
+          <p style={{ fontFamily: FONTC, fontSize: "0.85rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.06em", textTransform: "uppercase", margin: "0 0 0.6rem" }}>
+            Historial de cierres
+          </p>
+          <div style={S.tableCard}>
+            <div style={S.tableHead}>
+              <span style={{ flex: "0 0 70px" }}>#</span>
+              <span style={{ flex: 1.5 }}>SECRETARIA</span>
+              <span style={{ flex: 1 }}>APERTURA</span>
+              <span style={{ flex: 1 }}>CIERRE</span>
+              <span style={{ flex: "0 0 110px", textAlign: "right" }}>DIFERENCIA</span>
+              <span style={{ flex: "0 0 50px" }}></span>
+            </div>
+            {cierresHistorial.filter(c => c.estado === "CERRADO").length === 0 ? (
+              <div style={S.empty}>Aún no se ha cerrado ningún turno de caja.</div>
+            ) : (
+              cierresHistorial.filter(c => c.estado === "CERRADO").map((c, i) => {
+                const dif = parseFloat(c.diferencia || 0);
+                return (
+                  <div key={c.id_cierre} style={{ ...S.tableRow, background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}>
+                    <div style={{ flex: "0 0 70px" }}><span style={S.ticketBadge}>#{c.id_cierre}</span></div>
+                    <div style={{ flex: 1.5, fontSize: "0.85rem", color: DARK }}>{c.nombres} {c.apellidos}</div>
+                    <div style={{ flex: 1, fontSize: "0.8rem", color: "#6B7280" }}>{new Date(c.fecha_apertura).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
+                    <div style={{ flex: 1, fontSize: "0.8rem", color: "#6B7280" }}>{c.fecha_cierre ? new Date(c.fecha_cierre).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}</div>
+                    <div style={{ flex: "0 0 110px", textAlign: "right" }}>
+                      <span style={{ fontFamily: FONTC, fontWeight: 700, fontSize: "0.9rem", color: Math.abs(dif) < 0.01 ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444") }}>
+                        {dif > 0 ? "+" : ""}{dif.toFixed(2)}
+                      </span>
+                    </div>
+                    <div style={{ flex: "0 0 50px", display: "flex", justifyContent: "center" }}>
+                      <button title="Ver detalle / comprobante" onClick={() => verDetalleCierre(c)} style={S.btnVer}>🖨️</button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </>
       )}
 
@@ -696,6 +949,175 @@ export default function ModuloCaja() {
               }}
               onCerrar={() => setComprobanteHistorial(null)}
             />
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ MODAL ABRIR TURNO ══════════ */}
+      {showAbrirTurno && (
+        <Overlay onClose={() => !procesandoAbrir && setShowAbrirTurno(false)}>
+          <ModalHeader title="ABRIR" titleOrange="TURNO DE CAJA" subtitle="Ingresa el fondo inicial de efectivo" onClose={() => !procesandoAbrir && setShowAbrirTurno(false)} />
+          <div style={S.modalBody}>
+            {msgAbrir && <Alert msg={msgAbrir} />}
+            <label style={S.label}>Fondo inicial de efectivo</label>
+            <input
+              type="number" min="0" step="0.01" placeholder="0.00"
+              value={montoInicial}
+              onChange={e => setMontoInicial(e.target.value)}
+              style={{ ...S.input, width: "100%", marginBottom: "1.25rem" }}
+            />
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button onClick={handleAbrirTurno} disabled={procesandoAbrir} style={{ ...S.btnFull, flex: 1, opacity: procesandoAbrir ? 0.7 : 1 }}>
+                {procesandoAbrir ? "Abriendo..." : "🔓 ABRIR TURNO"}
+              </button>
+              <button onClick={() => setShowAbrirTurno(false)} disabled={procesandoAbrir} style={S.btnCancel}>Cancelar</button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ MODAL CERRAR TURNO ══════════ */}
+      {showCerrarTurno && turnoActivo && (
+        <Overlay onClose={() => !procesandoCierre && setShowCerrarTurno(false)}>
+          <ModalHeader title="CERRAR" titleOrange="TURNO DE CAJA" subtitle={`Turno #${turnoActivo.id_cierre}`} onClose={() => !procesandoCierre && setShowCerrarTurno(false)} />
+          <div style={S.modalBody}>
+            {msgCierre && <Alert msg={msgCierre} />}
+
+            <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "1rem", marginBottom: "1.25rem", border: "1px solid #F1F5F9" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.4rem" }}>
+                <span style={{ color: "#6B7280" }}>Fondo inicial</span>
+                <span style={{ fontWeight: 600 }}>${parseFloat(turnoActivo.monto_inicial || 0).toFixed(2)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.4rem" }}>
+                <span style={{ color: "#6B7280" }}>+ Efectivo cobrado</span>
+                <span style={{ fontWeight: 600, color: "#10B981" }}>${parseFloat(turnoActivo.total_efectivo_sistema || 0).toFixed(2)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                <span style={{ color: "#6B7280" }}>− Reembolsos en efectivo</span>
+                <span style={{ fontWeight: 600, color: "#EF4444" }}>${parseFloat(turnoActivo.total_reembolsos_efectivo || 0).toFixed(2)}</span>
+              </div>
+              <div style={{ borderTop: "1px dashed #E5E7EB", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontWeight: 700 }}>
+                <span>EFECTIVO ESPERADO EN CAJA</span>
+                <span style={{ color: ORANGE }}>${parseFloat(turnoActivo.efectivo_esperado_actual || 0).toFixed(2)}</span>
+              </div>
+            </div>
+
+            <label style={S.label}>Efectivo contado físicamente</label>
+            <input
+              type="number" min="0" step="0.01" placeholder="0.00"
+              value={efectivoContado}
+              onChange={e => setEfectivoContado(e.target.value)}
+              style={{ ...S.input, width: "100%", marginBottom: "0.5rem" }}
+            />
+            {efectivoContado !== "" && !isNaN(parseFloat(efectivoContado)) && (
+              (() => {
+                const dif = parseFloat(efectivoContado) - parseFloat(turnoActivo.efectivo_esperado_actual || 0);
+                const ok = Math.abs(dif) < 0.01;
+                return (
+                  <p style={{ fontSize: "0.8rem", margin: "0 0 1rem", color: ok ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444"), fontFamily: FONTC, fontWeight: 700 }}>
+                    {ok ? "✓ Caja cuadrada" : dif > 0 ? `Sobrante de $${dif.toFixed(2)}` : `Faltante de $${Math.abs(dif).toFixed(2)}`}
+                  </p>
+                );
+              })()
+            )}
+
+            <label style={S.label}>Observaciones (opcional)</label>
+            <textarea
+              rows={2} placeholder="Notas sobre el cierre, novedades, etc."
+              value={observacionesCierre}
+              onChange={e => setObservacionesCierre(e.target.value)}
+              style={{ ...S.input, width: "100%", marginBottom: "1.25rem", resize: "vertical", fontFamily: FONT }}
+            />
+
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button onClick={handleCerrarTurno} disabled={procesandoCierre} style={{ ...S.btnFull, flex: 1, background: "#EF4444", opacity: procesandoCierre ? 0.7 : 1 }}>
+                {procesandoCierre ? "Cerrando..." : "🔒 CONFIRMAR CIERRE"}
+              </button>
+              <button onClick={() => setShowCerrarTurno(false)} disabled={procesandoCierre} style={S.btnCancel}>Cancelar</button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ MODAL COMPROBANTE DE CIERRE ══════════ */}
+      {comprobanteCierre && (
+        <Overlay onClose={() => setComprobanteCierre(null)}>
+          <ModalHeader title="CIERRE" titleOrange="DE CAJA" subtitle={`Turno #${comprobanteCierre.cierre.id_cierre}`} onClose={() => setComprobanteCierre(null)} />
+          <div style={S.modalBody}>
+            <ComprobanteCierreView detalle={comprobanteCierre} onCerrar={() => setComprobanteCierre(null)} />
+          </div>
+        </Overlay>
+      )}
+
+      {/* ══════════ MODAL REEMBOLSO ══════════ */}
+      {showReembolso && (
+        <Overlay onClose={() => !procesandoReembolso && setShowReembolso(null)}>
+          <ModalHeader
+            title="REGISTRAR"
+            titleOrange="REEMBOLSO"
+            subtitle={`Orden: ${showReembolso.numero_ticket || `#${showReembolso.id_orden}`}`}
+            onClose={() => !procesandoReembolso && setShowReembolso(null)}
+          />
+          <div style={S.modalBody}>
+            {msgReembolso && <Alert msg={msgReembolso} />}
+
+            <div style={{ background: "#FEF2F2", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem", border: "1px solid #FECACA" }}>
+              <p style={{ fontSize: "0.8rem", color: "#991B1B", margin: 0 }}>
+                Paciente: <strong>{showReembolso.nombres} {showReembolso.apellidos}</strong> · Pagado: <strong>${parseFloat(showReembolso.monto || 0).toFixed(2)}</strong>
+              </p>
+            </div>
+
+            <label style={S.label}>Monto a reembolsar</label>
+            <input
+              type="number" min="0" step="0.01"
+              value={formReembolso.monto}
+              onChange={e => setFormReembolso(f => ({ ...f, monto: e.target.value }))}
+              style={{ ...S.input, width: "100%", marginBottom: "1rem" }}
+            />
+
+            <label style={S.label}>Método de reembolso</label>
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+              {METODOS.map(m => (
+                <button
+                  key={m}
+                  onClick={() => setFormReembolso(f => ({ ...f, metodo_reembolso: m }))}
+                  style={{
+                    flex: 1, padding: "0.6rem", borderRadius: "8px",
+                    border: `1.5px solid ${formReembolso.metodo_reembolso === m ? "#EF4444" : "#E5E7EB"}`,
+                    background: formReembolso.metodo_reembolso === m ? "#FEF2F2" : "#FAFAFA",
+                    color: formReembolso.metodo_reembolso === m ? "#EF4444" : "#374151",
+                    fontFamily: FONTC, fontWeight: 700, fontSize: "0.82rem", cursor: "pointer",
+                  }}
+                >{m}</button>
+              ))}
+            </div>
+
+            {formReembolso.metodo_reembolso === "Transferencia" && (
+              <>
+                <label style={S.label}>Número de referencia</label>
+                <input
+                  placeholder="Ej: TRX123456"
+                  value={formReembolso.referencia}
+                  onChange={e => setFormReembolso(f => ({ ...f, referencia: e.target.value }))}
+                  style={{ ...S.input, width: "100%", marginBottom: "1rem" }}
+                />
+              </>
+            )}
+
+            <label style={S.label}>Motivo del reembolso</label>
+            <textarea
+              rows={2} placeholder="Ej: El paciente canceló la orden antes de tomar la muestra."
+              value={formReembolso.motivo}
+              onChange={e => setFormReembolso(f => ({ ...f, motivo: e.target.value }))}
+              style={{ ...S.input, width: "100%", marginBottom: "1.25rem", resize: "vertical", fontFamily: FONT }}
+            />
+
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button onClick={handleProcesarReembolso} disabled={procesandoReembolso} style={{ ...S.btnFull, flex: 1, background: "#EF4444", opacity: procesandoReembolso ? 0.7 : 1 }}>
+                {procesandoReembolso ? "Procesando..." : "↩️ CONFIRMAR REEMBOLSO"}
+              </button>
+              <button onClick={() => setShowReembolso(null)} disabled={procesandoReembolso} style={S.btnCancel}>Cancelar</button>
+            </div>
           </div>
         </Overlay>
       )}
@@ -1023,6 +1445,132 @@ function ComprobanteView({ comprobante, onCerrar }) {
         <button onClick={imprimir} style={{ ...S.btnFull, flex: 1, background: "#1D4ED8" }}>
           🖨️ IMPRIMIR COMPROBANTE
         </button>
+        <button onClick={onCerrar} style={S.btnCancel}>Cerrar</button>
+      </div>
+    </>
+  );
+}
+
+// ─── COMPROBANTE DE CIERRE DE CAJA ────────────────────────────────────────────
+function ComprobanteCierreView({ detalle, onCerrar }) {
+  const { cierre, pagos, reembolsos } = detalle;
+  const dif = parseFloat(cierre.diferencia || 0);
+  const cuadrado = Math.abs(dif) < 0.01;
+
+  const imprimir = () => {
+    const styleId = "cierre-print-style";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.innerHTML = `
+        @media print {
+          body > *:not(#cierre-print-wrapper) { display: none !important; }
+          #cierre-print-wrapper {
+            position: fixed !important; inset: 0 !important; display: block !important;
+            background: white !important; z-index: 99999 !important; padding: 20px !important;
+          }
+          #cierre-print {
+            font-family: 'Courier New', monospace !important; font-size: 12px !important;
+            max-width: 340px !important; margin: 0 auto !important;
+            background: white !important; border: none !important; padding: 0 !important;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    const wrapper = document.getElementById("cierre-print-wrapper") || (() => {
+      const el = document.createElement("div");
+      el.id = "cierre-print-wrapper";
+      document.body.appendChild(el);
+      return el;
+    })();
+    const contenido = document.getElementById("cierre-print");
+    const clon = contenido.cloneNode(true);
+    clon.id = "cierre-print";
+    wrapper.innerHTML = "";
+    wrapper.appendChild(clon);
+    window.print();
+    setTimeout(() => { wrapper.innerHTML = ""; }, 500);
+  };
+
+  return (
+    <>
+      <div id="cierre-print" style={{
+        fontFamily: "'Courier New', monospace", background: "#FAFAFA", border: "1px dashed #D1D5DB",
+        borderRadius: "10px", padding: "1.25rem", marginBottom: "1.25rem", fontSize: "0.8rem", lineHeight: 1.6,
+        maxHeight: "45vh", overflowY: "auto",
+      }}>
+        <p style={{ fontSize: "1rem", fontWeight: "bold", textAlign: "center", margin: "0 0 2px" }}>
+          LABORATORIO CLÍNICO CARDENAS-GAROFALO
+        </p>
+        <p style={{ fontSize: "0.7rem", textAlign: "center", color: "#6B7280", marginBottom: "0.75rem" }}>
+          CIERRE DE CAJA #{cierre.id_cierre}
+        </p>
+
+        <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.5rem 0" }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span style={{ color: "#6B7280" }}>Secretaria:</span>
+          <strong>{cierre.nombres} {cierre.apellidos}</strong>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span style={{ color: "#6B7280" }}>Apertura:</span>
+          <span>{new Date(cierre.fecha_apertura).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span style={{ color: "#6B7280" }}>Cierre:</span>
+          <span>{cierre.fecha_cierre ? new Date(cierre.fecha_cierre).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+        </div>
+
+        <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.5rem 0" }} />
+
+        <p style={{ fontWeight: "bold", marginBottom: "4px", fontSize: "0.75rem", color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>Resumen</p>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span>Fondo inicial</span><span>${parseFloat(cierre.monto_inicial || 0).toFixed(2)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span>+ Efectivo cobrado ({pagos.filter(p => (p.metodo_pago || "").includes("Efectivo")).length})</span>
+          <span>${parseFloat(cierre.total_efectivo_sistema || 0).toFixed(2)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span>+ Transferencia cobrada</span><span>${parseFloat(cierre.total_transferencia_sistema || 0).toFixed(2)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span>− Reembolsos efectivo ({reembolsos.filter(r => r.metodo_reembolso === "Efectivo").length})</span>
+          <span>${parseFloat(cierre.total_reembolsos_efectivo || 0).toFixed(2)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+          <span>− Reembolsos transferencia</span><span>${parseFloat(cierre.total_reembolsos_transferencia || 0).toFixed(2)}</span>
+        </div>
+
+        <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.5rem 0" }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}>
+          <span>Efectivo esperado:</span><span>${parseFloat(cierre.efectivo_esperado || 0).toFixed(2)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}>
+          <span>Efectivo contado:</span><span>${parseFloat(cierre.efectivo_contado || 0).toFixed(2)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "1rem", color: cuadrado ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444") }}>
+          <span>{cuadrado ? "CAJA CUADRADA" : dif > 0 ? "SOBRANTE:" : "FALTANTE:"}</span>
+          <span>{cuadrado ? "$0.00" : `$${Math.abs(dif).toFixed(2)}`}</span>
+        </div>
+
+        {cierre.observaciones && (
+          <>
+            <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.5rem 0" }} />
+            <p style={{ fontSize: "0.72rem", color: "#6B7280", margin: 0 }}><strong>Obs:</strong> {cierre.observaciones}</p>
+          </>
+        )}
+
+        <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.75rem 0 0.5rem" }} />
+        <p style={{ textAlign: "center", fontSize: "0.7rem", color: "#9CA3AF" }}>
+          {pagos.length} cobro(s) · {reembolsos.length} reembolso(s) en este turno
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: "0.75rem" }}>
+        <button onClick={imprimir} style={{ ...S.btnFull, flex: 1, background: "#1D4ED8" }}>🖨️ IMPRIMIR CIERRE</button>
         <button onClick={onCerrar} style={S.btnCancel}>Cerrar</button>
       </div>
     </>

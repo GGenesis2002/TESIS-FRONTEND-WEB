@@ -138,6 +138,16 @@ export default function ModuloCaja() {
   // ── REEMBOLSOS ────────────────────────────────────────────────────────────
   const [reembolsosHistorial, setReembolsosHistorial] = useState([]);
   const [showReembolso, setShowReembolso]     = useState(null);   // pago seleccionado del historial
+
+  // Filtros y paginado del historial de reembolsos procesados
+  const [filtroTicket, setFiltroTicket]             = useState("");
+  const [filtroFechaInicio, setFiltroFechaInicio]   = useState("");
+  const [filtroFechaFin, setFiltroFechaFin]         = useState("");
+  const [paginaActual, setPaginaActual]             = useState(1);
+  const ITEMS_POR_PAGINA_REEMBOLSOS = 10;
+
+  // Resetear a la página 1 cada vez que cambian los filtros del historial de reembolsos
+  useEffect(() => { setPaginaActual(1); }, [filtroTicket, filtroFechaInicio, filtroFechaFin]);
   const [formReembolso, setFormReembolso]     = useState({ monto: "", metodo_reembolso: "Efectivo", referencia: "", motivo: "" });
   const [procesandoReembolso, setProcesandoReembolso] = useState(false);
   const [msgReembolso, setMsgReembolso]       = useState(null);
@@ -573,6 +583,31 @@ export default function ModuloCaja() {
   const totalPaginas = Math.ceil(pagosFiltrados.length / ITEMS_POR_PAGINA);
   const pagosPaginados = pagosFiltrados.slice((paginaHistorial - 1) * ITEMS_POR_PAGINA, paginaHistorial * ITEMS_POR_PAGINA);
 
+  // ── HISTORIAL DE REEMBOLSOS: filtro por ticket / rango de fechas + paginado ──
+  const reembolsosFiltrados = reembolsosHistorial.filter(r => {
+    const matchTicket = !filtroTicket || (r.numero_ticket || "").toLowerCase().includes(filtroTicket.toLowerCase());
+
+    let matchFecha = true;
+    const fechaReembolso = r.fecha_reembolso ? new Date(r.fecha_reembolso) : null;
+    if (filtroFechaInicio) {
+      const inicio = new Date(filtroFechaInicio);
+      inicio.setHours(0, 0, 0, 0);
+      if (!fechaReembolso || fechaReembolso < inicio) matchFecha = false;
+    }
+    if (filtroFechaFin) {
+      const fin = new Date(filtroFechaFin);
+      fin.setHours(23, 59, 59, 999);
+      if (!fechaReembolso || fechaReembolso > fin) matchFecha = false;
+    }
+    return matchTicket && matchFecha;
+  });
+
+  const totalPaginasReembolsos = Math.max(1, Math.ceil(reembolsosFiltrados.length / ITEMS_POR_PAGINA_REEMBOLSOS));
+  const reembolsosPaginados = reembolsosFiltrados.slice(
+    (paginaActual - 1) * ITEMS_POR_PAGINA_REEMBOLSOS,
+    paginaActual * ITEMS_POR_PAGINA_REEMBOLSOS
+  );
+
   const totalRecaudado     = pagosFiltrados.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
   const totalTransacciones = pagosFiltrados.length;
   const porMetodo = pagosFiltrados.reduce((acc, p) => {
@@ -858,7 +893,7 @@ export default function ModuloCaja() {
             </div>
 
             {/* CONTROLES DE PAGINACIÓN */}
-            {totalPaginas > 1 && (
+            {totalPaginasReembolsos > 1 && (
               <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", marginTop: "1rem" }}>
                 <button
                   type="button"
@@ -869,13 +904,13 @@ export default function ModuloCaja() {
                   ◀ Anterior
                 </button>
                 <span style={{ fontFamily: FONT, fontSize: "0.85rem", color: "#4B5563" }}>
-                  Página <strong>{paginaActual}</strong> de {totalPaginas}
+                  Página <strong>{paginaActual}</strong> de {totalPaginasReembolsos}
                 </span>
                 <button
                   type="button"
-                  disabled={paginaActual === totalPaginas}
+                  disabled={paginaActual === totalPaginasReembolsos}
                   onClick={() => setPaginaActual(prev => prev + 1)}
-                  style={{ padding: "0.3rem 0.6rem", background: paginaActual === totalPaginas ? "#F3F4F6" : "#FFF", border: "1px solid #D1D5DB", borderRadius: "6px", cursor: paginaActual === totalPaginas ? "not-allowed" : "pointer", color: paginaActual === totalPaginas ? "#9CA3AF" : DARK, fontFamily: FONT, fontSize: "0.8rem" }}
+                  style={{ padding: "0.3rem 0.6rem", background: paginaActual === totalPaginasReembolsos ? "#F3F4F6" : "#FFF", border: "1px solid #D1D5DB", borderRadius: "6px", cursor: paginaActual === totalPaginasReembolsos ? "not-allowed" : "pointer", color: paginaActual === totalPaginasReembolsos ? "#9CA3AF" : DARK, fontFamily: FONT, fontSize: "0.8rem" }}
                 >
                   Siguiente ▶
                 </button>

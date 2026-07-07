@@ -292,6 +292,12 @@ export default function ModuloCaja() {
   }, {});
 
   const abrirReembolso = (pago) => {
+    // Política: solo se puede reembolsar el mismo día en que se pagó la orden.
+    if (!isToday(pago.fecha_pago)) {
+      setMsgReembolso(null);
+      setMsg({ type: "error", text: "Solo se pueden reembolsar pagos realizados el mismo día de hoy." });
+      return;
+    }
     const yaReembolsado = reembolsadoPorOrden[pago.id_orden] || 0;
     const disponible = Math.max(0, parseFloat(pago.monto || 0) - yaReembolsado);
     setFormReembolso({ monto: disponible.toFixed(2), metodo_reembolso: "Efectivo", referencia: "", motivo: "" });
@@ -302,6 +308,11 @@ export default function ModuloCaja() {
   const handleProcesarReembolso = async () => {
     const { monto, metodo_reembolso, referencia, motivo } = formReembolso;
 
+    // Doble validación defensiva: aunque la lista ya solo muestra pagos de hoy,
+    // nos aseguramos de que el pago seleccionado siga siendo del día actual.
+    if (!isToday(showReembolso?.fecha_pago)) {
+      return setMsgReembolso({ type: "error", text: "Este pago ya no es de hoy: solo se permite reembolsar el mismo día del pago." });
+    }
     if (!monto || parseFloat(monto) <= 0) {
       return setMsgReembolso({ type: "error", text: "El monto del reembolso debe ser mayor a 0." });
     }
@@ -438,6 +449,7 @@ export default function ModuloCaja() {
 
       setShowCobro(null);
       cargar();
+      cargarCaja(); // refresca el efectivo esperado / KPIs de Cierre de Caja sin recargar la página
     } catch (err) {
       setMsg({ type: "error", text: err.response?.data?.error || "Error al procesar el cobro." });
     } finally {
@@ -540,6 +552,18 @@ export default function ModuloCaja() {
   const ordenesFiltradas = ordenesGeneradas.filter(o => aplicarFiltros(o, "fecha_orden"));
   const pagosFiltrados   = pagosHistorial.filter(p => aplicarFiltros(p, "fecha_pago"));
 
+  // ── REEMBOLSOS: solo pagos de HOY con saldo pendiente por reembolsar ──────
+  // (la política del negocio es fija: solo se reembolsa el mismo día del pago,
+  // por eso aquí no se aplica el selector de "Solo Hoy / Todos / Fecha específica")
+  const pagosReembolsables = pagosHistorial.filter(p => {
+    if (!isToday(p.fecha_pago)) return false;
+    const saldo = parseFloat(p.monto || 0) - (reembolsadoPorOrden[p.id_orden] || 0);
+    if (saldo <= 0.01) return false;
+    const fechaStr = p.fecha_pago ? new Date(p.fecha_pago).toLocaleDateString("es-EC") : "";
+    const txt = `${p.nombres || ""} ${p.apellidos || ""} ${p.numero_ticket || ""} ${p.cedula || ""} ${fechaStr}`.toLowerCase();
+    return txt.includes(buscar.toLowerCase());
+  });
+
   // Paginado del historial
   const totalPaginas = Math.ceil(pagosFiltrados.length / ITEMS_POR_PAGINA);
   const pagosPaginados = pagosFiltrados.slice((paginaHistorial - 1) * ITEMS_POR_PAGINA, paginaHistorial * ITEMS_POR_PAGINA);
@@ -578,9 +602,10 @@ export default function ModuloCaja() {
       {/* ── TABS ── */}
       <div style={{ display: "flex", background: "#F3F4F6", borderRadius: "10px", padding: "0.25rem", gap: "0.25rem", marginBottom: "1.5rem", width: "fit-content" }}>
         {[
-          { key: "cobrar",  label: `💳 Cobrar (${ordenesFiltradas.length})` },
-          { key: "reporte", label: `📊 Reporte (${totalTransacciones})` },
-          { key: "cierre",  label: `🗄️ Cierre de Caja${turnoActivo ? " •" : ""}` },
+          { key: "cobrar",     label: `💳 Cobrar (${ordenesFiltradas.length})` },
+          { key: "reembolsos", label: `↩️ Reembolsos (${pagosReembolsables.length})` },
+          { key: "reporte",    label: `📊 Reporte (${totalTransacciones})` },
+          { key: "cierre",     label: `🗄️ Cierre de Caja${turnoActivo ? " •" : ""}` },
         ].map(t => (
           <button key={t.key} onClick={() => setVistaTab(t.key)} style={{
             ...S.tabBtn,
@@ -604,12 +629,14 @@ export default function ModuloCaja() {
               style={S.searchInput}
             />
           </div>
-          <select value={filtroTiempo} onChange={e => setFiltroTiempo(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }}>
-            <option value="hoy">Solo Hoy</option>
-            <option value="todos">Todos los registros</option>
-            <option value="fecha">Fecha específica</option>
-          </select>
-          {filtroTiempo === "fecha" && (
+          {vistaTab !== "reembolsos" && (
+            <select value={filtroTiempo} onChange={e => setFiltroTiempo(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }}>
+              <option value="hoy">Solo Hoy</option>
+              <option value="todos">Todos los registros</option>
+              <option value="fecha">Fecha específica</option>
+            </select>
+          )}
+          {vistaTab !== "reembolsos" && filtroTiempo === "fecha" && (
             <input type="date" value={fechaEspecifica} onChange={e => setFechaEspecifica(e.target.value)} style={{ ...S.input, flex: "0 1 180px" }} />
           )}
         </div>
@@ -662,6 +689,83 @@ export default function ModuloCaja() {
             ))
           )}
         </div>
+      )}
+
+      {/* ══════════ VISTA: REEMBOLSOS ══════════ */}
+      {vistaTab === "reembolsos" && (
+        <>
+          <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1.25rem", display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
+            <span style={{ fontSize: "1rem" }}>ℹ️</span>
+            <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#7F1D1D", margin: 0 }}>
+              Política de reembolsos: solo se pueden reembolsar pagos <strong>realizados hoy</strong>. Los pagos de días anteriores ya no aparecen en esta lista y no pueden reembolsarse.
+            </p>
+          </div>
+
+          {msg && <Alert msg={msg} />}
+
+          <div style={S.tableCard}>
+            <div style={S.tableHead}>
+              <span style={{ flex: "0 0 130px" }}>TICKET</span>
+              <span style={{ flex: 2 }}>PACIENTE</span>
+              <span style={{ flex: 1 }}>MÉTODO</span>
+              <span style={{ flex: 1 }}>HORA DEL PAGO</span>
+              <span style={{ flex: "0 0 110px", textAlign: "right" }}>DISPONIBLE</span>
+              <span style={{ flex: "0 0 110px", textAlign: "center" }}>ACCIÓN</span>
+            </div>
+            {loading ? (
+              <div style={S.empty}>Cargando...</div>
+            ) : pagosReembolsables.length === 0 ? (
+              <div style={S.empty}>
+                {buscar ? "Sin resultados para tu búsqueda." : "No hay pagos de hoy disponibles para reembolso."}
+              </div>
+            ) : (
+              pagosReembolsables.map((p, i) => {
+                const disponible = parseFloat(p.monto || 0) - (reembolsadoPorOrden[p.id_orden] || 0);
+                return (
+                  <div key={p.id_pago || i} style={{ ...S.tableRow, background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}>
+                    <div style={{ flex: "0 0 130px" }}>
+                      <span style={S.ticketBadge}>{p.numero_ticket || `#${p.id_orden}`}</span>
+                    </div>
+                    <div style={{ flex: 2 }}>
+                      <p style={{ fontWeight: 600, fontSize: "0.875rem", color: DARK, margin: 0 }}>
+                        {p.nombres ? `${p.nombres} ${p.apellidos}` : `Orden #${p.id_orden}`}
+                      </p>
+                      <p style={{ fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>Cobrado por: {p.cobrado_por || p.secretaria_username || p.secretaria || "—"}</p>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <span style={{
+                        ...S.metodoBadge,
+                        background: (p.metodo_pago || "").includes("+") || (p.metodo_pago || "").includes("Transferencia") && (p.metodo_pago || "").includes("Efectivo")
+                          ? "rgba(139,92,246,0.1)" : "rgba(59,130,246,0.1)",
+                        color: (p.metodo_pago || "").includes("+") ? "#7C3AED" : "#2563EB",
+                      }}>
+                        {p.metodo_pago || "—"}
+                      </span>
+                    </div>
+                    <div style={{ flex: 1, fontSize: "0.82rem", color: "#6B7280" }}>
+                      {p.fecha_pago ? new Date(p.fecha_pago).toLocaleString("es-EC", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                    </div>
+                    <div style={{ flex: "0 0 110px", textAlign: "right" }}>
+                      <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: "#EF4444" }}>${disponible.toFixed(2)}</span>
+                    </div>
+                    <div style={{ flex: "0 0 110px", display: "flex", justifyContent: "center", gap: "0.35rem" }}>
+                      <button
+                        title="Ver / imprimir comprobante"
+                        onClick={() => setComprobanteHistorial(p)}
+                        style={S.btnVer}
+                      >🖨️</button>
+                      <button
+                        title="Reembolsar"
+                        onClick={() => abrirReembolso(p)}
+                        style={{ ...S.btnVer, background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.25)", color: "#EF4444" }}
+                      >↩️</button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
       )}
 
       {/* ══════════ VISTA: REPORTE ══════════ */}
@@ -722,13 +826,6 @@ export default function ModuloCaja() {
                       onClick={() => setComprobanteHistorial(p)}
                       style={S.btnVer}
                     >🖨️</button>
-                    {(parseFloat(p.monto || 0) - (reembolsadoPorOrden[p.id_orden] || 0)) > 0.01 && (
-                      <button
-                        title="Reembolsar"
-                        onClick={() => abrirReembolso(p)}
-                        style={{ ...S.btnVer, background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.25)", color: "#EF4444" }}
-                      >↩️</button>
-                    )}
                   </div>
                 </div>
               ))

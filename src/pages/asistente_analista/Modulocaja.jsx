@@ -692,81 +692,144 @@ export default function ModuloCaja() {
       )}
 
       {/* ══════════ VISTA: REEMBOLSOS ══════════ */}
-      {vistaTab === "reembolsos" && (
-        <>
-          <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1.25rem", display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
-            <span style={{ fontSize: "1rem" }}>ℹ️</span>
-            <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#7F1D1D", margin: 0 }}>
-              Política de reembolsos: solo se pueden reembolsar pagos <strong>realizados hoy</strong>. Los pagos de días anteriores ya no aparecen en esta lista y no pueden reembolsarse.
-            </p>
-          </div>
+     {/* ══════════ VISTA: REEMBOLSOS ══════════ */}
+{vistaTab === "reembolsos" && (
+  <>
+    {/* Mensaje Informativo de la Política */}
+    <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1.25rem", display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
+      <span style={{ fontSize: "1rem" }}>ℹ️</span>
+      <p style={{ fontFamily: FONT, fontSize: "0.82rem", color: "#7F1D1D", margin: 0 }}>
+        Política de reembolsos: solo se pueden reembolsar pagos <strong>realizados hoy</strong>. Los pagos de días anteriores ya no aparecen en esta lista y no pueden reembolsarse.
+      </p>
+    </div>
 
-          {msg && <Alert msg={msg} />}
+    {msg && <Alert msg={msg} />}
 
-          <div style={S.tableCard}>
-            <div style={S.tableHead}>
-              <span style={{ flex: "0 0 130px" }}>TICKET</span>
-              <span style={{ flex: 2 }}>PACIENTE</span>
-              <span style={{ flex: 1 }}>MÉTODO</span>
-              <span style={{ flex: 1 }}>HORA DEL PAGO</span>
-              <span style={{ flex: "0 0 110px", textAlign: "right" }}>DISPONIBLE</span>
-              <span style={{ flex: "0 0 110px", textAlign: "center" }}>ACCIÓN</span>
-            </div>
-            {loading ? (
-              <div style={S.empty}>Cargando...</div>
-            ) : pagosReembolsables.length === 0 ? (
-              <div style={S.empty}>
-                {buscar ? "Sin resultados para tu búsqueda." : "No hay pagos de hoy disponibles para reembolso."}
-              </div>
-            ) : (
-              pagosReembolsables.map((p, i) => {
-                const disponible = parseFloat(p.monto || 0) - (reembolsadoPorOrden[p.id_orden] || 0);
-                return (
-                  <div key={p.id_pago || i} style={{ ...S.tableRow, background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}>
-                    <div style={{ flex: "0 0 130px" }}>
-                      <span style={S.ticketBadge}>{p.numero_ticket || `#${p.id_orden}`}</span>
-                    </div>
-                    <div style={{ flex: 2 }}>
-                      <p style={{ fontWeight: 600, fontSize: "0.875rem", color: DARK, margin: 0 }}>
-                        {p.nombres ? `${p.nombres} ${p.apellidos}` : `Orden #${p.id_orden}`}
-                      </p>
-                      <p style={{ fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>Cobrado por: {p.cobrado_por || p.secretaria_username || p.secretaria || "—"}</p>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <span style={{
-                        ...S.metodoBadge,
-                        background: (p.metodo_pago || "").includes("+") || (p.metodo_pago || "").includes("Transferencia") && (p.metodo_pago || "").includes("Efectivo")
-                          ? "rgba(139,92,246,0.1)" : "rgba(59,130,246,0.1)",
-                        color: (p.metodo_pago || "").includes("+") ? "#7C3AED" : "#2563EB",
-                      }}>
-                        {p.metodo_pago || "—"}
-                      </span>
-                    </div>
-                    <div style={{ flex: 1, fontSize: "0.82rem", color: "#6B7280" }}>
-                      {p.fecha_pago ? new Date(p.fecha_pago).toLocaleString("es-EC", { hour: "2-digit", minute: "2-digit" }) : "—"}
-                    </div>
-                    <div style={{ flex: "0 0 110px", textAlign: "right" }}>
-                      <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: "#EF4444" }}>${disponible.toFixed(2)}</span>
-                    </div>
-                    <div style={{ flex: "0 0 110px", display: "flex", justifyContent: "center", gap: "0.35rem" }}>
-                      <button
-                        title="Ver / imprimir comprobante"
-                        onClick={() => setComprobanteHistorial(p)}
-                        style={S.btnVer}
-                      >🖨️</button>
-                      <button
-                        title="Reembolsar"
-                        onClick={() => abrirReembolso(p)}
-                        style={{ ...S.btnVer, background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.25)", color: "#EF4444" }}
-                      >↩️</button>
-                    </div>
+    {/* SECCIÓN 1: PAGOS DEL DÍA DISPONIBLES PARA REEMBOLSAR */}
+    <h3 style={{ fontFamily: FONTC, color: DARK, fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.75rem", textTransform: "uppercase" }}>
+      💵 Pagos Recibidos Hoy (Disponibles para Reembolso)
+    </h3>
+
+    <div style={{ ...S.tableCard, marginBottom: "2.5rem" }}>
+      <div style={S.tableHead}>
+        <span style={{ flex: "0 0 130px" }}>TICKET</span>
+        <span style={{ flex: 2 }}>PACIENTE</span>
+        <span style={{ flex: 1 }}>MÉTODO</span>
+        <span style={{ flex: 1 }}>HORA PAGO</span>
+        <span style={{ flex: 1, textAlign: "right" }}>MONTO TOTAL</span>
+        <span style={{ flex: "0 0 60px", textAlign: "center" }}>ACCIONES</span>
+      </div>
+
+      {pagosReembolsables.length === 0 ? (
+        <div style={{ padding: "2rem", textAlign: "center", color: "#6B7280", fontFamily: FONT, fontSize: "0.85rem" }}>
+          No hay pagos registrados el día de hoy con saldos disponibles para reembolsar.
+        </div>
+      ) : (
+        pagosReembolsables.map((p, idx) => {
+          const yaReembolsado = reembolsadoPorOrden[p.id_orden] || 0;
+          const disponible = Math.max(0, parseFloat(p.monto || 0) - yaReembolsado);
+          return (
+            <div key={idx} style={S.tableRow}>
+              <span style={{ flex: "0 0 130px", fontFamily: FONTC, fontWeight: 700, color: ORANGE }}>{p.numero_ticket}</span>
+              <span style={{ flex: 2, fontFamily: FONT, fontSize: "0.85rem", fontWeight: 500, color: DARK }}>
+                {p.nombres} {p.apellidos}
+                <br />
+                <small style={{ color: "#9CA3AF", fontSize: "0.75rem" }}>C.I. {p.cedula}</small>
+              </span>
+              <span style={{ flex: 1, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563" }}>{p.metodo_pago}</span>
+              <span style={{ flex: 1, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563" }}>
+                {p.fecha_pago ? new Date(p.fecha_pago).toLocaleTimeString("es-EC", { hour: '2-digit', minute: '2-digit' }) : "—"}
+              </span>
+              <span style={{ flex: 1, textAlign: "right", fontFamily: FONTC, fontWeight: 700, color: DARK, fontSize: "0.9rem" }}>
+                ${parseFloat(p.monto || 0).toFixed(2)}
+                {yaReembolsado > 0 && (
+                  <div style={{ fontSize: "0.7rem", color: "#EF4444", fontWeight: 500 }}>
+                    Reembolsado: ${yaReembolsado.toFixed(2)}
                   </div>
-                );
-              })
-            )}
-          </div>
-        </>
+                )}
+              </span>
+              <div style={{ flex: "0 0 60px", display: "flex", justifyContent: "center" }}>
+                <button
+                  title="Reembolsar"
+                  onClick={() => abrirReembolso(p)}
+                  style={{ ...S.btnVer, background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.25)", color: "#EF4444" }}
+                >↩️</button>
+              </div>
+            </div>
+          );
+        })
       )}
+    </div>
+
+    {/* SECCIÓN 2: HISTORIAL DE REEMBOLSOS COMPLETADOS */}
+    <h3 style={{ fontFamily: FONTC, color: DARK, fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.75rem", textTransform: "uppercase" }}>
+      📋 Historial General de Reembolsos Procesados
+    </h3>
+
+    <div style={S.tableCard}>
+      <div style={S.tableHead}>
+        <span style={{ flex: "0 0 120px" }}>TICKET</span>
+        <span style={{ flex: 2 }}>PACIENTE</span>
+        <span style={{ flex: 1.5 }}>MOTIVO / OBSERVACIÓN</span>
+        <span style={{ flex: 1 }}>MÉTODO REEMB.</span>
+        <span style={{ flex: 1.2 }}>FECHA / HORA</span>
+        <span style={{ flex: 1, textAlign: "right" }}>MONTO DEVUELTO</span>
+      </div>
+
+      {reembolsosHistorial.length === 0 ? (
+        <div style={{ padding: "2rem", textAlign: "center", color: "#6B7280", fontFamily: FONT, fontSize: "0.85rem" }}>
+          No se registra ningún reembolso procesado en el sistema todavía.
+        </div>
+      ) : (
+        reembolsosHistorial.map((r, idx) => (
+          <div key={idx} style={S.tableRow}>
+            {/* Ticket */}
+            <span style={{ flex: "0 0 120px", fontFamily: FONTC, fontWeight: 700, color: "#374151" }}>
+              {r.numero_ticket}
+            </span>
+            
+            {/* Paciente */}
+            <span style={{ flex: 2, fontFamily: FONT, fontSize: "0.85rem", fontWeight: 500, color: DARK }}>
+              {r.nombres} {r.apellidos}
+              <br />
+              <small style={{ color: "#9CA3AF", fontSize: "0.75rem" }}>C.I. {r.cedula}</small>
+            </span>
+            
+            {/* Motivo */}
+            <span style={{ flex: 1.5, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563", fontStyle: "italic" }}>
+              {r.motivo || "Sin motivo especificado"}
+              {r.secretaria && (
+                <div style={{ fontSize: "0.7rem", color: "#9CA3AF", fontStyle: "normal", marginTop: "2px" }}>
+                  Por: @{r.secretaria}
+                </div>
+              )}
+            </span>
+            
+            {/* Método de devolución */}
+            <span style={{ flex: 1, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563" }}>
+              {r.metodo_reembolso}
+              {r.referencia && <div style={{ fontSize: "0.75rem", color: "#6B7280" }}>Ref: {r.referencia}</div>}
+            </span>
+            
+            {/* Fecha y Hora */}
+            <span style={{ flex: 1.2, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563" }}>
+              {r.fecha_reembolso ? new Date(r.fecha_reembolso).toLocaleDateString("es-EC") : "—"}
+              <br />
+              <small style={{ color: "#9CA3AF" }}>
+                {r.fecha_reembolso ? new Date(r.fecha_reembolso).toLocaleTimeString("es-EC", { hour: '2-digit', minute: '2-digit' }) : ""}
+              </small>
+            </span>
+            
+            {/* Monto devuelto */}
+            <span style={{ flex: 1, textAlign: "right", fontFamily: FONTC, fontWeight: 700, color: "#EF4444", fontSize: "0.9rem" }}>
+              -${parseFloat(r.monto || 0).toFixed(2)}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  </>
+)}
 
       {/* ══════════ VISTA: REPORTE ══════════ */}
       {vistaTab === "reporte" && (

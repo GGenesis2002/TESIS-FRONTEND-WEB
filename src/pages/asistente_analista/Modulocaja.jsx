@@ -87,9 +87,6 @@ export default function ModuloCaja() {
   const [filtroTiempo, setFiltroTiempo]         = useState("hoy");
   const [fechaEspecifica, setFechaEspecifica]   = useState("");
 
-  // Resetear paginado al cambiar filtros
-  useEffect(() => { setPaginaHistorial(1); }, [buscar, filtroTiempo, fechaEspecifica]);
-  
   const [vistaTab, setVistaTab]                 = useState("cobrar");
   const [msg, setMsg]                           = useState(null);
 
@@ -107,6 +104,9 @@ export default function ModuloCaja() {
   // Paginado historial
   const [paginaHistorial, setPaginaHistorial] = useState(1);
   const ITEMS_POR_PAGINA = 10;
+
+  // Resetear a la página 1 cada vez que cambian los filtros de búsqueda/tiempo/fecha
+  useEffect(() => { setPaginaHistorial(1); }, [buscar, filtroTiempo, fechaEspecifica]);
 
   // Modal detalle orden
   const [showDetalle, setShowDetalle] = useState(null);
@@ -154,50 +154,7 @@ export default function ModuloCaja() {
   const [modoQR, setModoQR]         = useState("camara");
   const [showQRAcciones, setShowQRAcciones] = useState(false);
 
-  // ─── ESTADOS PARA BÚSQUEDA Y PAGINACIÓN EN HISTORIAL ──────────────────────────
-const [filtroTicket, setFiltroTicket] = useState("");
-const [filtroFechaInicio, setFiltroFechaInicio] = useState("");
-const [filtroFechaFin, setFiltroFechaFin] = useState("");
-const [paginaActual, setPaginaActual] = useState(1);
-const elementosPorPagina = 5; 
-
-// 1. Filtrar el historial según los inputs del usuario
-const historialFiltrado = reembolsosHistorial.filter((r) => {
-  // Filtro por Ticket (ignora mayúsculas/minúsculas)
-  const coincideTicket = r.numero_ticket
-    ? r.numero_ticket.toLowerCase().includes(filtroTicket.toLowerCase())
-    : true;
-
-  // Filtro por Rango de Fechas
-  let coincideFecha = true;
-  if (r.fecha_reembolso) {
-    // Extraemos solo la parte YYYY-MM-DD de la fecha del registro
-    const fechaReg = r.fecha_reembolso.split("T")[0]; 
-    
-    if (filtroFechaInicio && fechaReg < filtroFechaInicio) {
-      coincideFecha = false;
-    }
-    if (filtroFechaFin && fechaReg > filtroFechaFin) {
-      coincideFecha = false;
-    }
-  }
-
-  return coincideTicket && coincideFecha;
-});
-
-// 2. Calcular índices para la paginación
-const indiceUltimoItem = paginaActual * elementosPorPagina;
-const indicePrimerItem = indiceUltimoItem - elementosPorPagina;
-// Esta es la lista final corta que se va a renderizar en la tabla
-const reembolsosPaginados = historialFiltrado.slice(indicePrimerItem, indiceUltimoItem);
-
-// 3. Calcular total de páginas necesarias
-const totalPaginas = Math.ceil(historialFiltrado.length / elementosPorPagina);
-
-// Resetear a la página 1 si los filtros cambian y la página actual queda huérfana
-useEffect(() => {
-  setPaginaActual(1);
-}, [filtroTicket, filtroFechaInicio, filtroFechaFin]);
+  
 
   // ── CARGA ─────────────────────────────────────────────────────────────────
   const cargar = async () => {

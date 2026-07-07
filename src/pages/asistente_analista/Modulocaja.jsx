@@ -3,7 +3,45 @@ import API from "../../services/api";
 import jsQR from "jsqr";
 
 // ─── MÉTODOS DE PAGO ──────────────────────────────────────────────────────────
+// El sistema solo maneja estos dos métodos en todo el módulo (cobros, reembolsos,
+// fondo de caja y arqueo). No se agregan tarjetas ni otros medios.
 const METODOS = ["Efectivo", "Transferencia"];
+
+// ─── DENOMINACIONES DE EFECTIVO (USD — Ecuador) ──────────────────────────────
+// Se usan para el arqueo/conteo físico de caja al abrir y cerrar un turno.
+// Esto es puramente un cálculo del lado del cliente: no agrega columnas ni
+// tablas nuevas en la base de datos. El backend sigue recibiendo únicamente
+// el monto total (monto_inicial / efectivo_contado), igual que antes.
+const DENOMINACIONES = [
+  { id: "b100", label: "$100", valor: 100,  grupo: "Billetes" },
+  { id: "b50",  label: "$50",  valor: 50,   grupo: "Billetes" },
+  { id: "b20",  label: "$20",  valor: 20,   grupo: "Billetes" },
+  { id: "b10",  label: "$10",  valor: 10,   grupo: "Billetes" },
+  { id: "b5",   label: "$5",   valor: 5,    grupo: "Billetes" },
+  { id: "b1",   label: "$1",   valor: 1,    grupo: "Billetes" },
+  { id: "m100", label: "$1.00", valor: 1.00, grupo: "Monedas" },
+  { id: "m050", label: "$0.50", valor: 0.50, grupo: "Monedas" },
+  { id: "m025", label: "$0.25", valor: 0.25, grupo: "Monedas" },
+  { id: "m010", label: "$0.10", valor: 0.10, grupo: "Monedas" },
+  { id: "m005", label: "$0.05", valor: 0.05, grupo: "Monedas" },
+  { id: "m001", label: "$0.01", valor: 0.01, grupo: "Monedas" },
+];
+
+const totalDenominaciones = (cant) =>
+  DENOMINACIONES.reduce((acc, d) => acc + (parseInt(cant?.[d.id], 10) || 0) * d.valor, 0);
+
+const hayConteoDenominaciones = (cant) =>
+  DENOMINACIONES.some(d => (parseInt(cant?.[d.id], 10) || 0) > 0);
+
+// Genera un texto plano con el detalle del arqueo, para dejarlo registrado
+// dentro del campo de observaciones (ya existente en la BD) sin tocar el esquema.
+const resumenDenominacionesTexto = (cant) => {
+  const partes = DENOMINACIONES
+    .filter(d => (parseInt(cant?.[d.id], 10) || 0) > 0)
+    .map(d => `${d.label} x${parseInt(cant[d.id], 10)} = $${((parseInt(cant[d.id], 10) || 0) * d.valor).toFixed(2)}`);
+  if (partes.length === 0) return "";
+  return `Arqueo físico de efectivo:\n${partes.join("\n")}\nTotal contado: $${totalDenominaciones(cant).toFixed(2)}`;
+};
 
 const estadoColor = {
   "Generada":    { bg: "rgba(59,130,246,0.12)",  color: "#3B82F6" },
@@ -79,12 +117,18 @@ export default function ModuloCaja() {
   const [montoInicial, setMontoInicial]       = useState("");
   const [procesandoAbrir, setProcesandoAbrir] = useState(false);
   const [msgAbrir, setMsgAbrir]               = useState(null);
+  const [modoApertura, setModoApertura]       = useState("conteo"); // "conteo" | "directo"
+  const [denomApertura, setDenomApertura]     = useState({});
+  const [comprobanteApertura, setComprobanteApertura] = useState(null); // acta de apertura recién generada (solo de esta sesión)
 
   const [showCerrarTurno, setShowCerrarTurno] = useState(false);
   const [efectivoContado, setEfectivoContado] = useState("");
   const [observacionesCierre, setObservacionesCierre] = useState("");
   const [procesandoCierre, setProcesandoCierre] = useState(false);
   const [msgCierre, setMsgCierre]             = useState(null);
+  const [modoCierre, setModoCierre]           = useState("conteo"); // "conteo" | "directo"
+  const [denomCierre, setDenomCierre]         = useState({});
+  const [confirmarCierre, setConfirmarCierre] = useState(false); // pantalla de revisión antes de confirmar
 
   const [comprobanteCierre, setComprobanteCierre] = useState(null); // detalle completo de un cierre ya cerrado
 

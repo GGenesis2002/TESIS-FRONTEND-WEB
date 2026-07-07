@@ -1489,18 +1489,6 @@ export default function ModuloCaja() {
               ))}
             </div>
 
-            {formReembolso.metodo_reembolso === "Transferencia" && (
-              <>
-                <label style={S.label}>Número de referencia</label>
-                <input
-                  placeholder="Ej: TRX123456"
-                  value={formReembolso.referencia}
-                  onChange={e => setFormReembolso(f => ({ ...f, referencia: e.target.value }))}
-                  style={{ ...S.input, width: "100%", marginBottom: "1rem" }}
-                />
-              </>
-            )}
-
             <label style={S.label}>Motivo del reembolso</label>
             <textarea
               rows={2} placeholder="Ej: El paciente canceló la orden antes de tomar la muestra."

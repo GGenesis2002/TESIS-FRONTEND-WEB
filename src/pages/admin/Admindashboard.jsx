@@ -521,25 +521,39 @@ function ModalIngresos({ open, onClose }) {
       {loading ? <p style={loadingTxt}>Cargando…</p> : error ? <p style={{ ...emptyTxt, color: "#EF4444" }}>{error}</p> : !data ? null : (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
           {/* ── Tarjetas de método de pago ── */}
-          <div>
-            <p style={sectionLabel}>📊 Desglose por Método de Pago</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
-              {[
-                { label: "Efectivo",       value: data.arqueo?.efectivo,       color: "#10B981", icon: "💵" },
-                { label: "Transferencia",  value: data.arqueo?.transferencia,  color: "#3B82F6", icon: "🏦" },
-              
-              ].map((m) => (
-                <div key={m.label} style={{ background: `${m.color}10`, border: `1px solid ${m.color}30`, borderRadius: "10px", padding: "0.9rem 1rem" }}>
-                  <p style={{ margin: "0 0 0.25rem", fontSize: "0.7rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif", textTransform: "uppercase", letterSpacing: "0.06em" }}>{m.icon} {m.label}</p>
-                  <p style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.4rem", color: m.color }}>{fmtMoney(m.value)}</p>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: "0.6rem", padding: "0.6rem 1rem", background: "#1F2937", borderRadius: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ color: "#E5E7EB", fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", fontWeight: 600 }}>Total recaudado</span>
-              <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.3rem", color: "#10B981" }}>{fmtMoney(totalRecaudado)}</span>
-            </div>
-          </div>
+          {/* ── Tarjetas de método de pago ── */}
+<div>
+  <p style={sectionLabel}>📊 Desglose por Método de Pago</p>
+  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+    {[
+      { label: "Efectivo",       value: data.arqueo?.efectivo,       color: "#10B981", icon: "💵" },
+      { label: "Transferencia",  value: data.arqueo?.transferencia,  color: "#3B82F6", icon: "🏦" },
+    ].map((m) => (
+      <div key={m.label} style={{ background: `${m.color}10`, border: `1px solid ${m.color}30`, borderRadius: "10px", padding: "0.9rem 1rem" }}>
+        <p style={{ margin: "0 0 0.25rem", fontSize: "0.7rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif", textTransform: "uppercase", letterSpacing: "0.06em" }}>{m.icon} {m.label}</p>
+        <p style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.4rem", color: m.color }}>{fmtMoney(m.value)}</p>
+      </div>
+    ))}
+  </div>
+
+  {/* ── NUEVO: Reembolsos del período ── */}
+  {(Number(data.arqueo?.reembolsos_efectivo) > 0 || Number(data.arqueo?.reembolsos_transferencia) > 0) && (
+    <div style={{ marginTop: "0.75rem", padding: "0.7rem 1rem", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px" }}>
+      <p style={{ margin: "0 0 0.4rem", fontSize: "0.7rem", color: "#991B1B", fontFamily: "'Barlow', sans-serif", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>
+        ↩️ Reembolsos del período
+      </p>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", fontFamily: "'Barlow', sans-serif" }}>
+        <span style={{ color: "#7F1D1D" }}>💵 Efectivo: <strong>{fmtMoney(data.arqueo?.reembolsos_efectivo)}</strong></span>
+        <span style={{ color: "#7F1D1D" }}>🏦 Transferencia: <strong>{fmtMoney(data.arqueo?.reembolsos_transferencia)}</strong></span>
+      </div>
+    </div>
+  )}
+
+  <div style={{ marginTop: "0.6rem", padding: "0.6rem 1rem", background: "#1F2937", borderRadius: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <span style={{ color: "#E5E7EB", fontFamily: "'Barlow', sans-serif", fontSize: "0.82rem", fontWeight: 600 }}>Total recaudado (neto)</span>
+    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.3rem", color: "#10B981" }}>{fmtMoney(totalRecaudado)}</span>
+  </div>
+</div>
 
           {/* ── Desglose por usuario ── */}
           {data.porUsuario.length > 0 && (
@@ -552,23 +566,26 @@ function ModalIngresos({ open, onClose }) {
                 </div>
               )}
               <table style={tbl}>
-                <thead>
-                  <tr>{["Asistente","Órdenes","Total Generado"].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {data.porUsuario.map((u, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #F1F5F9", background: i % 2 ? "#FAFAFA" : "#FFF" }}>
-                      <td style={td}><strong>{u.usuario}</strong></td>
-                      <td style={{ ...td, textAlign: "center" }}>
-                        <span style={{ background: "#E88B3A18", color: "#E88B3A", padding: "0.15rem 0.6rem", borderRadius: "20px", fontWeight: 700, fontSize: "0.78rem" }}>
-                          {u.total_ordenes}
-                        </span>
-                      </td>
-                      <td style={{ ...td, fontWeight: 700, color: "#10B981" }}>{fmtMoney(u.total_generado)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+  <thead>
+    <tr>{["Asistente","Órdenes","Total Generado","Reembolsado"].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+  </thead>
+  <tbody>
+    {data.porUsuario.map((u, i) => (
+      <tr key={i} style={{ borderBottom: "1px solid #F1F5F9", background: i % 2 ? "#FAFAFA" : "#FFF" }}>
+        <td style={td}><strong>{u.usuario}</strong></td>
+        <td style={{ ...td, textAlign: "center" }}>
+          <span style={{ background: "#E88B3A18", color: "#E88B3A", padding: "0.15rem 0.6rem", borderRadius: "20px", fontWeight: 700, fontSize: "0.78rem" }}>
+            {u.total_ordenes}
+          </span>
+        </td>
+        <td style={{ ...td, fontWeight: 700, color: "#10B981" }}>{fmtMoney(u.total_generado)}</td>
+        <td style={{ ...td, color: u.total_reembolsado > 0 ? "#EF4444" : "#9CA3AF" }}>
+          {u.total_reembolsado > 0 ? fmtMoney(u.total_reembolsado) : "—"}
+        </td>
+      </tr>
+    ))}
+  </tbody>
+</table>
             </div>
           )}
         </div>

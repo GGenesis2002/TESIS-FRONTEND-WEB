@@ -105,8 +105,16 @@ export default function ModuloCaja() {
   const [paginaHistorial, setPaginaHistorial] = useState(1);
   const ITEMS_POR_PAGINA = 10;
 
+  // Paginado del resto de listas (Cobrar, Reembolsos de hoy, Historial de cierres)
+  const [paginaOrdenes, setPaginaOrdenes]           = useState(1);
+  const [paginaReembolsables, setPaginaReembolsables] = useState(1);
+  const [paginaCierres, setPaginaCierres]           = useState(1);
+
   // Resetear a la página 1 cada vez que cambian los filtros de búsqueda/tiempo/fecha
   useEffect(() => { setPaginaHistorial(1); }, [buscar, filtroTiempo, fechaEspecifica]);
+  useEffect(() => { setPaginaOrdenes(1); }, [buscar, filtroTiempo, fechaEspecifica]);
+  useEffect(() => { setPaginaCierres(1); }, [buscar, filtroTiempo, fechaEspecifica]);
+  useEffect(() => { setPaginaReembolsables(1); }, [buscar]);
 
   // Modal detalle orden
   const [showDetalle, setShowDetalle] = useState(null);
@@ -584,6 +592,19 @@ export default function ModuloCaja() {
   const totalPaginas = Math.ceil(pagosFiltrados.length / ITEMS_POR_PAGINA);
   const pagosPaginados = pagosFiltrados.slice((paginaHistorial - 1) * ITEMS_POR_PAGINA, paginaHistorial * ITEMS_POR_PAGINA);
 
+  // Paginado de órdenes por cobrar
+  const totalPaginasOrdenes = Math.max(1, Math.ceil(ordenesFiltradas.length / ITEMS_POR_PAGINA));
+  const ordenesPaginadas = ordenesFiltradas.slice((paginaOrdenes - 1) * ITEMS_POR_PAGINA, paginaOrdenes * ITEMS_POR_PAGINA);
+
+  // Paginado de pagos reembolsables de hoy
+  const totalPaginasReembolsables = Math.max(1, Math.ceil(pagosReembolsables.length / ITEMS_POR_PAGINA));
+  const pagosReembolsablesPaginados = pagosReembolsables.slice((paginaReembolsables - 1) * ITEMS_POR_PAGINA, paginaReembolsables * ITEMS_POR_PAGINA);
+
+  // Paginado del historial de cierres de caja
+  const cierresCerrados = cierresFiltrados.filter(c => c.estado === "CERRADO");
+  const totalPaginasCierres = Math.max(1, Math.ceil(cierresCerrados.length / ITEMS_POR_PAGINA));
+  const cierresPaginados = cierresCerrados.slice((paginaCierres - 1) * ITEMS_POR_PAGINA, paginaCierres * ITEMS_POR_PAGINA);
+
   // ── HISTORIAL DE REEMBOLSOS: filtro por ticket / rango de fechas + paginado ──
   const reembolsosFiltrados = reembolsosHistorial.filter(r => {
     const matchTicket = !filtroTicket || (r.numero_ticket || "").toLowerCase().includes(filtroTicket.toLowerCase());
@@ -683,6 +704,7 @@ export default function ModuloCaja() {
 
       {/* ══════════ VISTA: COBRAR ══════════ */}
       {vistaTab === "cobrar" && (
+        <>
         <div style={S.tableCard}>
           <div style={S.tableHead}>
             <span style={{ flex: "0 0 130px" }}>TICKET</span>
@@ -698,7 +720,7 @@ export default function ModuloCaja() {
               {buscar || filtroTiempo !== "todos" ? "Sin resultados para los filtros aplicados." : "No hay órdenes pendientes."}
             </div>
           ) : (
-            ordenesFiltradas.map((o, i) => (
+            ordenesPaginadas.map((o, i) => (
               <div
                 key={o.id_orden}
                 style={{ ...S.tableRow, background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}
@@ -728,6 +750,8 @@ export default function ModuloCaja() {
             ))
           )}
         </div>
+        <Paginador pagina={paginaOrdenes} totalPaginas={totalPaginasOrdenes} setPagina={setPaginaOrdenes} />
+        </>
       )}
 
       
@@ -764,7 +788,7 @@ export default function ModuloCaja() {
                   No hay pagos registrados el día de hoy con saldos disponibles para reembolsar.
                 </div>
               ) : (
-                pagosReembolsables.map((p, idx) => {
+                pagosReembolsablesPaginados.map((p, idx) => {
                   const yaReembolsado = reembolsadoPorOrden[p.id_orden] || 0;
                   const disponible = Math.max(0, parseFloat(p.monto || 0) - yaReembolsado);
                   return (
@@ -799,6 +823,7 @@ export default function ModuloCaja() {
                 })
               )}
             </div>
+            <Paginador pagina={paginaReembolsables} totalPaginas={totalPaginasReembolsables} setPagina={setPaginaReembolsables} />
 
             {/* SECCIÓN 2: HISTORIAL DE REEMBOLSOS COMPLETADOS */}
             <h3 style={{ fontFamily: FONTC, color: DARK, fontSize: "1.1rem", fontWeight: 700, marginTop: "1.5rem", marginBottom: "0.75rem", textTransform: "uppercase" }}>
@@ -1070,12 +1095,12 @@ export default function ModuloCaja() {
               <span style={{ flex: "0 0 110px", textAlign: "right" }}>DIFERENCIA</span>
               <span style={{ flex: "0 0 50px" }}></span>
             </div>
-            {cierresFiltrados.filter(c => c.estado === "CERRADO").length === 0 ? (
+            {cierresCerrados.length === 0 ? (
               <div style={S.empty}>
                 {buscar || filtroTiempo !== "todos" ? "Sin resultados para los filtros aplicados." : "Aún no se ha cerrado ningún turno de caja."}
               </div>
             ) : (
-              cierresFiltrados.filter(c => c.estado === "CERRADO").map((c, i) => {
+              cierresPaginados.map((c, i) => {
                 const dif = parseFloat(c.diferencia || 0);
                 return (
                   <div key={c.id_cierre} style={{ ...S.tableRow, background: i % 2 === 0 ? "#FFF" : "#F9FAFB" }}>
@@ -1096,6 +1121,7 @@ export default function ModuloCaja() {
               })
             )}
           </div>
+          <Paginador pagina={paginaCierres} totalPaginas={totalPaginasCierres} setPagina={setPaginaCierres} />
         </>
       )}
 
@@ -2071,6 +2097,30 @@ function ModoConteoToggle({ modo, setModo }) {
           }}
         >{op.label}</button>
       ))}
+    </div>
+  );
+}
+
+// Paginador simple y reutilizable: "‹ Anterior · Página X de Y · Siguiente ›"
+function Paginador({ pagina, totalPaginas, setPagina }) {
+  if (totalPaginas <= 1) return null;
+  return (
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.75rem", marginTop: "1rem", flexWrap: "wrap" }}>
+      <button
+        type="button"
+        onClick={() => setPagina(p => Math.max(1, p - 1))}
+        disabled={pagina === 1}
+        style={{ ...S.btnCancel, padding: "0.4rem 0.85rem", opacity: pagina === 1 ? 0.4 : 1 }}
+      >‹ Anterior</button>
+      <span style={{ fontFamily: FONTC, fontSize: "0.8rem", color: "#6B7280" }}>
+        Página <strong>{pagina}</strong> de {totalPaginas}
+      </span>
+      <button
+        type="button"
+        onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+        disabled={pagina === totalPaginas}
+        style={{ ...S.btnCancel, padding: "0.4rem 0.85rem", opacity: pagina === totalPaginas ? 0.4 : 1 }}
+      >Siguiente ›</button>
     </div>
   );
 }

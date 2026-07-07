@@ -27,6 +27,52 @@ const DENOMINACIONES = [
   { id: "m001", label: "$0.01", valor: 0.01, grupo: "Monedas" },
 ];
 
+// ─── ESTADOS PARA BÚSQUEDA Y PAGINACIÓN EN HISTORIAL ──────────────────────────
+const [filtroTicket, setFiltroTicket] = useState("");
+const [filtroFechaInicio, setFiltroFechaInicio] = useState("");
+const [filtroFechaFin, setFiltroFechaFin] = useState("");
+const [paginaActual, setPaginaActual] = useState(1);
+const elementosPorPagina = 5; 
+
+// 1. Filtrar el historial según los inputs del usuario
+const historialFiltrado = reembolsosHistorial.filter((r) => {
+  // Filtro por Ticket (ignora mayúsculas/minúsculas)
+  const coincideTicket = r.numero_ticket
+    ? r.numero_ticket.toLowerCase().includes(filtroTicket.toLowerCase())
+    : true;
+
+  // Filtro por Rango de Fechas
+  let coincideFecha = true;
+  if (r.fecha_reembolso) {
+    // Extraemos solo la parte YYYY-MM-DD de la fecha del registro
+    const fechaReg = r.fecha_reembolso.split("T")[0]; 
+    
+    if (filtroFechaInicio && fechaReg < filtroFechaInicio) {
+      coincideFecha = false;
+    }
+    if (filtroFechaFin && fechaReg > filtroFechaFin) {
+      coincideFecha = false;
+    }
+  }
+
+  return coincideTicket && coincideFecha;
+});
+
+// 2. Calcular índices para la paginación
+const indiceUltimoItem = paginaActual * elementosPorPagina;
+const indicePrimerItem = indiceUltimoItem - elementosPorPagina;
+// Esta es la lista final corta que se va a renderizar en la tabla
+const reembolsosPaginados = historialFiltrado.slice(indicePrimerItem, indiceUltimoItem);
+
+// 3. Calcular total de páginas necesarias
+const totalPaginas = Math.ceil(historialFiltrado.length / elementosPorPagina);
+
+// Resetear a la página 1 si los filtros cambian y la página actual queda huérfana
+useEffect(() => {
+  setPaginaActual(1);
+}, [filtroTicket, filtroFechaInicio, filtroFechaFin]);
+
+
 const totalDenominaciones = (cant) =>
   DENOMINACIONES.reduce((acc, d) => acc + (parseInt(cant?.[d.id], 10) || 0) * d.valor, 0);
 
@@ -761,76 +807,119 @@ export default function ModuloCaja() {
       )}
     </div>
 
-    {/* SECCIÓN 2: HISTORIAL DE REEMBOLSOS COMPLETADOS */}
-    <h3 style={{ fontFamily: FONTC, color: DARK, fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.75rem", textTransform: "uppercase" }}>
-      📋 Historial General de Reembolsos Procesados
-    </h3>
+  {/* SECCIÓN 2: HISTORIAL DE REEMBOLSOS COMPLETADOS */}
+<h3 style={{ fontFamily: FONTC, color: DARK, fontSize: "1.1rem", fontWeight: 700, marginTop: "1.5rem", marginBottom: "0.75rem", textTransform: "uppercase" }}>
+  📋 Historial General de Reembolsos Procesados
+</h3>
 
-    <div style={S.tableCard}>
-      <div style={S.tableHead}>
-        <span style={{ flex: "0 0 120px" }}>TICKET</span>
-        <span style={{ flex: 2 }}>PACIENTE</span>
-        <span style={{ flex: 1.5 }}>MOTIVO / OBSERVACIÓN</span>
-        <span style={{ flex: 1 }}>MÉTODO REEMB.</span>
-        <span style={{ flex: 1.2 }}>FECHA / HORA</span>
-        <span style={{ flex: 1, textAlign: "right" }}>MONTO DEVUELTO</span>
-      </div>
-
-      {reembolsosHistorial.length === 0 ? (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6B7280", fontFamily: FONT, fontSize: "0.85rem" }}>
-          No se registra ningún reembolso procesado en el sistema todavía.
-        </div>
-      ) : (
-        reembolsosHistorial.map((r, idx) => (
-          <div key={idx} style={S.tableRow}>
-            {/* Ticket */}
-            <span style={{ flex: "0 0 120px", fontFamily: FONTC, fontWeight: 700, color: "#374151" }}>
-              {r.numero_ticket}
-            </span>
-            
-            {/* Paciente */}
-            <span style={{ flex: 2, fontFamily: FONT, fontSize: "0.85rem", fontWeight: 500, color: DARK }}>
-              {r.nombres} {r.apellidos}
-              <br />
-              <small style={{ color: "#9CA3AF", fontSize: "0.75rem" }}>C.I. {r.cedula}</small>
-            </span>
-            
-            {/* Motivo */}
-            <span style={{ flex: 1.5, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563", fontStyle: "italic" }}>
-              {r.motivo || "Sin motivo especificado"}
-              {r.secretaria && (
-                <div style={{ fontSize: "0.7rem", color: "#9CA3AF", fontStyle: "normal", marginTop: "2px" }}>
-                  Por: @{r.secretaria}
-                </div>
-              )}
-            </span>
-            
-            {/* Método de devolución */}
-            <span style={{ flex: 1, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563" }}>
-              {r.metodo_reembolso}
-              {r.referencia && <div style={{ fontSize: "0.75rem", color: "#6B7280" }}>Ref: {r.referencia}</div>}
-            </span>
-            
-            {/* Fecha y Hora */}
-            <span style={{ flex: 1.2, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563" }}>
-              {r.fecha_reembolso ? new Date(r.fecha_reembolso).toLocaleDateString("es-EC") : "—"}
-              <br />
-              <small style={{ color: "#9CA3AF" }}>
-                {r.fecha_reembolso ? new Date(r.fecha_reembolso).toLocaleTimeString("es-EC", { hour: '2-digit', minute: '2-digit' }) : ""}
-              </small>
-            </span>
-            
-            {/* Monto devuelto */}
-            <span style={{ flex: 1, textAlign: "right", fontFamily: FONTC, fontWeight: 700, color: "#EF4444", fontSize: "0.9rem" }}>
-              -${parseFloat(r.monto || 0).toFixed(2)}
-            </span>
-          </div>
-        ))
-      )}
+{/* BARRA DE FILTROS (BÚSQUEDA) */}
+<div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem", background: "#F9FAFB", padding: "1rem", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
+  <div style={{ flex: "1 1 200px", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+    <label style={{ fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600, color: "#4B5563" }}>Buscar por Ticket:</label>
+    <input
+      type="text"
+      placeholder="Ej: T-0001"
+      value={filtroTicket}
+      onChange={(e) => setFiltroTicket(e.target.value)}
+      style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #D1D5DB", fontFamily: FONT, fontSize: "0.85rem" }}
+    />
+  </div>
+  <div style={{ flex: "1 1 150px", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+    <label style={{ fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600, color: "#4B5563" }}>Desde Fecha:</label>
+    <input
+      type="date"
+      value={filtroFechaInicio}
+      onChange={(e) => setFiltroFechaInicio(e.target.value)}
+      style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #D1D5DB", fontFamily: FONT, fontSize: "0.85rem" }}
+    />
+  </div>
+  <div style={{ flex: "1 1 150px", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+    <label style={{ fontFamily: FONT, fontSize: "0.75rem", fontWeight: 600, color: "#4B5563" }}>Hasta Fecha:</label>
+    <input
+      type="date"
+      value={filtroFechaFin}
+      onChange={(e) => setFiltroFechaFin(e.target.value)}
+      style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #D1D5DB", fontFamily: FONT, fontSize: "0.85rem" }}
+    />
+  </div>
+  {(filtroTicket || filtroFechaInicio || filtroFechaFin) && (
+    <div style={{ display: "flex", alignItems: "flex-end" }}>
+      <button
+        onClick={() => { setFiltroTicket(""); setFiltroFechaInicio(""); setFiltroFechaFin(""); }}
+        style={{ padding: "0.4rem 0.8rem", background: "#E5E7EB", border: "none", borderRadius: "6px", fontFamily: FONT, fontSize: "0.8rem", cursor: "pointer", color: "#374151" }}
+      >
+        Limpiar Filtros
+      </button>
     </div>
-  </>
-)}
+  )}
+</div>
 
+{/* TABLA DEL HISTORIAL */}
+<div style={S.tableCard}>
+  <div style={S.tableHead}>
+    <span style={{ flex: "0 0 120px" }}>TICKET</span>
+    <span style={{ flex: 2 }}>PACIENTE</span>
+    <span style={{ flex: 1.5 }}>MOTIVO / OBSERVACIÓN</span>
+    <span style={{ flex: 1 }}>MÉTODO REEMB.</span>
+    <span style={{ flex: 1.2 }}>FECHA / HORA</span>
+    <span style={{ flex: 1, textAlign: "right" }}>MONTO DEVUELTO</span>
+  </div>
+
+  {reembolsosPaginados.length === 0 ? (
+    <div style={{ padding: "2rem", textAlign: "center", color: "#6B7280", fontFamily: FONT, fontSize: "0.85rem" }}>
+      No se encontraron reembolsos que coincidan con los criterios de búsqueda.
+    </div>
+  ) : (
+    reembolsosPaginados.map((r, idx) => (
+      <div key={idx} style={S.tableRow}>
+        <span style={{ flex: "0 0 120px", fontFamily: FONTC, fontWeight: 700, color: "#374151" }}>{r.numero_ticket}</span>
+        <span style={{ flex: 2, fontFamily: FONT, fontSize: "0.85rem", fontWeight: 500, color: DARK }}>
+          {r.nombres} {r.apellidos}
+          <br />
+          <small style={{ color: "#9CA3AF", fontSize: "0.75rem" }}>C.I. {r.cedula}</small>
+        </span>
+        <span style={{ flex: 1.5, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563", fontStyle: "italic" }}>
+          {r.motivo || "Sin motivo especificado"}
+          {r.secretaria && <div style={{ fontSize: "0.7rem", color: "#9CA3AF", fontStyle: "normal", marginTop: "2px" }}>Por: @{r.secretaria}</div>}
+        </span>
+        <span style={{ flex: 1, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563" }}>{r.metodo_reembolso}</span>
+        <span style={{ flex: 1.2, fontFamily: FONT, fontSize: "0.8rem", color: "#4B5563" }}>
+          {r.fecha_reembolso ? new Date(r.fecha_reembolso).toLocaleDateString("es-EC") : "—"}
+          <br />
+          <small style={{ color: "#9CA3AF" }}>
+            {r.fecha_reembolso ? new Date(r.fecha_reembolso).toLocaleTimeString("es-EC", { hour: '2-digit', minute: '2-digit' }) : ""}
+          </small>
+        </span>
+        <span style={{ flex: 1, textAlign: "right", fontFamily: FONTC, fontWeight: 700, color: "#EF4444", fontSize: "0.9rem" }}>
+          -${parseFloat(r.monto || 0).toFixed(2)}
+        </span>
+      </div>
+    ))
+  )}
+</div>
+
+{/* CONTROLES DE PAGINACIÓN */}
+{totalPaginas > 1 && (
+  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", marginTop: "1rem" }}>
+    <button
+      disabled={paginaActual === 1}
+      onClick={() => setPaginaActual(prev => prev - 1)}
+      style={{ padding: "0.3rem 0.6rem", background: paginaActual === 1 ? "#F3F4F6" : "#FFF", border: "1px solid #D1D5DB", borderRadius: "6px", cursor: paginaActual === 1 ? "not-allowed" : "pointer", color: paginaActual === 1 ? "#9CA3AF" : DARK, fontFamily: FONT, fontSize: "0.8rem" }}
+    >
+      ◀ Anterior
+    </button>
+    <span style={{ fontFamily: FONT, fontSize: "0.85rem", color: "#4B5563" }}>
+      Página <strong>{paginaActual}</strong> de {totalPaginas}
+    </span>
+    <button
+      disabled={paginaActual === totalPaginas}
+      onClick={() => setPaginaActual(prev => prev + 1)}
+      style={{ padding: "0.3rem 0.6rem", background: paginaActual === totalPaginas ? "#F3F4F6" : "#FFF", border: "1px solid #D1D5DB", borderRadius: "6px", cursor: paginaActual === totalPaginas ? "not-allowed" : "pointer", color: paginaActual === totalPaginas ? "#9CA3AF" : DARK, fontFamily: FONT, fontSize: "0.8rem" }}
+    >
+      Siguiente ▶
+    </button>
+  </div>
+)}
       {/* ══════════ VISTA: REPORTE ══════════ */}
       {vistaTab === "reporte" && (
         <>

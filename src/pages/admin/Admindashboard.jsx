@@ -94,34 +94,23 @@ function ArqueoRapidoCard({ onClick }) {
 
   return (
     <div
-      style={{ ...kpiCard, gridColumn: "span 2", background: "#1E293B", color: "#FFF", cursor: "pointer", border: "none" }}
+      style={{ ...kpiCard, background: "#1E293B", color: "#FFF", cursor: "pointer", border: "none" }}
       onClick={onClick}
       title="Ver detalle de ingresos y egresos"
     >
-      <p style={{ ...kpiLabel, color: "#94A3B8", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.03em" }}>
-        💰 ARQUEO RÁPIDO DE CAJA (HOY)
-      </p>
-      <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.75rem" }}>
-        <div style={{ flex: 1, background: "#334155", borderRadius: "8px", padding: "0.6rem 0.8rem" }}>
-          <span style={{ fontSize: "0.85rem" }}>💵 Efectivo</span>
-          <p style={{ margin: "0.25rem 0 0", fontWeight: 800, fontSize: "1.1rem", color: caja.efectivo < 0 ? "#F87171" : "#FFF" }}>
-            {loading ? "—" : fmtMoney(caja.efectivo)}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ ...kpiLabel, color: "#94A3B8" }}>💰 Arqueo de Caja (Hoy)</p>
+          <p style={{ ...kpiValue, color: "#34D399" }}>{loading ? "—" : fmtMoney(total)}</p>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "0.7rem", color: "#94A3B8", fontFamily: "'Barlow', sans-serif" }}>
+            💵 {loading ? "—" : fmtMoney(caja.efectivo)} &nbsp;·&nbsp; 🏦 {loading ? "—" : fmtMoney(caja.transferencia)}
           </p>
         </div>
-        <div style={{ flex: 1, background: "#334155", borderRadius: "8px", padding: "0.6rem 0.8rem" }}>
-          <span style={{ fontSize: "0.85rem" }}>🏦 Transf.</span>
-          <p style={{ margin: "0.25rem 0 0", fontWeight: 800, fontSize: "1.1rem", color: caja.transferencia < 0 ? "#F87171" : "#FFF" }}>
-            {loading ? "—" : fmtMoney(caja.transferencia)}
-          </p>
+        <div style={{ ...kpiIcon, background: "#334155" }}>
+          <span style={{ fontSize: "1.3rem" }}>💰</span>
         </div>
       </div>
-      <div style={{ borderTop: "1px solid #334155", marginTop: "0.9rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
-        <span style={{ color: "#94A3B8" }}>Total Recaudado:</span>
-        <strong style={{ color: "#34D399" }}>{loading ? "—" : fmtMoney(total)}</strong>
-      </div>
-      <p style={{ margin: "0.6rem 0 0", fontSize: "0.72rem", color: "#94A3B8", textAlign: "center", fontFamily: "'Barlow', sans-serif" }}>
-        Ver detalle de ingresos y egresos →
-      </p>
+      <p style={{ margin: "0.6rem 0 0", fontSize: "0.68rem", color: "#94A3B8", fontFamily: "'Barlow', sans-serif" }}>Ver detalle →</p>
     </div>
   );
 }

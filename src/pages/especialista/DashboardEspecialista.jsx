@@ -486,7 +486,7 @@ export default function DashboardEspecialista() {
             )}
 
             {/* ══ FILA SUPERIOR: KPIs + DONA + PROGRESO ══ */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", marginBottom: "1.25rem", alignItems: "start" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", marginBottom: "0", alignItems: "start" }}>
 
               {/* KPIs 2x2 */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.9rem" }}>

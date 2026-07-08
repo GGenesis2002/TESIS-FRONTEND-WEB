@@ -1062,13 +1062,12 @@ export default function ModuloCaja() {
             </div>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "0.85rem", marginBottom: "1rem" }}>
-                <KpiBox icon="🏦" label="Fondo Inicial"        value={`$${parseFloat(turnoActivo.monto_inicial || 0).toFixed(2)}`} color="#6B7280" />
-                <KpiBox icon="💵" label="Efectivo Cobrado"     value={`$${parseFloat(turnoActivo.total_efectivo_sistema || 0).toFixed(2)}`} color="#10B981" />
-                <KpiBox icon="🏧" label="Transferencia"        value={`$${parseFloat(turnoActivo.total_transferencia_sistema || 0).toFixed(2)}`} color="#3B82F6" />
-                <KpiBox icon="↩️" label="Reembolsos Efectivo" value={`$${parseFloat(turnoActivo.total_reembolsos_efectivo || 0).toFixed(2)}`} color="#EF4444" />
-                <KpiBox icon="🧮" label="Efectivo Esperado"    value={`$${parseFloat(turnoActivo.efectivo_esperado_actual || 0).toFixed(2)}`} color={ORANGE} />
-              </div>
+              <CascadaCaja turno={turnoActivo} />
+              {(parseFloat(turnoActivo.total_reembolsos_efectivo || 0) > 0 || parseFloat(turnoActivo.total_reembolsos_transferencia || 0) > 0) && (
+                <p style={{ fontSize: "0.78rem", color: "#6B7280", margin: "-0.5rem 0 1rem", fontFamily: FONT }}>
+                  ↩️ Este turno tiene {turnoActivo.num_reembolsos || 0} reembolso(s) registrado(s). El dinero reembolsado ya se restó de lo cobrado; por eso no aparece en el efectivo/transferencia esperados arriba.
+                </p>
+              )}
 
               <div style={{ ...S.tableCard, padding: "1.25rem", marginBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
                 <div>
@@ -1342,6 +1341,7 @@ export default function ModuloCaja() {
             {msgCierre && <Alert msg={msgCierre} />}
 
             <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "1rem", marginBottom: "1.25rem", border: "1px solid #F1F5F9" }}>
+              <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>💵 Efectivo (esto es lo que se cuenta físicamente)</p>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.4rem" }}>
                 <span style={{ color: "#6B7280" }}>Fondo inicial</span>
                 <span style={{ fontWeight: 600 }}>${parseFloat(turnoActivo.monto_inicial || 0).toFixed(2)}</span>
@@ -1358,6 +1358,25 @@ export default function ModuloCaja() {
                 <span>EFECTIVO ESPERADO EN CAJA</span>
                 <span style={{ color: ORANGE }}>${parseFloat(turnoActivo.efectivo_esperado_actual || 0).toFixed(2)}</span>
               </div>
+
+              {(parseFloat(turnoActivo.total_transferencia_sistema || 0) > 0 || parseFloat(turnoActivo.total_reembolsos_transferencia || 0) > 0) && (
+                <>
+                  <div style={{ borderTop: "1px solid #E5E7EB", margin: "0.85rem 0" }} />
+                  <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>🏧 Transferencia (no afecta el conteo físico de efectivo)</p>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.4rem" }}>
+                    <span style={{ color: "#6B7280" }}>+ Transferencia cobrada</span>
+                    <span style={{ fontWeight: 600, color: "#3B82F6" }}>${parseFloat(turnoActivo.total_transferencia_sistema || 0).toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                    <span style={{ color: "#6B7280" }}>− Reembolsos por transferencia</span>
+                    <span style={{ fontWeight: 600, color: "#EF4444" }}>${parseFloat(turnoActivo.total_reembolsos_transferencia || 0).toFixed(2)}</span>
+                  </div>
+                  <div style={{ borderTop: "1px dashed #E5E7EB", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontWeight: 700 }}>
+                    <span>NETO TRANSFERENCIA DEL TURNO</span>
+                    <span style={{ color: ORANGE }}>${(parseFloat(turnoActivo.total_transferencia_sistema || 0) - parseFloat(turnoActivo.total_reembolsos_transferencia || 0)).toFixed(2)}</span>
+                  </div>
+                </>
+              )}
             </div>
 
             {!confirmarCierre ? (
@@ -2121,6 +2140,60 @@ function Paginador({ pagina, totalPaginas, setPagina }) {
         disabled={pagina === totalPaginas}
         style={{ ...S.btnCancel, padding: "0.4rem 0.85rem", opacity: pagina === totalPaginas ? 0.4 : 1 }}
       >Siguiente ›</button>
+    </div>
+  );
+}
+
+// Fila de la cascada de caja: muestra el signo (+ / − / =) junto al concepto,
+// para que quede visualmente claro qué se suma, qué se resta y a qué resultado se llega.
+function FilaCascada({ signo, label, value, bold, color }) {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "baseline",
+      padding: bold ? "0.5rem 0 0" : "0.3rem 0",
+      fontFamily: bold ? FONTC : FONT,
+      fontWeight: bold ? 800 : 500,
+      fontSize: bold ? "0.95rem" : "0.85rem",
+      color: color || "#374151",
+    }}>
+      <span style={{ display: "flex", gap: "0.4rem" }}>
+        {signo && <span style={{ color: "#9CA3AF", fontWeight: 700, width: "0.9rem" }}>{signo}</span>}
+        <span style={bold ? { textTransform: "uppercase", letterSpacing: "0.03em" } : undefined}>{label}</span>
+      </span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+// Cascada de caja del turno EN VIVO: separa Efectivo y Transferencia y muestra
+// explícitamente cobrado − reembolsado = neto, para que se entienda a dónde
+// "se fue" el dinero de un reembolso en vez de mostrar cifras sueltas sin relación.
+function CascadaCaja({ turno }) {
+  const fondo            = parseFloat(turno.monto_inicial || 0);
+  const efCobrado         = parseFloat(turno.total_efectivo_sistema || 0);
+  const efReembolsado     = parseFloat(turno.total_reembolsos_efectivo || 0);
+  const efEsperado        = parseFloat(turno.efectivo_esperado_actual || 0);
+  const transCobrado      = parseFloat(turno.total_transferencia_sistema || 0);
+  const transReembolsado  = parseFloat(turno.total_reembolsos_transferencia || 0);
+  const transNeto         = transCobrado - transReembolsado;
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+      <div style={{ ...S.tableCard, padding: "1.1rem 1.25rem" }}>
+        <p style={{ fontFamily: FONTC, fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.4rem" }}>💵 Efectivo</p>
+        <FilaCascada label="Fondo inicial" value={`$${fondo.toFixed(2)}`} />
+        <FilaCascada signo="+" label="Cobrado" value={`$${efCobrado.toFixed(2)}`} color="#10B981" />
+        <FilaCascada signo="−" label="Reembolsado" value={`$${efReembolsado.toFixed(2)}`} color="#EF4444" />
+        <div style={{ borderTop: "1px dashed #E5E7EB", marginTop: "0.2rem" }} />
+        <FilaCascada signo="=" label="Esperado en caja" value={`$${efEsperado.toFixed(2)}`} bold color={ORANGE} />
+      </div>
+      <div style={{ ...S.tableCard, padding: "1.1rem 1.25rem" }}>
+        <p style={{ fontFamily: FONTC, fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.4rem" }}>🏧 Transferencia</p>
+        <FilaCascada signo="+" label="Cobrada" value={`$${transCobrado.toFixed(2)}`} color="#3B82F6" />
+        <FilaCascada signo="−" label="Reembolsada" value={`$${transReembolsado.toFixed(2)}`} color="#EF4444" />
+        <div style={{ borderTop: "1px dashed #E5E7EB", marginTop: "0.2rem" }} />
+        <FilaCascada signo="=" label="Neto del turno" value={`$${transNeto.toFixed(2)}`} bold color={ORANGE} />
+      </div>
     </div>
   );
 }

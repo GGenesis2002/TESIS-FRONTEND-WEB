@@ -1144,12 +1144,10 @@ export default function AdminInventario() {
                               }}>{ins.stock_actual}</td>
                               <td style={{ ...td, color: "#6B7280" }}>{ins.stock_minimo}</td>
                               <td style={td}><StockBadge actual={ins.stock_actual} minimo={ins.stock_minimo} /></td>
-                              {/* Tipo de Muestra del insumo */}
+                              {/* Tipo de Muestra del insumo (relación 1 a 1 en la BD: un insumo = un tipo de muestra) */}
                               <td style={td}>
-                                {ins.tipos_muestra_nombres
-                                  ? ins.tipos_muestra_nombres.split(",").map((t, i) => (
-                                      <Chip key={i} bg="#EDE9FE" color="#5B21B6">{t.trim()}</Chip>
-                                    ))
+                                {ins.tipo_muestra_nombre
+                                  ? <Chip bg="#EDE9FE" color="#5B21B6">{ins.tipo_muestra_nombre}</Chip>
                                   : <span style={{ color: "#E5E7EB", fontSize: "0.75rem" }}>—</span>
                                 }
                               </td>

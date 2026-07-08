@@ -1003,7 +1003,7 @@ export default function AdminDashboard() {
     { icon: "✅", label: "Completados",              value: fmt(k.completados),      accent: "#10B981" },
     { icon: "⚠️", label: "Resultados Críticos",     value: fmt(k.criticos),         accent: "#EF4444", onClick: () => openModal("criticos") },
     { icon: "👥", label: "Usuarios Activos Hoy",    value: fmt(k.activos),          accent: "#8B5CF6", onClick: () => openModal("usuarios") },
-    { icon: "💵", label: "Ingresos",                  value: fmtMoney(k.ingresos_hoy), accent: "#10B981", onClick: () => openModal("ingresos") },
+    { icon: "💵", label: "Ingresos efectivo",                  value: fmtMoney(k.ingresos_hoy), accent: "#10B981", onClick: () => openModal("ingresos") },
     { icon: "📦", label: "Insumos con Stock Bajo",  value: fmt(k.stock_bajo),       accent: k.stock_bajo > 0 ? "#EF4444" : "#10B981", onClick: k.stock_bajo > 0 ? () => openModal("stockBajo") : undefined },
   ];
 

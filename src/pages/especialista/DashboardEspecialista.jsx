@@ -119,14 +119,24 @@ function DonutChart({ data, size = 140 }) {
 }
 
 /* ── Barra de progreso horizontal con etiqueta ── */
-function BarraProgreso({ label, value, total, color, icon }) {
+function BarraProgreso({ label, value, total, color, icon, onClick, active }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   const [w, setW] = useState(0);
+  const [hover, setHover] = useState(false);
   useEffect(() => { const t = setTimeout(() => setW(pct), 200); return () => clearTimeout(t); }, [pct]);
   return (
-    <div style={{ marginBottom: "0.65rem" }}>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => onClick && setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        marginBottom: "0.65rem", cursor: onClick ? "pointer" : "default",
+        padding: onClick ? "0.3rem 0.4rem" : 0, margin: onClick ? "-0.3rem -0.4rem 0.35rem" : "0 0 0.65rem",
+        borderRadius: 8, background: active ? `${color}12` : hover ? `${color}08` : "transparent",
+        transition: "background 0.15s",
+      }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.3rem" }}>
-        <span style={{ fontSize: "0.75rem", color: "#374151", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+        <span style={{ fontSize: "0.75rem", color: active ? color : "#374151", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: active ? 700 : 600, display: "flex", alignItems: "center", gap: "0.3rem" }}>
           {icon} {label}
         </span>
         <span style={{ fontSize: "0.72rem", fontWeight: 700, color, fontFamily: "'Barlow Condensed', sans-serif" }}>
@@ -141,25 +151,35 @@ function BarraProgreso({ label, value, total, color, icon }) {
 }
 
 /* ── Mini gráfico de barras verticales (tendencia semanal) ── */
-function TendenciaBars({ data, color = "#8B5CF6" }) {
+function TendenciaBars({ data, color = "#8B5CF6", onBarClick, active }) {
   const max = Math.max(1, ...data.map(d => d.value));
   const [animated, setAnimated] = useState(false);
+  const [hover, setHover] = useState(null);
   useEffect(() => { const t = setTimeout(() => setAnimated(true), 150); return () => clearTimeout(t); }, []);
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: "0.5rem", height: 110, padding: "0 0.2rem" }}>
       {data.map((d, i) => {
         const h = animated ? Math.max(4, (d.value / max) * 88) : 0;
+        const isActive = active === d.key;
+        const isHover = hover === d.key;
+        const clickable = !!onBarClick && d.value > 0;
         return (
-          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3rem" }}>
-            <span style={{ fontSize: "0.66rem", fontWeight: 700, color: d.value > 0 ? color : "#D1D5DB", fontFamily: "'Barlow Condensed', sans-serif" }}>
+          <div key={i}
+            onClick={() => clickable && onBarClick(d.key)}
+            onMouseEnter={() => clickable && setHover(d.key)}
+            onMouseLeave={() => setHover(null)}
+            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3rem", cursor: clickable ? "pointer" : "default" }}>
+            <span style={{ fontSize: "0.66rem", fontWeight: 700, color: isActive || isHover ? color : d.value > 0 ? color : "#D1D5DB", fontFamily: "'Barlow Condensed', sans-serif" }}>
               {d.value > 0 ? d.value : ""}
             </span>
-            <div title={`${d.value} orden${d.value !== 1 ? "es" : ""}`} style={{
-              width: "100%", height: h, background: d.isHoy ? color : `${color}55`,
-              borderRadius: "4px 4px 2px 2px", transition: "height 0.6s cubic-bezier(.4,0,.2,1)",
-              minHeight: 4,
+            <div title={`${d.value} orden${d.value !== 1 ? "es" : ""}${clickable ? " · clic para filtrar" : ""}`} style={{
+              width: "100%", height: h,
+              background: isActive ? color : isHover ? color : d.isHoy ? color : `${color}55`,
+              borderRadius: "4px 4px 2px 2px", transition: "height 0.6s cubic-bezier(.4,0,.2,1), background 0.15s, transform 0.15s",
+              minHeight: 4, transform: isHover ? "scaleX(1.12)" : "scaleX(1)",
+              boxShadow: isActive ? `0 0 0 2px ${color}55` : "none",
             }} />
-            <span style={{ fontSize: "0.62rem", color: d.isHoy ? color : "#9CA3AF", fontWeight: d.isHoy ? 700 : 400, fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase" }}>
+            <span style={{ fontSize: "0.62rem", color: isActive ? color : d.isHoy ? color : "#9CA3AF", fontWeight: isActive || d.isHoy ? 700 : 400, fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase" }}>
               {d.label}
             </span>
           </div>
@@ -217,6 +237,8 @@ export default function DashboardEspecialista() {
   const [showNotif, setShowNotif]       = useState(false);
   const [busqueda, setBusqueda]         = useState("");
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
+  const [filtroDia, setFiltroDia]       = useState(null);
+  const [filtroExamen, setFiltroExamen] = useState(null);
   const [vistaOrdenes, setVista]        = useState("cards");
   const [ordenExpandida, setExpand]     = useState(null);
   const [horaActual, setHoraActual]     = useState(new Date());
@@ -294,7 +316,9 @@ export default function DashboardEspecialista() {
     const matchE = filtroEstado === "TODOS" || estadoEsp === filtroEstado;
     const q = busqueda.toLowerCase();
     const matchB = !q || `${o.numero_ticket || ""} ${o.paciente_nombre || ""}`.toLowerCase().includes(q);
-    return matchE && matchB;
+    const matchD = !filtroDia || String(o.fecha_orden || "").slice(0, 10) === filtroDia;
+    const matchX = !filtroExamen || (o.mis_examenes || []).some(e => e.nombre_examen === filtroExamen);
+    return matchE && matchB && matchD && matchX;
   });
 
   const saludoHora = () => {
@@ -519,6 +543,57 @@ export default function DashboardEspecialista() {
               </div>
             </div>
 
+            {/* ══ GRÁFICOS: TENDENCIA SEMANAL + EXÁMENES MÁS FRECUENTES ══ */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
+              <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
+                    📈 Tendencia · últimos 7 días
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    {filtroDia && (
+                      <span onClick={() => setFiltroDia(null)} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.25)", padding: "0.1rem 0.5rem", borderRadius: 20, fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                        Filtrando día ✕
+                      </span>
+                    )}
+                    <span style={{ fontSize: "0.7rem", color: "#9CA3AF" }}>
+                      {tendenciaSemana.reduce((s, d) => s + d.value, 0)} órdenes
+                    </span>
+                  </div>
+                </div>
+                <TendenciaBars
+                  data={tendenciaSemana}
+                  color="#8B5CF6"
+                  active={filtroDia}
+                  onBarClick={(key) => setFiltroDia(prev => prev === key ? null : key)}
+                />
+              </div>
+
+              <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem" }}>
+                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
+                    🧪 Exámenes más frecuentes
+                  </p>
+                  {filtroExamen && (
+                    <span onClick={() => setFiltroExamen(null)} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.25)", padding: "0.1rem 0.5rem", borderRadius: 20, fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                      ✕ Quitar filtro
+                    </span>
+                  )}
+                </div>
+                {examenesFrecuentes.length === 0 ? (
+                  <p style={{ fontSize: "0.78rem", color: "#9CA3AF", textAlign: "center", padding: "1.5rem 0" }}>Sin datos suficientes todavía</p>
+                ) : (
+                  examenesFrecuentes.map((e) => (
+                    <BarraProgreso
+                      key={e.nombre} label={e.nombre} value={e.cantidad} total={maxExamenFrecuente} color="#8B5CF6" icon="🧬"
+                      active={filtroExamen === e.nombre}
+                      onClick={() => setFiltroExamen(prev => prev === e.nombre ? null : e.nombre)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+
             {/* ══ ACCESOS RÁPIDOS ══ */}
             <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.4rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", marginBottom: "1.25rem" }}>
               <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 0.75rem" }}>Accesos rápidos</p>
@@ -543,34 +618,6 @@ export default function DashboardEspecialista() {
               </div>
             </div>
 
-            {/* ══ GRÁFICOS: TENDENCIA SEMANAL + EXÁMENES MÁS FRECUENTES ══ */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
-              <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
-                    📈 Tendencia · últimos 7 días
-                  </p>
-                  <span style={{ fontSize: "0.7rem", color: "#9CA3AF" }}>
-                    {tendenciaSemana.reduce((s, d) => s + d.value, 0)} órdenes
-                  </span>
-                </div>
-                <TendenciaBars data={tendenciaSemana} color="#8B5CF6" />
-              </div>
-
-              <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 0.85rem" }}>
-                  🧪 Exámenes más frecuentes
-                </p>
-                {examenesFrecuentes.length === 0 ? (
-                  <p style={{ fontSize: "0.78rem", color: "#9CA3AF", textAlign: "center", padding: "1.5rem 0" }}>Sin datos suficientes todavía</p>
-                ) : (
-                  examenesFrecuentes.map((e, i) => (
-                    <BarraProgreso key={e.nombre} label={e.nombre} value={e.cantidad} total={maxExamenFrecuente} color="#8B5CF6" icon="🧬" />
-                  ))
-                )}
-              </div>
-            </div>
-
             {/* ══ TABLA / CARDS DE ÓRDENES ══ */}
             <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.25rem 1.4rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
 
@@ -587,6 +634,20 @@ export default function DashboardEspecialista() {
                       onClick={() => setFiltroEstado("TODOS")}
                       style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: getMeta(filtroEstado).bg, color: getMeta(filtroEstado).color, border: `1px solid ${getMeta(filtroEstado).color}40`, padding: "0.12rem 0.55rem", borderRadius: 20, fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
                       {getMeta(filtroEstado).icon} {filtroEstado} ✕
+                    </span>
+                  )}
+                  {filtroDia && (
+                    <span
+                      onClick={() => setFiltroDia(null)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.25)", padding: "0.12rem 0.55rem", borderRadius: 20, fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                      📅 {fmt(filtroDia)} ✕
+                    </span>
+                  )}
+                  {filtroExamen && (
+                    <span
+                      onClick={() => setFiltroExamen(null)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.25)", padding: "0.12rem 0.55rem", borderRadius: 20, fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                      🧪 {filtroExamen} ✕
                     </span>
                   )}
                 </div>

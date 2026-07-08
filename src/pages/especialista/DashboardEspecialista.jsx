@@ -278,6 +278,10 @@ export default function DashboardEspecialista() {
     { label: "Validadas",   value: kpis.validadas,  color: "#10B981" },
   ].filter(d => d.value > 0);
 
+  // Tasa de aprobación: validadas vs (validadas + devueltas)
+  const baseAprobacion = kpis.validadas + kpis.devueltas;
+  const tasaAprobacion = baseAprobacion > 0 ? Math.round((kpis.validadas / baseAprobacion) * 100) : null;
+
   /* ── Notificaciones ── */
   const notifs = ordenes
     .filter(o => getEstadoEsp(o) === "Devuelto")
@@ -539,6 +543,30 @@ export default function DashboardEspecialista() {
                   </div>
                   <BarraProgreso label="Completados"  value={examenesHechos}                  total={totalExamenes} color="#10B981" icon="✅" />
                   <BarraProgreso label="Pendientes"   value={totalExamenes - examenesHechos}  total={totalExamenes} color="#F59E0B" icon="🔬" />
+                </div>
+
+                {/* Tasa de aprobación: validadas vs devueltas */}
+                <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.2rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", flex: 1 }}>
+                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.7rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 0.85rem" }}>
+                    Tasa de aprobación
+                  </p>
+                  {tasaAprobacion === null ? (
+                    <p style={{ fontSize: "0.75rem", color: "#9CA3AF", textAlign: "center", padding: "0.5rem 0" }}>Sin resultados validados o devueltos todavía</p>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "0.85rem" }}>
+                        <ProgressRing pct={tasaAprobacion} color={tasaAprobacion >= 80 ? "#10B981" : tasaAprobacion >= 50 ? "#F59E0B" : "#EF4444"} size={56} stroke={6} />
+                        <div>
+                          <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "1.6rem", fontWeight: 800, color: tasaAprobacion >= 80 ? "#059669" : tasaAprobacion >= 50 ? "#D97706" : "#DC2626", margin: 0, lineHeight: 1 }}>{tasaAprobacion}%</p>
+                          <p style={{ fontSize: "0.72rem", color: "#9CA3AF", margin: 0 }}>de tus resultados fueron aprobados</p>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "#6B7280" }}>
+                        <span>✅ {kpis.validadas} validados</span>
+                        <span>↩️ {kpis.devueltas} devueltos</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

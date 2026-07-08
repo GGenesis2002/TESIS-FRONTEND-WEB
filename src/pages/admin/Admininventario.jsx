@@ -409,6 +409,81 @@ function FormMovimiento({ insumo, onSave, onClose, onAlert }) {
 }
 
 // ─── FORMULARIO RECETA (multi-insumo) ────────────────────────────────────────
+// Select con buscador: input de texto que filtra una lista desplegable de opciones.
+// Se usa en lugar de <select> nativo cuando la lista puede ser larga (exámenes, insumos, etc).
+function SearchSelect({ value, onChange, options, getLabel, getValue, placeholder = "Buscar…", emptyText = "Sin resultados" }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onDocClick = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const seleccionado = options.find(o => String(getValue(o)) === String(value));
+  const filtradas = query.trim()
+    ? options.filter(o => getLabel(o).toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
+      <input
+        type="text"
+        style={{ ...finput, fontSize: "0.85rem", cursor: "pointer" }}
+        placeholder={placeholder}
+        value={open ? query : (seleccionado ? getLabel(seleccionado) : "")}
+        onChange={e => { setQuery(e.target.value); if (!open) setOpen(true); }}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+      />
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 50,
+          background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxHeight: "220px", overflowY: "auto",
+        }}>
+          <div
+            onClick={() => { onChange(""); setOpen(false); setQuery(""); }}
+            style={{
+              padding: "0.5rem 0.75rem", cursor: "pointer", fontFamily: "'Barlow', sans-serif",
+              fontSize: "0.82rem", color: "#9CA3AF", borderBottom: "1px solid #F1F5F9",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
+            onMouseLeave={e => e.currentTarget.style.background = "#FFF"}
+          >
+            -- Ninguno --
+          </div>
+          {filtradas.length === 0 ? (
+            <div style={{ padding: "0.6rem 0.75rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.8rem", color: "#D1D5DB" }}>
+              {emptyText}
+            </div>
+          ) : filtradas.map(o => (
+            <div
+              key={getValue(o)}
+              onClick={() => { onChange(getValue(o)); setOpen(false); setQuery(""); }}
+              style={{
+                padding: "0.5rem 0.75rem", cursor: "pointer", fontFamily: "'Barlow', sans-serif",
+                fontSize: "0.82rem", color: "#374151",
+                background: String(getValue(o)) === String(value) ? "#EFF6FF" : "#FFF",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
+              onMouseLeave={e => e.currentTarget.style.background = String(getValue(o)) === String(value) ? "#EFF6FF" : "#FFF"}
+            >
+              {getLabel(o)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FormReceta({ insumos, examenes, recetas = [], onSave, onClose, onAlert }) {
   const [idExamen, setIdExamen] = useState("");
   const [filas,    setFilas]    = useState([{ id_insumo: "", cantidad_usada: 1 }]);
@@ -502,12 +577,14 @@ function FormReceta({ insumos, examenes, recetas = [], onSave, onClose, onAlert 
       {/* Selector de examen */}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
         <label style={flabel}>Examen *</label>
-        <select style={finput} value={idExamen} onChange={e => handleCambiarExamen(e.target.value)}>
-          <option value="">-- Seleccionar examen --</option>
-          {examenes.map(e => (
-            <option key={e.id_examen} value={e.id_examen}>{e.nombre_examen}</option>
-          ))}
-        </select>
+        <SearchSelect
+          value={idExamen}
+          onChange={handleCambiarExamen}
+          options={examenes}
+          getValue={e => e.id_examen}
+          getLabel={e => e.nombre_examen}
+          placeholder="-- Seleccionar examen --"
+        />
       </div>
 
       {/* Resumen de insumos ya vinculados a este examen — editable */}
@@ -604,18 +681,15 @@ function FormReceta({ insumos, examenes, recetas = [], onSave, onClose, onAlert 
                 background: "#F8FAFC", borderRadius: "8px", padding: "0.45rem 0.6rem",
                 border: "1px solid #E2E8F0",
               }}>
-                <select
-                  style={{ ...finput, fontSize: "0.8rem", padding: "0.4rem 0.5rem" }}
+                <SearchSelect
                   value={fila.id_insumo}
-                  onChange={e => setFila(idx, "id_insumo", e.target.value)}
-                >
-                  <option value="">-- Insumo --</option>
-                  {disponibles(idx).map(i => (
-                    <option key={i.id_insumo} value={i.id_insumo}>
-                      {i.nombre} ({i.unidad_medida})
-                    </option>
-                  ))}
-                </select>
+                  onChange={valor => setFila(idx, "id_insumo", valor)}
+                  options={disponibles(idx)}
+                  getValue={i => i.id_insumo}
+                  getLabel={i => `${i.nombre} (${i.unidad_medida})`}
+                  placeholder="-- Insumo --"
+                  emptyText="No hay insumos disponibles"
+                />
 
                 <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
                   <input

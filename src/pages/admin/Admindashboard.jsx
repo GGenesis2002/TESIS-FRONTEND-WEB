@@ -70,6 +70,62 @@ function KpiCard({ icon, label, value, sub, accent, onClick }) {
   );
 }
 
+// ─── ARQUEO RÁPIDO DE CAJA (HOY) ───────────────────────────────────────────────
+// Tarjeta oscura estilo "asistente": trae su propio dato de /dashboard/arqueo-hoy
+// para mostrar Efectivo / Transferencia y el Total Recaudado del día.
+function ArqueoRapidoCard({ onClick }) {
+  const [caja, setCaja] = useState({ efectivo: 0, transferencia: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const hoyISO = new Date().toISOString().split("T")[0];
+    API.get(`/dashboard/arqueo-hoy?desde=${hoyISO}&hasta=${hoyISO}`)
+      .then((r) => {
+        setCaja({
+          efectivo: Number(r.data?.efectivo || 0),
+          transferencia: Number(r.data?.transferencia || 0),
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const total = caja.efectivo + caja.transferencia;
+
+  return (
+    <div
+      style={{ ...kpiCard, gridColumn: "span 2", background: "#1E293B", color: "#FFF", cursor: "pointer", border: "none" }}
+      onClick={onClick}
+      title="Ver detalle de ingresos y egresos"
+    >
+      <p style={{ ...kpiLabel, color: "#94A3B8", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.03em" }}>
+        💰 ARQUEO RÁPIDO DE CAJA (HOY)
+      </p>
+      <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.75rem" }}>
+        <div style={{ flex: 1, background: "#334155", borderRadius: "8px", padding: "0.6rem 0.8rem" }}>
+          <span style={{ fontSize: "0.85rem" }}>💵 Efectivo</span>
+          <p style={{ margin: "0.25rem 0 0", fontWeight: 800, fontSize: "1.1rem", color: caja.efectivo < 0 ? "#F87171" : "#FFF" }}>
+            {loading ? "—" : fmtMoney(caja.efectivo)}
+          </p>
+        </div>
+        <div style={{ flex: 1, background: "#334155", borderRadius: "8px", padding: "0.6rem 0.8rem" }}>
+          <span style={{ fontSize: "0.85rem" }}>🏦 Transf.</span>
+          <p style={{ margin: "0.25rem 0 0", fontWeight: 800, fontSize: "1.1rem", color: caja.transferencia < 0 ? "#F87171" : "#FFF" }}>
+            {loading ? "—" : fmtMoney(caja.transferencia)}
+          </p>
+        </div>
+      </div>
+      <div style={{ borderTop: "1px solid #334155", marginTop: "0.9rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
+        <span style={{ color: "#94A3B8" }}>Total Recaudado:</span>
+        <strong style={{ color: "#34D399" }}>{loading ? "—" : fmtMoney(total)}</strong>
+      </div>
+      <p style={{ margin: "0.6rem 0 0", fontSize: "0.72rem", color: "#94A3B8", textAlign: "center", fontFamily: "'Barlow', sans-serif" }}>
+        Ver detalle de ingresos y egresos →
+      </p>
+    </div>
+  );
+}
+
 // ─── BADGE ────────────────────────────────────────────────────────────────────
 function Badge({ estado }) {
   const map = {
@@ -1003,7 +1059,6 @@ export default function AdminDashboard() {
     { icon: "✅", label: "Completados",              value: fmt(k.completados),      accent: "#10B981" },
     { icon: "⚠️", label: "Resultados Críticos",     value: fmt(k.criticos),         accent: "#EF4444", onClick: () => openModal("criticos") },
     { icon: "👥", label: "Usuarios Activos Hoy",    value: fmt(k.activos),          accent: "#8B5CF6", onClick: () => openModal("usuarios") },
-    { icon: "💵", label: "Ingresos efectivo",                  value: fmtMoney(k.ingresos_hoy), accent: "#10B981", onClick: () => openModal("ingresos") },
     { icon: "📦", label: "Insumos con Stock Bajo",  value: fmt(k.stock_bajo),       accent: k.stock_bajo > 0 ? "#EF4444" : "#10B981", onClick: k.stock_bajo > 0 ? () => openModal("stockBajo") : undefined },
   ];
 
@@ -1037,7 +1092,8 @@ export default function AdminDashboard() {
 
       {/* ── KPIs ── */}
       <div style={kpiGrid}>
-        {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
+        {kpis.map((kp, i) => <KpiCard key={i} {...kp} />)}
+        <ArqueoRapidoCard onClick={() => openModal("ingresos")} />
       </div>
 
       {/* ── GRÁFICOS ── */}

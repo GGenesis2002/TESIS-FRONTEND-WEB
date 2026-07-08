@@ -101,7 +101,7 @@ function ArqueoRapidoCard({ onClick }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ flex: 1 }}>
           <p style={{ ...kpiLabel, color: "#94A3B8" }}>💰 Arqueo de Caja (Hoy)</p>
-          <p style={{ ...kpiValue, color: "#34D399" }}>{loading ? "—" : fmtMoney(total)} EFECTIVO</p>
+          <p style={{ ...kpiValue, color: "#34D399" }}>{loading ? "—" : fmtMoney(total)}</p>
           <p style={{ margin: "0.35rem 0 0", fontSize: "0.7rem", color: "#94A3B8", fontFamily: "'Barlow', sans-serif" }}>
             💵 {loading ? "—" : fmtMoney(caja.efectivo)} &nbsp;·&nbsp; 🏦 {loading ? "—" : fmtMoney(caja.transferencia)}
           </p>

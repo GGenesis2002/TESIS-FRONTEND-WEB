@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
 import API from "../../services/api";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -271,14 +271,15 @@ function FormInsumo({ initial, categorias, tiposMuestra = [], onSave, onClose, o
       <Field label="Descripción" value={f.descripcion} onChange={v => set("descripcion", v)}
         placeholder="Descripción del insumo…" rows={2} />
       <div style={grid2}>
-        <Field label="Stock Inicial" type="number" value={f.stock_actual}
+        <Field label={initial ? "Stock Actual" : "Stock Inicial"} type="number" value={f.stock_actual}
           onChange={v => set("stock_actual", +v)} disabled={!!initial} />
         <Field label="Stock Mínimo" type="number" value={f.stock_minimo}
           onChange={v => set("stock_minimo", +v)} />
       </div>
       {!!initial && (
         <p style={{ fontFamily: "'Barlow', sans-serif", fontSize: "0.75rem", color: "#9CA3AF", margin: 0 }}>
-          ℹ️ Para modificar el stock usa "Registrar Movimiento" desde la tabla.
+          📦 Stock inicial con el que se registró este insumo: <strong style={{ color: "#374151" }}>{initial.stock_inicial ?? initial.stock_actual}</strong> {f.unidad_medida}.
+          Este valor queda fijo como referencia; para modificar el stock actual usa "Registrar Movimiento" desde la tabla.
         </p>
       )}
       <div style={footerRow}>
@@ -927,7 +928,16 @@ export default function AdminInventario() {
   // ── PAGINACIÓN (slice por página, una por cada lista) ──────────────────────
   const paginar = (arr, page, size = PAGE_SIZE) => arr.slice((page - 1) * size, page * size);
 
-  const insumosPaginados = paginar(insumosFiltrados, insumosPage);
+  // Insumos ordenados por categoría (para que la tabla se vea agrupada/dividida
+  // visualmente por categoría, con un encabezado de sección para cada una)
+  const insumosOrdenados = [...insumosFiltrados].sort((a, b) => {
+    const catA = a.categoria_nombre || "\uFFFF"; // "Sin categoría" siempre al final
+    const catB = b.categoria_nombre || "\uFFFF";
+    if (catA !== catB) return catA.localeCompare(catB);
+    return (a.nombre || "").localeCompare(b.nombre || "");
+  });
+
+  const insumosPaginados = paginar(insumosOrdenados, insumosPage);
   const catsPaginadas    = paginar(catsFiltradas, catsPage);
   const tiposPaginados   = paginar(tiposFiltrados, tiposPage);
   const recetasPaginadas = paginar(recetasFiltradas, recetasPage);
@@ -1078,7 +1088,7 @@ export default function AdminInventario() {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "#F8FAFC" }}>
-                      {["Insumo", "Categoría", "Unidad", "Stock Actual", "Stock Mínimo", "Estado", "Tipo Muestra", "Acciones"].map(c => (
+                      {["Insumo", "Categoría", "Unidad", "Stock Inicial", "Stock Actual", "Stock Mínimo", "Estado", "Tipo Muestra", "Acciones"].map(c => (
                         <th key={c} style={th}>{c}</th>
                       ))}
                     </tr>
@@ -1086,48 +1096,78 @@ export default function AdminInventario() {
                   <tbody>
                     {insumosFiltrados.length === 0 ? (
                       <EmptyState icon="📦" title="Sin insumos" subtitle={getBuscar("insumos") || catFiltro !== "TODOS" || estadoFiltro !== "TODOS" ? "Ningún insumo coincide con los filtros" : "Usa '+ Nuevo Insumo' para registrar el primero"} />
-                    ) : insumosPaginados.map(ins => (
-                      <tr key={ins.id_insumo} style={{ borderBottom: "1px solid #F1F5F9" }}
-                        onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <td style={td}>
-                          <p style={{ margin: 0, fontWeight: 700, fontSize: "0.85rem", color: "#1F2937" }}>{ins.nombre}</p>
-                          {ins.descripcion && (
-                            <p style={{ margin: 0, fontSize: "0.72rem", color: "#9CA3AF" }}>
-                              {ins.descripcion.length > 45 ? ins.descripcion.slice(0, 45) + "…" : ins.descripcion}
-                            </p>
-                          )}
-                        </td>
-                        <td style={td}>{ins.categoria_nombre || <span style={{ color: "#D1D5DB" }}>—</span>}</td>
-                        <td style={td}>{ins.unidad_medida}</td>
-                        <td style={{
-                          ...td,
-                          fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.05rem",
-                          color: ins.stock_actual <= 0 ? "#EF4444" : ins.stock_actual <= ins.stock_minimo ? "#F59E0B" : "#1F2937",
-                        }}>{ins.stock_actual}</td>
-                        <td style={{ ...td, color: "#6B7280" }}>{ins.stock_minimo}</td>
-                        <td style={td}><StockBadge actual={ins.stock_actual} minimo={ins.stock_minimo} /></td>
-                        {/* Tipo de Muestra del insumo */}
-                        <td style={td}>
-                          {ins.tipos_muestra_nombres
-                            ? ins.tipos_muestra_nombres.split(",").map((t, i) => (
-                                <Chip key={i} bg="#EDE9FE" color="#5B21B6">{t.trim()}</Chip>
-                              ))
-                            : <span style={{ color: "#E5E7EB", fontSize: "0.75rem" }}>—</span>
-                          }
-                        </td>
-                        <td style={td}>
-                          <div style={{ display: "flex", gap: "0.4rem" }}>
-                            <IconBtn icon="⬆️" title="Registrar Entrada/Salida"
-                              onClick={() => { setSel(ins); setModal("movimiento"); }} color="#E88B3A" />
-                            <IconBtn icon="✏️" title="Editar insumo"
-                              onClick={() => { setSel(ins); setModal("editar"); }} color="#3B82F6" />
-                            <IconBtn icon="🗑️" title="Desactivar insumo"
-                              onClick={() => handleEliminar(ins)} color="#EF4444" />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    ) : (() => {
+                      let catAnterior = null;
+                      return insumosPaginados.map(ins => {
+                        const catActual = ins.categoria_nombre || "Sin categoría";
+                        const mostrarHeader = catActual !== catAnterior;
+                        catAnterior = catActual;
+                        return (
+                          <Fragment key={ins.id_insumo}>
+                            {/* Encabezado de sección: divide visualmente los insumos por categoría */}
+                            {mostrarHeader && (
+                              <tr>
+                                <td colSpan={99} style={{
+                                  padding: "0.5rem 0.9rem",
+                                  background: "#F1F5F9",
+                                  borderTop: "1px solid #E2E8F0",
+                                  borderBottom: "1px solid #E2E8F0",
+                                  fontFamily: "'Barlow Condensed', sans-serif",
+                                  fontWeight: 700, fontSize: "0.78rem",
+                                  color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em",
+                                }}>
+                                  🏷️ {catActual}
+                                </td>
+                              </tr>
+                            )}
+                            <tr style={{ borderBottom: "1px solid #F1F5F9" }}
+                              onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
+                              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                              <td style={td}>
+                                <p style={{ margin: 0, fontWeight: 700, fontSize: "0.85rem", color: "#1F2937" }}>{ins.nombre}</p>
+                                {ins.descripcion && (
+                                  <p style={{ margin: 0, fontSize: "0.72rem", color: "#9CA3AF" }}>
+                                    {ins.descripcion.length > 45 ? ins.descripcion.slice(0, 45) + "…" : ins.descripcion}
+                                  </p>
+                                )}
+                              </td>
+                              <td style={td}>{ins.categoria_nombre || <span style={{ color: "#D1D5DB" }}>—</span>}</td>
+                              <td style={td}>{ins.unidad_medida}</td>
+                              {/* Stock inicial: valor fijo con el que se registró el insumo, no cambia con los movimientos */}
+                              <td style={{ ...td, color: "#9CA3AF", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>
+                                {ins.stock_inicial ?? "—"}
+                              </td>
+                              <td style={{
+                                ...td,
+                                fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.05rem",
+                                color: ins.stock_actual <= 0 ? "#EF4444" : ins.stock_actual <= ins.stock_minimo ? "#F59E0B" : "#1F2937",
+                              }}>{ins.stock_actual}</td>
+                              <td style={{ ...td, color: "#6B7280" }}>{ins.stock_minimo}</td>
+                              <td style={td}><StockBadge actual={ins.stock_actual} minimo={ins.stock_minimo} /></td>
+                              {/* Tipo de Muestra del insumo */}
+                              <td style={td}>
+                                {ins.tipos_muestra_nombres
+                                  ? ins.tipos_muestra_nombres.split(",").map((t, i) => (
+                                      <Chip key={i} bg="#EDE9FE" color="#5B21B6">{t.trim()}</Chip>
+                                    ))
+                                  : <span style={{ color: "#E5E7EB", fontSize: "0.75rem" }}>—</span>
+                                }
+                              </td>
+                              <td style={td}>
+                                <div style={{ display: "flex", gap: "0.4rem" }}>
+                                  <IconBtn icon="⬆️" title="Registrar Entrada/Salida"
+                                    onClick={() => { setSel(ins); setModal("movimiento"); }} color="#E88B3A" />
+                                  <IconBtn icon="✏️" title="Editar insumo"
+                                    onClick={() => { setSel(ins); setModal("editar"); }} color="#3B82F6" />
+                                  <IconBtn icon="🗑️" title="Desactivar insumo"
+                                    onClick={() => handleEliminar(ins)} color="#EF4444" />
+                                </div>
+                              </td>
+                            </tr>
+                          </Fragment>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>

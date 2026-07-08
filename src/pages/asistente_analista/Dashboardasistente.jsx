@@ -65,7 +65,15 @@ export default function DashboardAsistente() {
   };
   
   // Datos simulados de negocio avanzados (Finanzas y alertas críticas de muestras)
-  const [cajaDelDia, setCajaDelDia] = useState({ efectivo: 0, transferencia: 0 });
+  const [cajaDelDia, setCajaDelDia] = useState({
+    efectivo: 0, transferencia: 0,
+    // Detalle de la cascada (cobrado/reembolsado por método), para el modal expandible.
+    // El backend de /dashboard/arqueo-hoy debe devolver estos campos por separado
+    // (nunca restar reembolsos de un método al total de otro método).
+    efectivoCobrado: 0, efectivoReembolsado: 0,
+    transferenciaCobrada: 0, transferenciaReembolsada: 0,
+    movimientos: [], // [{usuario, tipo: "cobro"|"reembolso", metodo, monto, hora, ticket}]
+  });
   
 
   // Valores del Filtro de Reportes
@@ -84,10 +92,19 @@ export default function DashboardAsistente() {
         if (resDash.data) setData(resDash.data);
         
         if (resCaja.data) {
-            // Convertimos los strings a números aquí mismo
+            // Convertimos los strings a números aquí mismo.
+            // IMPORTANTE: efectivo/transferencia deben venir del backend ya netos
+            // (cobrado_del_metodo − reembolsado_del_MISMO_metodo). Si el backend
+            // resta reembolsos de un método al total de otro método, este valor
+            // sale negativo aunque el sistema esté correcto (ver detalle abajo).
             setCajaDelDia({
                 efectivo: Number(resCaja.data.efectivo || 0),
-                transferencia: Number(resCaja.data.transferencia || 0)
+                transferencia: Number(resCaja.data.transferencia || 0),
+                efectivoCobrado: Number(resCaja.data.efectivo_cobrado ?? resCaja.data.efectivoCobrado ?? 0),
+                efectivoReembolsado: Number(resCaja.data.efectivo_reembolsado ?? resCaja.data.efectivoReembolsado ?? 0),
+                transferenciaCobrada: Number(resCaja.data.transferencia_cobrada ?? resCaja.data.transferenciaCobrada ?? 0),
+                transferenciaReembolsada: Number(resCaja.data.transferencia_reembolsada ?? resCaja.data.transferenciaReembolsada ?? 0),
+                movimientos: Array.isArray(resCaja.data.movimientos) ? resCaja.data.movimientos : []
             });
         }
     } catch (err) {
@@ -230,6 +247,11 @@ export default function DashboardAsistente() {
         <OrdenesTabla lista={ordenesFiltradasModal(ordenesListas, true)} getColorByEstado={getColorByEstado} />
       </Modal>
 
+      <Modal open={modal === "arqueo"} onClose={closeModal}
+        title="💰 Arqueo Rápido de Caja" subtitle="Detalle de ingresos y egresos del turno de hoy">
+        <ArqueoDetalle caja={cajaDelDia} />
+      </Modal>
+
       <Modal open={modal === "pacientes"} onClose={closeModal}
         title="👤 Pacientes Registrados" subtitle={`${(data.pacientesRecientes || []).length} pacientes más recientes`}>
         <input style={c.inputSearch} placeholder="🔍 Buscar por nombre o ID…"
@@ -357,24 +379,32 @@ export default function DashboardAsistente() {
         {/* COLUMNA DERECHA: CAJA DEL DÍA, PACIENTES Y COMPONENTES NUEVOS */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           
-          {/* NUEVA FUNCIÓN 2: CONTROL Y AUDITORÍA RÁPIDA DE CAJA */}
-          <div style={{ ...c.section, background: "#1E293B", color: "#FFF" }}>
+          {/* NUEVA FUNCIÓN 2: CONTROL Y AUDITORÍA RÁPIDA DE CAJA (clickeable → detalle) */}
+          <div
+            style={{ ...c.section, background: "#1E293B", color: "#FFF", cursor: "pointer" }}
+            onClick={() => setModal("arqueo")}
+            title="Ver detalle de ingresos y egresos"
+          >
             <h3 style={{ ...c.sTitle, color: "#FFF" }}>💰 Arqueo Rápido de Caja (Hoy)</h3>
             <div style={c.cajaFlex}>
               <div style={c.cajaItem}>
                 <span>💵 Efectivo</span>
-                <strong>${cajaDelDia.efectivo.toFixed(2)}</strong>
+                <strong style={{ color: cajaDelDia.efectivo < 0 ? "#F87171" : "#FFF" }}>
+                  ${cajaDelDia.efectivo.toFixed(2)}
+                </strong>
               </div>
               <div style={c.cajaItem}>
                 <span>🏦 Transf.</span>
-                <strong>${cajaDelDia.transferencia.toFixed(2)}</strong>
+                <strong style={{ color: cajaDelDia.transferencia < 0 ? "#F87171" : "#FFF" }}>
+                  ${cajaDelDia.transferencia.toFixed(2)}
+                </strong>
               </div>
-              
             </div>
             <div style={{ borderTop: "1px solid #334155", marginTop: "1rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
               <span style={{ color: "#94A3B8" }}>Total Recaudado:</span>
               <strong style={{ color: "#34D399" }}>${(cajaDelDia.efectivo + cajaDelDia.transferencia).toFixed(2)}</strong>
             </div>
+            <p style={{ ...c.kpiVerMas, color: "#94A3B8", textAlign: "center" }}>Ver detalle de ingresos y egresos →</p>
           </div>
 
           {/* Listado de Últimos Pacientes */}
@@ -442,6 +472,90 @@ export default function DashboardAsistente() {
         </div>
       </div>
 
+    </div>
+  );
+}
+
+// Fila de la cascada: signo (+ / − / =) junto al concepto, para ver claramente
+// qué se suma, qué se resta y a qué resultado se llega (igual criterio que en Módulo de Caja).
+function FilaCascadaDash({ signo, label, value, bold, color }) {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "baseline",
+      padding: bold ? "0.5rem 0 0" : "0.3rem 0",
+      fontWeight: bold ? 800 : 500,
+      fontSize: bold ? "0.95rem" : "0.85rem",
+      color: color || "#374151",
+    }}>
+      <span style={{ display: "flex", gap: "0.4rem" }}>
+        {signo && <span style={{ color: "#9CA3AF", fontWeight: 700, width: "0.9rem" }}>{signo}</span>}
+        <span style={bold ? { textTransform: "uppercase", letterSpacing: "0.03em" } : undefined}>{label}</span>
+      </span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+// Detalle expandible del Arqueo Rápido de Caja: separa Efectivo y Transferencia,
+// mostrando cobrado − reembolsado = neto por cada método (no mezclados entre sí),
+// y el listado de movimientos (ingresos/egresos) con el usuario que los registró.
+function ArqueoDetalle({ caja }) {
+  const efCobrado = Number(caja.efectivoCobrado || 0);
+  const efReembolsado = Number(caja.efectivoReembolsado || 0);
+  const transCobrado = Number(caja.transferenciaCobrada || 0);
+  const transReembolsado = Number(caja.transferenciaReembolsada || 0);
+  const sinDetalle = !efCobrado && !efReembolsado && !transCobrado && !transReembolsado;
+
+  return (
+    <div>
+      {sinDetalle ? (
+        <p style={c.emptyState}>
+          El backend todavía no envía el detalle de cobrado/reembolsado por método
+          para <code>/dashboard/arqueo-hoy</code>. Se muestra solo el neto: Efectivo $
+          {caja.efectivo.toFixed(2)}, Transferencia ${caja.transferencia.toFixed(2)}.
+        </p>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+          <div style={{ background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E5E7EB", padding: "1rem 1.1rem" }}>
+            <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.4rem" }}>💵 Efectivo</p>
+            <FilaCascadaDash signo="+" label="Cobrado" value={`$${efCobrado.toFixed(2)}`} color="#10B981" />
+            <FilaCascadaDash signo="−" label="Reembolsado" value={`$${efReembolsado.toFixed(2)}`} color="#EF4444" />
+            <div style={{ borderTop: "1px dashed #E5E7EB", marginTop: "0.2rem" }} />
+            <FilaCascadaDash signo="=" label="Neto" value={`$${(efCobrado - efReembolsado).toFixed(2)}`} bold color="#E88B3A" />
+          </div>
+          <div style={{ background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E5E7EB", padding: "1rem 1.1rem" }}>
+            <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.4rem" }}>🏦 Transferencia</p>
+            <FilaCascadaDash signo="+" label="Cobrada" value={`$${transCobrado.toFixed(2)}`} color="#3B82F6" />
+            <FilaCascadaDash signo="−" label="Reembolsada" value={`$${transReembolsado.toFixed(2)}`} color="#EF4444" />
+            <div style={{ borderTop: "1px dashed #E5E7EB", marginTop: "0.2rem" }} />
+            <FilaCascadaDash signo="=" label="Neto" value={`$${(transCobrado - transReembolsado).toFixed(2)}`} bold color="#E88B3A" />
+          </div>
+        </div>
+      )}
+
+      <h4 style={{ fontSize: "0.8rem", fontWeight: 700, color: "#6B7280", textTransform: "uppercase", margin: "0.75rem 0 0.5rem" }}>
+        Movimientos del turno
+      </h4>
+      {(!caja.movimientos || caja.movimientos.length === 0) ? (
+        <p style={c.emptyState}>No hay movimientos detallados disponibles todavía.</p>
+      ) : (
+        <div style={c.scrollList}>
+          {caja.movimientos.map((m, i) => (
+            <div key={i} style={c.logRow}>
+              <div style={{ ...c.avatarCircle, background: m.tipo === "reembolso" ? "#EF4444" : "#10B981" }}>
+                {m.tipo === "reembolso" ? "−" : "+"}
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={c.logName}>{m.usuario || "Usuario N/D"} · {m.metodo || "—"}</p>
+                <p style={c.logSub}>{m.ticket ? `Ticket ${m.ticket} · ` : ""}{m.hora || ""}</p>
+              </div>
+              <strong style={{ color: m.tipo === "reembolso" ? "#EF4444" : "#10B981" }}>
+                {m.tipo === "reembolso" ? "−" : "+"}${Number(m.monto || 0).toFixed(2)}
+              </strong>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

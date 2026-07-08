@@ -486,21 +486,75 @@ export default function DashboardEspecialista() {
             )}
 
             {/* ══ FILA SUPERIOR: KPIs + DONA + PROGRESO ══ */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", marginBottom: "0", alignItems: "start" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", marginBottom: "1.25rem", alignItems: "start" }}>
 
-              {/* KPIs 2x2 */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.9rem" }}>
-                {[
-                  { icon: "🔬", label: "En Proceso",  value: kpis.enProceso,  color: "#3B82F6", desc: "Con resultados activos",  max: total, filtro: "En Proceso" },
-                  { icon: "↩️", label: "Devueltas",   value: kpis.devueltas,  color: "#EF4444", desc: "Requieren corrección",    max: total, filtro: "Devuelto"   },
-                  { icon: "⏳", label: "Por Validar", value: kpis.porValidar, color: "#8B5CF6", desc: "Enviadas, en revisión",   max: total, filtro: "Por Validar"},
-                  { icon: "✅", label: "Validadas",   value: kpis.validadas,  color: "#10B981", desc: "Completadas y publicadas", max: total, filtro: "Validado"  },
-                ].map((k, i) => (
-                  <KpiCard key={k.label} {...k} delay={i * 60} anim={animKpis}
-                    active={filtroEstado === k.filtro}
-                    onClick={() => setFiltroEstado(prev => prev === k.filtro ? "TODOS" : k.filtro)}
-                  />
-                ))}
+              {/* Columna izquierda: KPIs arriba, Tendencia + Exámenes abajo */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                {/* KPIs 2x2 */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.9rem" }}>
+                  {[
+                    { icon: "🔬", label: "En Proceso",  value: kpis.enProceso,  color: "#3B82F6", desc: "Con resultados activos",  max: total, filtro: "En Proceso" },
+                    { icon: "↩️", label: "Devueltas",   value: kpis.devueltas,  color: "#EF4444", desc: "Requieren corrección",    max: total, filtro: "Devuelto"   },
+                    { icon: "⏳", label: "Por Validar", value: kpis.porValidar, color: "#8B5CF6", desc: "Enviadas, en revisión",   max: total, filtro: "Por Validar"},
+                    { icon: "✅", label: "Validadas",   value: kpis.validadas,  color: "#10B981", desc: "Completadas y publicadas", max: total, filtro: "Validado"  },
+                  ].map((k, i) => (
+                    <KpiCard key={k.label} {...k} delay={i * 60} anim={animKpis}
+                      active={filtroEstado === k.filtro}
+                      onClick={() => setFiltroEstado(prev => prev === k.filtro ? "TODOS" : k.filtro)}
+                    />
+                  ))}
+                </div>
+
+                {/* ══ GRÁFICOS: TENDENCIA SEMANAL + EXÁMENES MÁS FRECUENTES ══ */}
+                <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "1rem", flex: 1 }}>
+                  <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
+                        📈 Tendencia · últimos 7 días
+                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        {filtroDia && (
+                          <span onClick={() => setFiltroDia(null)} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.25)", padding: "0.1rem 0.5rem", borderRadius: 20, fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                            Filtrando día ✕
+                          </span>
+                        )}
+                        <span style={{ fontSize: "0.7rem", color: "#9CA3AF" }}>
+                          {tendenciaSemana.reduce((s, d) => s + d.value, 0)} órdenes
+                        </span>
+                      </div>
+                    </div>
+                    <TendenciaBars
+                      data={tendenciaSemana}
+                      color="#8B5CF6"
+                      active={filtroDia}
+                      onBarClick={(key) => setFiltroDia(prev => prev === key ? null : key)}
+                    />
+                  </div>
+
+                  <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem" }}>
+                      <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
+                        🧪 Exámenes más frecuentes
+                      </p>
+                      {filtroExamen && (
+                        <span onClick={() => setFiltroExamen(null)} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.25)", padding: "0.1rem 0.5rem", borderRadius: 20, fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
+                          ✕ Quitar filtro
+                        </span>
+                      )}
+                    </div>
+                    {examenesFrecuentes.length === 0 ? (
+                      <p style={{ fontSize: "0.78rem", color: "#9CA3AF", textAlign: "center", padding: "1.5rem 0" }}>Sin datos suficientes todavía</p>
+                    ) : (
+                      examenesFrecuentes.map((e) => (
+                        <BarraProgreso
+                          key={e.nombre} label={e.nombre} value={e.cantidad} total={maxExamenFrecuente} color="#8B5CF6" icon="🧬"
+                          active={filtroExamen === e.nombre}
+                          onClick={() => setFiltroExamen(prev => prev === e.nombre ? null : e.nombre)}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Panel derecho: dona + progreso global */}
@@ -568,57 +622,6 @@ export default function DashboardEspecialista() {
                     </>
                   )}
                 </div>
-              </div>
-            </div>
-
-            {/* ══ GRÁFICOS: TENDENCIA SEMANAL + EXÁMENES MÁS FRECUENTES ══ */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
-              <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
-                    📈 Tendencia · últimos 7 días
-                  </p>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    {filtroDia && (
-                      <span onClick={() => setFiltroDia(null)} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.25)", padding: "0.1rem 0.5rem", borderRadius: 20, fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
-                        Filtrando día ✕
-                      </span>
-                    )}
-                    <span style={{ fontSize: "0.7rem", color: "#9CA3AF" }}>
-                      {tendenciaSemana.reduce((s, d) => s + d.value, 0)} órdenes
-                    </span>
-                  </div>
-                </div>
-                <TendenciaBars
-                  data={tendenciaSemana}
-                  color="#8B5CF6"
-                  active={filtroDia}
-                  onBarClick={(key) => setFiltroDia(prev => prev === key ? null : key)}
-                />
-              </div>
-
-              <div style={{ background: "#FFF", borderRadius: 14, border: "1px solid #F1F5F9", padding: "1.1rem 1.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem" }}>
-                  <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>
-                    🧪 Exámenes más frecuentes
-                  </p>
-                  {filtroExamen && (
-                    <span onClick={() => setFiltroExamen(null)} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "rgba(139,92,246,0.1)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.25)", padding: "0.1rem 0.5rem", borderRadius: 20, fontSize: "0.65rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif" }}>
-                      ✕ Quitar filtro
-                    </span>
-                  )}
-                </div>
-                {examenesFrecuentes.length === 0 ? (
-                  <p style={{ fontSize: "0.78rem", color: "#9CA3AF", textAlign: "center", padding: "1.5rem 0" }}>Sin datos suficientes todavía</p>
-                ) : (
-                  examenesFrecuentes.map((e) => (
-                    <BarraProgreso
-                      key={e.nombre} label={e.nombre} value={e.cantidad} total={maxExamenFrecuente} color="#8B5CF6" icon="🧬"
-                      active={filtroExamen === e.nombre}
-                      onClick={() => setFiltroExamen(prev => prev === e.nombre ? null : e.nombre)}
-                    />
-                  ))
-                )}
               </div>
             </div>
 

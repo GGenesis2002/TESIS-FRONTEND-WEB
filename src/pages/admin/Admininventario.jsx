@@ -779,7 +779,7 @@ export default function AdminInventario() {
   const [uaModalRechazo,  setUaModalRechazo]  = useState(null);
   const [uaMotivoRechazo, setUaMotivoRechazo] = useState("");
   const [uaFiltro,        setUaFiltro]        = useState("todos");
-  const [tab,       setTab]       = useState("insumos");
+  const [tab,       setTab]       = useState("tipos");
   const [buscar,    setBuscar]    = useState({ insumos: "", categorias: "", recetas: "", movimientos: "", tipos: "", alertas: "" });
   const [modal,     setModal]     = useState(null);
   const [sel,       setSel]       = useState(null);

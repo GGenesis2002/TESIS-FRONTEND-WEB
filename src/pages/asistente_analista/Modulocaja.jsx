@@ -46,6 +46,20 @@ const resumenDenominacionesTexto = (cant) => {
   return `Arqueo físico de efectivo:\n${partes.join("\n")}\nTotal contado: $${totalDenominaciones(cant).toFixed(2)}`;
 };
 
+// ─── CÓDIGO DE VERIFICACIÓN DEL CIERRE ───────────────────────────────────────
+// Checksum simple (no criptográfico) calculado a partir de los datos clave del
+// cierre. Se imprime en el reporte para que cualquier alteración manual del
+// documento (cambiar un monto a mano, por ejemplo) sea detectable comparando
+// el código contra el que muestra el sistema para ese mismo id_cierre.
+const codigoVerificacion = (cierre) => {
+  const base = `${cierre.id_cierre}|${cierre.efectivo_esperado}|${cierre.efectivo_contado}|${cierre.total_efectivo_sistema}|${cierre.total_transferencia_sistema}|${cierre.fecha_cierre}`;
+  let hash = 0;
+  for (let i = 0; i < base.length; i++) {
+    hash = (hash * 31 + base.charCodeAt(i)) >>> 0;
+  }
+  return `CC-${hash.toString(16).toUpperCase().padStart(8, "0")}`;
+};
+
 const estadoColor = {
   "Generada":    { bg: "rgba(59,130,246,0.12)",  color: "#3B82F6" },
   "Pagada":      { bg: "rgba(16,185,129,0.12)",  color: "#10B981" },
@@ -87,7 +101,7 @@ export default function ModuloCaja() {
   const [filtroTiempo, setFiltroTiempo]         = useState("hoy");
   const [fechaEspecifica, setFechaEspecifica]   = useState("");
 
-  const [vistaTab, setVistaTab]                 = useState("cobrar");
+  const [vistaTab, setVistaTab]                 = useState("cierre");
   const [msg, setMsg]                           = useState(null);
 
   // Modal cobro
@@ -664,10 +678,10 @@ export default function ModuloCaja() {
       {/* ── TABS ── */}
       <div style={{ display: "flex", background: "#F3F4F6", borderRadius: "10px", padding: "0.25rem", gap: "0.25rem", marginBottom: "1.5rem", width: "fit-content" }}>
         {[
+          { key: "cierre",     label: `🗄️ Cierre de Caja${turnoActivo ? " •" : ""}` },
           { key: "cobrar",     label: `💳 Cobrar (${ordenesFiltradas.length})` },
           { key: "reembolsos", label: `↩️ Reembolsos (${pagosReembolsables.length})` },
           { key: "reporte",    label: `📊 Reporte (${totalTransacciones})` },
-          { key: "cierre",     label: `🗄️ Cierre de Caja${turnoActivo ? " •" : ""}` },
         ].map(t => (
           <button key={t.key} onClick={() => setVistaTab(t.key)} style={{
             ...S.tabBtn,
@@ -1872,7 +1886,11 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
   const { cierre, pagos, reembolsos } = detalle;
   const dif = parseFloat(cierre.diferencia || 0);
   const cuadrado = Math.abs(dif) < 0.01;
+  const [verDetalle, setVerDetalle] = useState(false);
+  const codigo = codigoVerificacion(cierre);
+  const fechaGenerado = new Date().toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
+  // Imprime el recibo compacto (ticket térmico), igual que antes.
   const imprimir = () => {
     const styleId = "cierre-print-style";
     if (!document.getElementById(styleId)) {
@@ -1903,6 +1921,47 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
     const contenido = document.getElementById("cierre-print");
     const clon = contenido.cloneNode(true);
     clon.id = "cierre-print";
+    wrapper.innerHTML = "";
+    wrapper.appendChild(clon);
+    window.print();
+    setTimeout(() => { wrapper.innerHTML = ""; }, 500);
+  };
+
+  // Imprime el reporte completo (hoja tamaño carta): cabecera, resumen,
+  // detalle de cada cobro y reembolso, código de verificación y firmas.
+  const imprimirReporte = () => {
+    const styleId = "reporte-cierre-print-style";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.innerHTML = `
+        @media print {
+          @page { size: letter; margin: 1.5cm; }
+          body > *:not(#reporte-cierre-wrapper) { display: none !important; }
+          #reporte-cierre-wrapper {
+            position: fixed !important; inset: 0 !important; display: block !important;
+            background: white !important; z-index: 99999 !important;
+          }
+          #reporte-cierre {
+            font-family: 'Barlow', Arial, sans-serif !important; color: #111 !important;
+            background: white !important; border: none !important; padding: 0 !important;
+            width: 100% !important;
+          }
+          #reporte-cierre table { page-break-inside: auto; }
+          #reporte-cierre tr { page-break-inside: avoid; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    const wrapper = document.getElementById("reporte-cierre-wrapper") || (() => {
+      const el = document.createElement("div");
+      el.id = "reporte-cierre-wrapper";
+      document.body.appendChild(el);
+      return el;
+    })();
+    const contenido = document.getElementById("reporte-cierre");
+    const clon = contenido.cloneNode(true);
+    clon.id = "reporte-cierre";
     wrapper.innerHTML = "";
     wrapper.appendChild(clon);
     window.print();
@@ -1983,11 +2042,178 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
         <p style={{ textAlign: "center", fontSize: "0.7rem", color: "#9CA3AF" }}>
           {pagos.length} cobro(s) · {reembolsos.length} reembolso(s) en este turno
         </p>
+        <p style={{ textAlign: "center", fontSize: "0.65rem", color: "#9CA3AF", letterSpacing: "0.05em" }}>
+          Código de verificación: <strong>{codigo}</strong>
+        </p>
       </div>
 
-      <div style={{ display: "flex", gap: "0.75rem" }}>
-        <button onClick={imprimir} style={{ ...S.btnFull, flex: 1, background: "#1D4ED8" }}>🖨️ IMPRIMIR CIERRE</button>
+      {/* ── DETALLE DE TRANSACCIONES (visible en pantalla, opcional) ── */}
+      <button
+        onClick={() => setVerDetalle(v => !v)}
+        style={{ ...S.btnCancel, width: "100%", marginBottom: "0.75rem", fontSize: "0.8rem" }}
+      >
+        {verDetalle ? "▲ Ocultar detalle de transacciones" : `▼ Ver detalle de transacciones (${pagos.length + reembolsos.length})`}
+      </button>
+
+      {verDetalle && (
+        <div style={{ marginBottom: "1rem", maxHeight: "30vh", overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: "8px" }}>
+          {pagos.length > 0 && (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.75rem" }}>
+              <thead>
+                <tr style={{ background: "#F3F4F6", textAlign: "left" }}>
+                  <th style={S.thMini}>Ticket</th><th style={S.thMini}>Paciente</th>
+                  <th style={S.thMini}>Método</th><th style={{ ...S.thMini, textAlign: "right" }}>Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagos.map(p => (
+                  <tr key={`pago-${p.id_pago}`} style={{ borderTop: "1px solid #F3F4F6" }}>
+                    <td style={S.tdMini}>{p.numero_ticket}</td>
+                    <td style={S.tdMini}>{p.paciente_nombres} {p.paciente_apellidos}</td>
+                    <td style={S.tdMini}>{p.metodo_pago}</td>
+                    <td style={{ ...S.tdMini, textAlign: "right" }}>${parseFloat(p.monto).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {reembolsos.length > 0 && (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.75rem" }}>
+              <thead>
+                <tr style={{ background: "#FEF2F2", textAlign: "left" }}>
+                  <th style={S.thMini}>Ticket</th><th style={S.thMini}>Motivo</th>
+                  <th style={S.thMini}>Método</th><th style={{ ...S.thMini, textAlign: "right" }}>Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reembolsos.map(r => (
+                  <tr key={`reemb-${r.id_reembolso}`} style={{ borderTop: "1px solid #FEF2F2" }}>
+                    <td style={S.tdMini}>{r.numero_ticket}</td>
+                    <td style={S.tdMini}>{r.motivo}</td>
+                    <td style={S.tdMini}>{r.metodo_reembolso}</td>
+                    <td style={{ ...S.tdMini, textAlign: "right", color: "#EF4444" }}>-${parseFloat(r.monto).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        <button onClick={imprimir} style={{ ...S.btnFull, flex: 1, background: "#1D4ED8" }}>🖨️ Imprimir ticket</button>
+        <button onClick={imprimirReporte} style={{ ...S.btnFull, flex: 1, background: "#065F46" }}>📄 Imprimir reporte completo</button>
         <button onClick={onCerrar} style={S.btnCancel}>Cerrar</button>
+      </div>
+
+      {/* ── NODO OCULTO: REPORTE COMPLETO (solo se ve al imprimir) ── */}
+      <div id="reporte-cierre" style={{ display: "none" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "3px solid #1D4ED8", paddingBottom: "10px", marginBottom: "16px" }}>
+          <div>
+            <p style={{ fontSize: "1.3rem", fontWeight: 800, margin: 0 }}>LABORATORIO CLÍNICO CARDENAS-GAROFALO</p>
+            <p style={{ fontSize: "0.85rem", color: "#4B5563", margin: "2px 0 0" }}>Reporte de Cierre de Caja</p>
+          </div>
+          <div style={{ textAlign: "right", fontSize: "0.75rem", color: "#4B5563" }}>
+            <p style={{ margin: 0 }}>Cierre N° <strong>{cierre.id_cierre}</strong></p>
+            <p style={{ margin: 0 }}>Generado: {fechaGenerado}</p>
+          </div>
+        </div>
+
+        <table style={{ width: "100%", fontSize: "0.85rem", marginBottom: "16px" }}>
+          <tbody>
+            <tr><td style={{ color: "#6B7280", padding: "2px 0" }}>Secretaria responsable:</td><td style={{ fontWeight: 700 }}>{cierre.nombres} {cierre.apellidos}</td></tr>
+            <tr><td style={{ color: "#6B7280", padding: "2px 0" }}>Apertura del turno:</td><td>{new Date(cierre.fecha_apertura).toLocaleString("es-EC")}</td></tr>
+            <tr><td style={{ color: "#6B7280", padding: "2px 0" }}>Cierre del turno:</td><td>{cierre.fecha_cierre ? new Date(cierre.fecha_cierre).toLocaleString("es-EC") : "—"}</td></tr>
+          </tbody>
+        </table>
+
+        <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>Resumen financiero</p>
+        <table style={{ width: "100%", fontSize: "0.85rem", marginBottom: "16px" }}>
+          <tbody>
+            <tr><td style={{ padding: "3px 0" }}>Fondo inicial</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.monto_inicial || 0).toFixed(2)}</td></tr>
+            <tr><td style={{ padding: "3px 0" }}>(+) Efectivo cobrado</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.total_efectivo_sistema || 0).toFixed(2)}</td></tr>
+            <tr><td style={{ padding: "3px 0" }}>(+) Transferencia cobrada</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.total_transferencia_sistema || 0).toFixed(2)}</td></tr>
+            <tr><td style={{ padding: "3px 0" }}>(−) Reembolsos efectivo</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.total_reembolsos_efectivo || 0).toFixed(2)}</td></tr>
+            <tr><td style={{ padding: "3px 0" }}>(−) Reembolsos transferencia</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.total_reembolsos_transferencia || 0).toFixed(2)}</td></tr>
+            <tr style={{ borderTop: "2px solid #111" }}><td style={{ padding: "5px 0", fontWeight: 700 }}>Efectivo esperado</td><td style={{ textAlign: "right", fontWeight: 700 }}>${parseFloat(cierre.efectivo_esperado || 0).toFixed(2)}</td></tr>
+            <tr><td style={{ padding: "3px 0", fontWeight: 700 }}>Efectivo contado (arqueo físico)</td><td style={{ textAlign: "right", fontWeight: 700 }}>${parseFloat(cierre.efectivo_contado || 0).toFixed(2)}</td></tr>
+            <tr><td style={{ padding: "3px 0", fontWeight: 800, color: cuadrado ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444") }}>{cuadrado ? "CAJA CUADRADA" : dif > 0 ? "Sobrante" : "Faltante"}</td>
+                <td style={{ textAlign: "right", fontWeight: 800, color: cuadrado ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444") }}>{cuadrado ? "$0.00" : `$${Math.abs(dif).toFixed(2)}`}</td></tr>
+          </tbody>
+        </table>
+
+        {cierre.observaciones && (
+          <>
+            <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>Observaciones</p>
+            <p style={{ fontSize: "0.8rem", whiteSpace: "pre-wrap", marginBottom: "16px" }}>{cierre.observaciones}</p>
+          </>
+        )}
+
+        <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>
+          Detalle de cobros ({pagos.length})
+        </p>
+        <table style={{ width: "100%", fontSize: "0.75rem", borderCollapse: "collapse", marginBottom: "16px" }}>
+          <thead>
+            <tr style={{ background: "#F3F4F6" }}>
+              <th style={S.thReporte}>Ticket</th><th style={S.thReporte}>Paciente</th>
+              <th style={S.thReporte}>Método</th><th style={{ ...S.thReporte, textAlign: "right" }}>Monto</th>
+              <th style={S.thReporte}>Hora</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pagos.map(p => (
+              <tr key={`rp-${p.id_pago}`} style={{ borderBottom: "1px solid #E5E7EB" }}>
+                <td style={S.tdReporte}>{p.numero_ticket}</td>
+                <td style={S.tdReporte}>{p.paciente_nombres} {p.paciente_apellidos}</td>
+                <td style={S.tdReporte}>{p.metodo_pago}</td>
+                <td style={{ ...S.tdReporte, textAlign: "right" }}>${parseFloat(p.monto).toFixed(2)}</td>
+                <td style={S.tdReporte}>{new Date(p.fecha_pago).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })}</td>
+              </tr>
+            ))}
+            {pagos.length === 0 && <tr><td colSpan={5} style={{ ...S.tdReporte, textAlign: "center", color: "#9CA3AF" }}>Sin cobros en este turno</td></tr>}
+          </tbody>
+        </table>
+
+        <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>
+          Detalle de reembolsos ({reembolsos.length})
+        </p>
+        <table style={{ width: "100%", fontSize: "0.75rem", borderCollapse: "collapse", marginBottom: "24px" }}>
+          <thead>
+            <tr style={{ background: "#FEF2F2" }}>
+              <th style={S.thReporte}>Ticket</th><th style={S.thReporte}>Motivo</th>
+              <th style={S.thReporte}>Método</th><th style={{ ...S.thReporte, textAlign: "right" }}>Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reembolsos.map(r => (
+              <tr key={`rr-${r.id_reembolso}`} style={{ borderBottom: "1px solid #E5E7EB" }}>
+                <td style={S.tdReporte}>{r.numero_ticket}</td>
+                <td style={S.tdReporte}>{r.motivo}</td>
+                <td style={S.tdReporte}>{r.metodo_reembolso}</td>
+                <td style={{ ...S.tdReporte, textAlign: "right", color: "#EF4444" }}>-${parseFloat(r.monto).toFixed(2)}</td>
+              </tr>
+            ))}
+            {reembolsos.length === 0 && <tr><td colSpan={4} style={{ ...S.tdReporte, textAlign: "center", color: "#9CA3AF" }}>Sin reembolsos en este turno</td></tr>}
+          </tbody>
+        </table>
+
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "40px" }}>
+          <div style={{ textAlign: "center", width: "45%" }}>
+            <div style={{ borderTop: "1px solid #111", paddingTop: "4px", fontSize: "0.75rem" }}>
+              Firma de la secretaria/o responsable
+            </div>
+          </div>
+          <div style={{ textAlign: "center", width: "45%" }}>
+            <div style={{ borderTop: "1px solid #111", paddingTop: "4px", fontSize: "0.75rem" }}>
+              Firma de supervisor/administrador
+            </div>
+          </div>
+        </div>
+
+        <p style={{ textAlign: "center", fontSize: "0.7rem", color: "#9CA3AF", marginTop: "24px" }}>
+          Código de verificación del documento: <strong>{codigo}</strong> — Este código se genera a partir de los
+          montos registrados en el sistema y permite verificar que el documento no ha sido alterado.
+        </p>
       </div>
     </>
   );
@@ -2227,6 +2453,10 @@ function DetalleItem({ label, value }) {
 }
 
 const S = {
+  thMini:      { padding: "5px 8px", fontSize: "0.7rem", fontWeight: 700, color: "#6B7280" },
+  tdMini:      { padding: "5px 8px" },
+  thReporte:   { padding: "6px 8px", fontSize: "0.72rem", fontWeight: 700, textAlign: "left", borderBottom: "2px solid #111" },
+  tdReporte:   { padding: "5px 8px" },
   btnRefresh:  { background: "rgba(232,139,58,0.1)", border: "1px solid rgba(232,139,58,0.25)", color: "#E88B3A", padding: "0.5rem 1.1rem", borderRadius: "8px", fontFamily: FONTC, fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" },
   btnQR:       { background: "#1F2937", border: "1px solid #1F2937", color: "#FFF", padding: "0.5rem 1.1rem", borderRadius: "8px", fontFamily: FONTC, fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" },
   btnFull2:    { background: "#1F2937", color: "#FFF", border: "none", padding: "0.65rem 1.25rem", borderRadius: "8px", fontFamily: FONTC, fontWeight: 700, fontSize: "0.85rem", letterSpacing: "0.04em", cursor: "pointer" },

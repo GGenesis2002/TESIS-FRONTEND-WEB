@@ -132,6 +132,12 @@ async function generarPDFResultado(orden, resultados, admin) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const PW = 210, PH = 297;
   const ML = 15, MR = 15;
+  // La franja del pie de página (10mm) se dibuja AL FINAL, después de todo
+  // el contenido, sobre cada página ya generada. Por eso ningún contenido
+  // (incluida la firma) debe calcular su espacio disponible contra PH: hay
+  // que descontar siempre esos 10mm o el pie termina tapando el contenido.
+  const FOOTER_H = 10;
+  const PH_USABLE = PH - FOOTER_H; // 287mm: límite real para dibujar contenido
 
   // ── COLORES MARCA ──
   const C_NARANJA  = [232, 139, 58];   // #E88B3A
@@ -248,7 +254,11 @@ async function generarPDFResultado(orden, resultados, admin) {
   }
 
   for (const [categoria, examenesCategoria] of Object.entries(porCategoria)) {
-    if (y > PH - 65) { doc.addPage(); y = 20; }
+    // Espacio mínimo real: barra de categoría (11mm) + encabezado del
+    // primer examen (9mm) + al menos una fila de tabla (~15mm) ≈ 35mm.
+    // El valor anterior (65mm) era un colchón excesivo que provocaba
+    // saltos de página innecesarios, dejando hojas casi vacías.
+    if (y > PH_USABLE - 35) { doc.addPage(); y = 20; }
 
     // Encabezado de categoría — barra oscura con acento naranja
     doc.setFillColor(...C_OSCURO);
@@ -263,7 +273,11 @@ async function generarPDFResultado(orden, resultados, admin) {
     y += 11;
 
     for (const examen of examenesCategoria) {
-      if (y > PH - 60) { doc.addPage(); y = 20; }
+      // Espacio mínimo real: encabezado de examen (9mm) + al menos una
+      // fila de tabla con su cabecera (~18mm) ≈ 28mm. El valor anterior
+      // (60mm) era un colchón excesivo que forzaba saltos de página
+      // aunque quedara espacio de sobra en la hoja actual.
+      if (y > PH_USABLE - 28) { doc.addPage(); y = 20; }
 
       // Encabezado examen
       doc.setFillColor(...C_FONDO);
@@ -449,7 +463,7 @@ async function generarPDFResultado(orden, resultados, admin) {
     10 +
     6;
 
-  if (y > PH - ESPACIO_FIRMA) {
+  if (y > PH_USABLE - ESPACIO_FIRMA) {
     // No cabe en lo que queda de esta página: pasar a una nueva y arrancar
     // arriba (no forzar al fondo, para no dejar una hoja casi vacía).
     doc.addPage();

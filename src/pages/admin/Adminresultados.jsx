@@ -169,13 +169,15 @@ async function generarPDFResultado(orden, resultados, admin) {
   doc.setTextColor(0, 0, 0);
   let y = 37;
 
-  // Encabezado naranja de sección
-  doc.setFillColor(...C_NARANJA);
+  // Encabezado de sección — mismo estilo que las categorías (oscuro + acento naranja)
+  doc.setFillColor(...C_OSCURO);
   doc.roundedRect(ML, y, PW - ML - MR, 6, 1, 1, "F");
+  doc.setFillColor(...C_NARANJA);
+  doc.rect(ML, y, 3, 6, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
   doc.setTextColor(...C_BLANCO);
-  doc.text("DATOS DEL PACIENTE", ML + 4, y + 4.2);
+  doc.text("DATOS DEL PACIENTE", ML + 7, y + 4.2);
   y += 7;
 
   // Cuerpo del bloque
@@ -239,9 +241,9 @@ async function generarPDFResultado(orden, resultados, admin) {
       if (y > PH - 60) { doc.addPage(); y = 20; }
 
       // Encabezado examen
-      doc.setFillColor(254, 243, 199); // naranja muy claro
+      doc.setFillColor(...C_FONDO);
       doc.roundedRect(ML, y, PW - ML - MR, 7, 1, 1, "F");
-      doc.setDrawColor(253, 186, 116);
+      doc.setDrawColor(...C_BORDE);
       doc.roundedRect(ML, y, PW - ML - MR, 7, 1, 1, "S");
       doc.setFillColor(...C_NARANJA);
       doc.rect(ML, y, 2.5, 7, "F");
@@ -254,13 +256,13 @@ async function generarPDFResultado(orden, resultados, admin) {
       const params = examen.parametros || [];
       if (params.length === 0) {
         // Examen tipo PDF — el archivo se adjunta al final; mostrar nota informativa
-        doc.setFillColor(255, 247, 237); // naranja muy claro
+        doc.setFillColor(...C_FONDO);
         doc.roundedRect(ML, y, PW - ML - MR, 10, 2, 2, "F");
-        doc.setDrawColor(253, 186, 116);
+        doc.setDrawColor(...C_BORDE);
         doc.roundedRect(ML, y, PW - ML - MR, 10, 2, 2, "S");
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.5);
-        doc.setTextColor(180, 83, 9);
+        doc.setTextColor(...C_GRIS);
        doc.text(st("El resultado de este examen se adjunta en las páginas siguientes del documento."), ML + 5, y + 9);
         doc.setTextColor(0, 0, 0);
         y += 14;
@@ -349,9 +351,19 @@ async function generarPDFResultado(orden, resultados, admin) {
   }
 
   // ── FIRMA DEL ADMINISTRADOR ──
-  if (y > PH - 55) { doc.addPage(); y = 20; }
+  // Espacio real que ocupa el bloque de firma (línea + nombre + cargo + sello + fecha)
+  const ESPACIO_FIRMA = 50;
 
-  y = Math.max(y + 10, PH - 55);
+  if (y > PH - ESPACIO_FIRMA) {
+    // No cabe en lo que queda de esta página: pasar a una nueva y arrancar
+    // arriba (no forzar al fondo, para no dejar una hoja casi vacía).
+    doc.addPage();
+    y = 25;
+  } else {
+    // Sí cabe: dejar un respiro natural después del último bloque, sin
+    // empujarla artificialmente hasta el fondo de la página.
+    y += 12;
+  }
 
   // Línea separadora
   doc.setDrawColor(226, 232, 240);

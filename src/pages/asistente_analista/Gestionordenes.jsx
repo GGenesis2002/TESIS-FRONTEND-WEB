@@ -1073,67 +1073,7 @@ export default function GestionOrdenes() {
         </Overlay>
       )}
 
-      {/* ════════════════════════════════════════════════════════════
-          MODAL — CONFIRMAR ELIMINACIÓN
-      ════════════════════════════════════════════════════════════ */}
-      {showConfirmEliminar && (
-        <Overlay onClose={() => setShowConfirmEliminar(null)}>
-          <div style={s.modalContainer}>
-            <ModalHeader
-              title="ELIMINAR"
-              titleOrange="ORDEN"
-              subtitle={`Ticket ${showConfirmEliminar.numero_ticket}`}
-              onClose={() => setShowConfirmEliminar(null)}
-            />
-            <div style={s.modalBody}>
-              <div style={{ background: "#450A0A", borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1.25rem", display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
-                <span style={{ fontSize: "1.5rem", flexShrink: 0 }}>🗑️</span>
-                <div>
-                  <p style={{ fontFamily: FONTC, fontSize: "0.9rem", fontWeight: 800, color: "#FCA5A5", margin: "0 0 0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                    Eliminación permanente
-                  </p>
-                  <p style={{ fontSize: "0.83rem", color: "#FEE2E2", margin: 0, lineHeight: 1.6 }}>
-                    Esta acción <strong>no se puede deshacer</strong>. La orden y todos sus exámenes asociados serán borrados del sistema de forma definitiva.
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ background: "#F8FAFC", border: "1px solid #E5E7EB", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem" }}>
-                <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
-                  Resumen de la orden a eliminar
-                </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <p style={{ fontSize: "0.88rem", color: "#374151", margin: 0 }}>
-                    <strong>Ticket:</strong> <span style={{ fontFamily: FONTC, color: ORANGE, fontWeight: 700 }}>{showConfirmEliminar.numero_ticket}</span>
-                  </p>
-                  <p style={{ fontSize: "0.88rem", color: "#374151", margin: 0 }}>
-                    <strong>Paciente:</strong> {showConfirmEliminar.nombres} {showConfirmEliminar.apellidos}
-                  </p>
-                  <p style={{ fontSize: "0.88rem", color: "#374151", margin: 0 }}>
-                    <strong>Estado:</strong> {showConfirmEliminar.estado}
-                  </p>
-                  <p style={{ fontSize: "0.88rem", color: "#374151", margin: 0 }}>
-                    <strong>Total:</strong> ${parseFloat(showConfirmEliminar.total || 0).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: "0.75rem" }}>
-                <button
-                  onClick={handleEliminar}
-                  disabled={eliminando}
-                  style={{ ...s.btnFull, flex: 1, background: "#7F1D1D", opacity: eliminando ? 0.6 : 1 }}
-                >
-                  {eliminando ? "Eliminando..." : "🗑️ SÍ, ELIMINAR DEFINITIVAMENTE"}
-                </button>
-                <button onClick={() => setShowConfirmEliminar(null)} style={s.btnCancel}>
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        </Overlay>
-      )}
+      
 
     </div>
   );

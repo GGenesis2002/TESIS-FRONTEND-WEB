@@ -67,6 +67,31 @@ async function fusionarPDFs(docJsPdf, pdfUrls) {
     return docJsPdf; // fallback: devolver doc original
   }
 }
+// Interpola color RGB entre "stops" (paradas de color) según una fracción t (0-1).
+// Se usa para dibujar la barra de "Posición" con zonas rojo→ámbar→verde→ámbar→rojo
+// simulando un degradado continuo (jsPDF no soporta gradientes nativos en rects).
+const ZONA_STOPS = [
+  { t: 0,    c: [240, 149, 149] }, // rojo   (bajo)
+  { t: 0.15, c: [250, 199, 117] }, // ámbar  (límite bajo)
+  { t: 0.5,  c: [151, 196, 89]  }, // verde  (normal)
+  { t: 0.85, c: [250, 199, 117] }, // ámbar  (límite alto)
+  { t: 1,    c: [240, 149, 149] }, // rojo   (alto)
+];
+function colorZona(t) {
+  for (let i = 0; i < ZONA_STOPS.length - 1; i++) {
+    const a = ZONA_STOPS[i], b = ZONA_STOPS[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const local = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+      return [
+        Math.round(a.c[0] + (b.c[0] - a.c[0]) * local),
+        Math.round(a.c[1] + (b.c[1] - a.c[1]) * local),
+        Math.round(a.c[2] + (b.c[2] - a.c[2]) * local),
+      ];
+    }
+  }
+  return ZONA_STOPS[ZONA_STOPS.length - 1].c;
+}
+
 /* ══════════════════════════════════════════════════════════
    HELPER: Limpieza EXTREMA de texto para jsPDF
 ══════════════════════════════════════════════════════════ */
@@ -333,9 +358,10 @@ async function generarPDFResultado(orden, resultados, admin) {
             }
           }
 
-          // Columna "Posición": mini-gráfica de barra con marcador del valor
-          // dentro del rango min-max. Solo se dibuja para parámetros numéricos
-          // con rango definido; el resto queda vacío (texto/opciones/sin rango).
+          // Columna "Posición": barra de zonas (rojo→ámbar→verde→ámbar→rojo)
+          // simulando un degradado continuo, con marcador del valor real.
+          // Solo se dibuja para parámetros numéricos con rango definido; el
+          // resto queda vacío (texto/opciones/sin rango).
           if (data.section === "body" && data.column.index === 4) {
             const row = tableData[data.row.index];
             if (!row?.tieneRangoNumerico) return;
@@ -344,12 +370,17 @@ async function generarPDFResultado(orden, resultados, admin) {
             const barX = x + 3;
             const barW = width - 6;
             const barY = cy + height / 2;
+            const barH = 1.8;
 
-            // Track de fondo (rango completo)
-            doc.setDrawColor(...C_BORDE);
-            doc.setLineWidth(1.2);
-            doc.setLineCap?.("round");
-            doc.line(barX, barY, barX + barW, barY);
+            // Barra de zonas: se dibuja en segmentos finos interpolando color
+            // para simular el degradado (jsPDF no soporta gradientes en rects).
+            const SEGMENTOS = 24;
+            const segW = barW / SEGMENTOS;
+            for (let i = 0; i < SEGMENTOS; i++) {
+              const t = (i + 0.5) / SEGMENTOS;
+              doc.setFillColor(...colorZona(t));
+              doc.rect(barX + i * segW, barY - barH / 2, segW + 0.3, barH, "F");
+            }
 
             // Posición del marcador, acotada visualmente a los bordes de la
             // barra aunque el valor real se salga del rango (clamp 0-1).
@@ -359,12 +390,14 @@ async function generarPDFResultado(orden, resultados, admin) {
             frac = Math.max(0, Math.min(1, frac));
             const markerX = barX + frac * barW;
 
+            doc.setDrawColor(255, 255, 255);
+            doc.setLineWidth(0.5);
             if (fuera) {
-              doc.setFillColor(220, 38, 38);      // rojo: fuera de rango
+              doc.setFillColor(220, 38, 38);       // rojo: fuera de rango
             } else {
-              doc.setFillColor(30, 58, 95);        // navy: dentro de rango
+              doc.setFillColor(30, 58, 95);         // navy: dentro de rango
             }
-            doc.circle(markerX, barY, 1.3, "F");
+            doc.circle(markerX, barY, 1.5, "FD");   // "FD" = relleno + borde blanco (resalta sobre el fondo de color)
           }
         },
       });
@@ -397,8 +430,24 @@ async function generarPDFResultado(orden, resultados, admin) {
   }
 
   // ── FIRMA DEL ADMINISTRADOR ──
-  // Espacio real que ocupa el bloque de firma (línea + nombre + cargo + sello + fecha)
-  const ESPACIO_FIRMA = 50;
+  // Espacio real que ocupa el bloque de firma, calculado según el contenido
+  // que realmente se va a dibujar (no un valor fijo "por las dudas"):
+  //   6mm  → línea separadora + respiro antes del bloque
+  //   19mm → imagen de firma digital (solo si admin.firma existe)
+  //   4mm  → línea de firma + respiro antes del nombre
+  //   4mm  → nombre del administrador
+  //   5mm  → línea extra si se muestra el cargo (mismo criterio que más abajo, línea 477)
+  //   10mm → "FIRMADO DIGITALMENTE" + fecha de validación
+  //   6mm  → margen de seguridad (descenders de fuente / respiro final)
+  const tieneCargoVisible = !!(admin.cargo && admin.cargo !== "Responsable Técnico");
+  const ESPACIO_FIRMA =
+    6 +
+    (admin.firma ? 19 : 0) +
+    4 +
+    4 +
+    (tieneCargoVisible ? 5 : 0) +
+    10 +
+    6;
 
   if (y > PH - ESPACIO_FIRMA) {
     // No cabe en lo que queda de esta página: pasar a una nueva y arrancar
@@ -474,7 +523,7 @@ async function generarPDFResultado(orden, resultados, admin) {
 
   // Solo mostrar cargo si existe y no es genérico
   let firmaLineY = y + 4;
-  if (admin.cargo && admin.cargo !== "Responsable Técnico") {
+  if (tieneCargoVisible) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(107, 114, 128);

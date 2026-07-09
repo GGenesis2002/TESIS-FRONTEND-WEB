@@ -335,6 +335,14 @@ export default function ModuloCaja() {
       setMsg({ type: "error", text: "Solo se pueden reembolsar pagos realizados el mismo día de hoy." });
       return;
     }
+    // Política: solo se puede reembolsar mientras la orden siga en 'Pagada'.
+    // Si ya se tomó la muestra, se validó, etc., el backend lo rechaza igual,
+    // pero avisamos aquí para no abrir el modal en falso.
+    if (pago.estado_orden && pago.estado_orden !== "Pagada") {
+      setMsgReembolso(null);
+      setMsg({ type: "error", text: `Esta orden ya está en estado '${pago.estado_orden}' y ya no se puede reembolsar.` });
+      return;
+    }
     const yaReembolsado = reembolsadoPorOrden[pago.id_orden] || 0;
     const disponible = Math.max(0, parseFloat(pago.monto || 0) - yaReembolsado);
     setFormReembolso({ monto: disponible.toFixed(2), metodo_reembolso: "Efectivo", referencia: "", motivo: "" });
@@ -595,6 +603,10 @@ export default function ModuloCaja() {
   // por eso aquí no se aplica el selector de "Solo Hoy / Todos / Fecha específica")
   const pagosReembolsables = pagosHistorial.filter(p => {
     if (!isToday(p.fecha_pago)) return false;
+    // Solo son reembolsables las órdenes que el backend todavía acepta reembolsar
+    // (estado 'Pagada'). Si ya se tomó la muestra, se validó, etc., no debe
+    // aparecer aquí aunque el pago siga siendo de hoy.
+    if (p.estado_orden && p.estado_orden !== "Pagada") return false;
     const saldo = parseFloat(p.monto || 0) - (reembolsadoPorOrden[p.id_orden] || 0);
     if (saldo <= 0.01) return false;
     const fechaStr = p.fecha_pago ? new Date(p.fecha_pago).toLocaleDateString("es-EC") : "";

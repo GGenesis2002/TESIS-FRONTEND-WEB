@@ -272,6 +272,14 @@ async function generarPDFResultado(orden, resultados, admin) {
      // Tabla de parámetros
       const tableData = params.map(p => {
         const fuera = estaFueraDeRango(p);
+        const { tipo } = parseTipoDato(p.valor_referencia);
+        const valorNum = parseFloat(p.valor_obtenido);
+        // Datos numéricos crudos preservados (no el string ya formateado) para
+        // poder dibujar la barra de posición sin tener que re-parsear texto.
+        const tieneRangoNumerico =
+          tipo === "NUMERICO" &&
+          p.rango_min != null && p.rango_max != null &&
+          !isNaN(valorNum);
         return {
           // Aplicamos st() a todas las cadenas de texto
           parametro: st(p.nombre_parametro || "—"),
@@ -280,22 +288,27 @@ async function generarPDFResultado(orden, resultados, admin) {
           rango:     st(descripcionReferencia(p)),
           fuera,
           obs:       st(p.observacion || ""),
+          tieneRangoNumerico,
+          valorNum,
+          rangoMin: p.rango_min != null ? parseFloat(p.rango_min) : null,
+          rangoMax: p.rango_max != null ? parseFloat(p.rango_max) : null,
         };
       });
 
       const tableResult = autoTable(doc, {
         startY: y,
         margin: { left: ML, right: MR },
-        head: [["Parámetro", "Resultado", "Unidad", "Rango Ref."]],
-        body: tableData.map(r => [r.parametro, r.valor, r.unidad, r.rango]),
+        head: [["Parámetro", "Resultado", "Unidad", "Rango Ref.", "Posición"]],
+        body: tableData.map(r => [r.parametro, r.valor, r.unidad, r.rango, ""]),
         styles: { fontSize: 7.5, cellPadding: 2.5, font: "helvetica", textColor: [31, 41, 55] },
         headStyles: { fillColor: [100, 105, 115], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7 },
         alternateRowStyles: { fillColor: [253, 253, 253] },
         columnStyles: {
-          0: { cellWidth: 65 },
-          1: { cellWidth: 30, fontStyle: "bold" },
-          2: { cellWidth: 25 },
-          3: { cellWidth: 60 },
+          0: { cellWidth: 55 },
+          1: { cellWidth: 25, fontStyle: "bold" },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 45 },
+          4: { cellWidth: 35 },
         },
         didParseCell: (data) => {
           if (data.section === "body" && data.column.index === 1) {
@@ -310,15 +323,48 @@ async function generarPDFResultado(orden, resultados, admin) {
           if (data.section === "body" && data.column.index === 1) {
             const row = tableData[data.row.index];
             if (row?.fuera) {
-              const num = parseFloat(row.valor);
-              const flecha = !isNaN(num) && row.rango.includes("–")
-                ? (num > parseFloat(row.rango.split("–")[1]) ? "↑" : "↓")
+              const flecha = row.tieneRangoNumerico
+                ? (row.valorNum > row.rangoMax ? "↑" : "↓")
                 : "↑";
               doc.setFontSize(8);
               doc.setTextColor(220, 38, 38);
               doc.text(flecha, data.cell.x + data.cell.width - 4, data.cell.y + data.cell.height - 1.5);
               doc.setTextColor(0, 0, 0);
             }
+          }
+
+          // Columna "Posición": mini-gráfica de barra con marcador del valor
+          // dentro del rango min-max. Solo se dibuja para parámetros numéricos
+          // con rango definido; el resto queda vacío (texto/opciones/sin rango).
+          if (data.section === "body" && data.column.index === 4) {
+            const row = tableData[data.row.index];
+            if (!row?.tieneRangoNumerico) return;
+
+            const { x, y: cy, width, height } = data.cell;
+            const barX = x + 3;
+            const barW = width - 6;
+            const barY = cy + height / 2;
+
+            // Track de fondo (rango completo)
+            doc.setDrawColor(...C_BORDE);
+            doc.setLineWidth(1.2);
+            doc.setLineCap?.("round");
+            doc.line(barX, barY, barX + barW, barY);
+
+            // Posición del marcador, acotada visualmente a los bordes de la
+            // barra aunque el valor real se salga del rango (clamp 0-1).
+            const { rangoMin, rangoMax, valorNum, fuera } = row;
+            const span = rangoMax - rangoMin;
+            let frac = span > 0 ? (valorNum - rangoMin) / span : 0.5;
+            frac = Math.max(0, Math.min(1, frac));
+            const markerX = barX + frac * barW;
+
+            if (fuera) {
+              doc.setFillColor(220, 38, 38);      // rojo: fuera de rango
+            } else {
+              doc.setFillColor(30, 58, 95);        // navy: dentro de rango
+            }
+            doc.circle(markerX, barY, 1.3, "F");
           }
         },
       });

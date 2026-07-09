@@ -583,7 +583,6 @@ export default function GestionOrdenes() {
                 <span style={{ flex: "0 0 185px", display: "flex", gap: "0.35rem", justifyContent: "center" }}>
                   <button onClick={() => abrirDetalle(o)} style={{ ...s.btnIcon, background: "#F3F4F6", color: DARK }} title="Ver detalle">👁️</button>
                   {puedeEditar && <button onClick={() => abrirEditar(o)} style={{ ...s.btnIcon, background: "rgba(59,130,246,0.1)", color: "#3B82F6" }} title="Editar">✏️</button>}
-                  {puedeEliminar && <button onClick={() => setShowConfirmEliminar(o)} style={{ ...s.btnIcon, background: "rgba(127,29,29,0.1)", color: "#7F1D1D" }} title="Eliminar permanentemente">🗑️</button>}
                 </span>
               </div>
             );

@@ -289,13 +289,13 @@ async function generarPDFResultado(orden, resultados, admin) {
         head: [["Parámetro", "Resultado", "Unidad", "Rango Ref."]],
         body: tableData.map(r => [r.parametro, r.valor, r.unidad, r.rango]),
         styles: { fontSize: 7.5, cellPadding: 2.5, font: "helvetica", textColor: [31, 41, 55] },
-        headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7 },
+        headStyles: { fillColor: [100, 105, 115], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7 },
         alternateRowStyles: { fillColor: [253, 253, 253] },
         columnStyles: {
           0: { cellWidth: 65 },
           1: { cellWidth: 30, fontStyle: "bold" },
           2: { cellWidth: 25 },
-          3: { cellWidth: 50 },
+          3: { cellWidth: 60 },
         },
         didParseCell: (data) => {
           if (data.section === "body" && data.column.index === 1) {

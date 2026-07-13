@@ -2041,62 +2041,81 @@ function ResumenMixtoReembolso({ partes, total }) {
   );
 }
 
+// ─── IMPRESIÓN — INFRAESTRUCTURA COMPARTIDA ──────────────────────────────────
+// Los 3 botones de imprimir (comprobante de pago, ticket de cierre, reporte
+// completo) antes creaban CADA UNO su propio wrapper + su propia hoja de
+// estilos "@media print { body > *:not(#miWrapper) { display:none } }".
+// Esas hojas de estilo se quedaban para siempre en <head> y, al usar más de
+// un tipo de impresión en la misma sesión, quedaban varias reglas
+// compitiendo por el mismo elemento — la última insertada ganaba y ocultaba
+// los wrappers de las demás, dejando la hoja en blanco.
+// Ahora hay UN solo wrapper y UNA sola hoja de estilos para toda la app;
+// cada función de impresión solo cambia el formato (clase) y el contenido.
+const PRINT_WRAPPER_ID = "app-print-wrapper";
+const PRINT_STYLE_ID   = "app-print-style";
+
+function imprimirNodo(contentId, formatoClass) {
+  if (!document.getElementById(PRINT_STYLE_ID)) {
+    const style = document.createElement("style");
+    style.id = PRINT_STYLE_ID;
+    style.innerHTML = `
+      @media print {
+        body > *:not(#${PRINT_WRAPPER_ID}) { display: none !important; }
+        #${PRINT_WRAPPER_ID} {
+          position: fixed !important; inset: 0 !important; display: block !important;
+          background: white !important; z-index: 99999 !important; padding: 20px !important;
+        }
+        #${PRINT_WRAPPER_ID}.formato-ticket {
+          font-family: 'Courier New', monospace !important; font-size: 12px !important;
+          max-width: 340px !important; margin: 0 auto !important;
+        }
+        #${PRINT_WRAPPER_ID}.formato-reporte {
+          font-family: 'Barlow', Arial, sans-serif !important; color: #111 !important;
+          width: 100% !important;
+        }
+        #${PRINT_WRAPPER_ID}.formato-reporte table { page-break-inside: auto; }
+        #${PRINT_WRAPPER_ID}.formato-reporte tr    { page-break-inside: avoid; }
+        @page { size: auto; margin: 1.5cm; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  let wrapper = document.getElementById(PRINT_WRAPPER_ID);
+  if (!wrapper) {
+    wrapper = document.createElement("div");
+    wrapper.id = PRINT_WRAPPER_ID;
+    document.body.appendChild(wrapper);
+  }
+
+  const contenido = document.getElementById(contentId);
+  if (!contenido) return;
+  const clon = contenido.cloneNode(true);
+  clon.removeAttribute("id");
+  clon.style.display = "block"; // por si el original estaba oculto (display:none)
+  clon.style.border = "none";
+  clon.style.padding = "0";
+  clon.style.background = "white";
+  clon.style.maxHeight = "none";  // el original puede tener scroll (maxHeight+overflow) para la vista previa
+  clon.style.overflow = "visible";
+
+  wrapper.className = formatoClass;
+  wrapper.innerHTML = "";
+  wrapper.appendChild(clon);
+
+  window.print();
+
+  setTimeout(() => {
+    wrapper.innerHTML = "";
+    wrapper.className = "";
+  }, 500);
+}
+
 // ─── SUB-COMPONENTE: COMPROBANTE ─────────────────────────────────────────────
 function ComprobanteView({ comprobante, onCerrar }) {
   const { orden, partes, total, fecha, esMixto } = comprobante;
 
-  const imprimir = () => {
-    // Inyectar estilos de impresión temporalmente
-    const styleId = "comprobante-print-style";
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement("style");
-      style.id = styleId;
-      style.innerHTML = `
-        @media print {
-          body > *:not(#comprobante-print-wrapper) { display: none !important; }
-          #comprobante-print-wrapper {
-            position: fixed !important;
-            inset: 0 !important;
-            display: block !important;
-            background: white !important;
-            z-index: 99999 !important;
-            padding: 20px !important;
-          }
-          #comprobante-print {
-            font-family: 'Courier New', monospace !important;
-            font-size: 12px !important;
-            max-width: 320px !important;
-            margin: 0 auto !important;
-            background: white !important;
-            border: none !important;
-            padding: 0 !important;
-          }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
-    // Mover el comprobante a un wrapper de nivel raíz temporal
-    const wrapper = document.getElementById("comprobante-print-wrapper") || (() => {
-      const el = document.createElement("div");
-      el.id = "comprobante-print-wrapper";
-      document.body.appendChild(el);
-      return el;
-    })();
-
-    const contenido = document.getElementById("comprobante-print");
-    const clon = contenido.cloneNode(true);
-    clon.id = "comprobante-print";
-    wrapper.innerHTML = "";
-    wrapper.appendChild(clon);
-
-    window.print();
-
-    // Limpiar después de imprimir
-    setTimeout(() => {
-      wrapper.innerHTML = "";
-    }, 500);
-  };
+  const imprimir = () => imprimirNodo("comprobante-print", "formato-ticket");
 
   return (
     <>
@@ -2190,83 +2209,11 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
   const fechaGenerado = new Date().toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   // Imprime el recibo compacto (ticket térmico), igual que antes.
-  const imprimir = () => {
-    const styleId = "cierre-print-style";
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement("style");
-      style.id = styleId;
-      style.innerHTML = `
-        @media print {
-          body > *:not(#cierre-print-wrapper) { display: none !important; }
-          #cierre-print-wrapper {
-            position: fixed !important; inset: 0 !important; display: block !important;
-            background: white !important; z-index: 99999 !important; padding: 20px !important;
-          }
-          #cierre-print {
-            font-family: 'Courier New', monospace !important; font-size: 12px !important;
-            max-width: 340px !important; margin: 0 auto !important;
-            background: white !important; border: none !important; padding: 0 !important;
-          }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    const wrapper = document.getElementById("cierre-print-wrapper") || (() => {
-      const el = document.createElement("div");
-      el.id = "cierre-print-wrapper";
-      document.body.appendChild(el);
-      return el;
-    })();
-    const contenido = document.getElementById("cierre-print");
-    const clon = contenido.cloneNode(true);
-    clon.id = "cierre-print";
-    wrapper.innerHTML = "";
-    wrapper.appendChild(clon);
-    window.print();
-    setTimeout(() => { wrapper.innerHTML = ""; }, 500);
-  };
+  const imprimir = () => imprimirNodo("cierre-print", "formato-ticket");
 
   // Imprime el reporte completo (hoja tamaño carta): cabecera, resumen,
   // detalle de cada cobro y reembolso, código de verificación y firmas.
-  const imprimirReporte = () => {
-    const styleId = "reporte-cierre-print-style";
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement("style");
-      style.id = styleId;
-      style.innerHTML = `
-        @media print {
-          @page { size: letter; margin: 1.5cm; }
-          body > *:not(#reporte-cierre-wrapper) { display: none !important; }
-          #reporte-cierre-wrapper {
-            position: fixed !important; inset: 0 !important; display: block !important;
-            background: white !important; z-index: 99999 !important;
-          }
-          #reporte-cierre {
-            display: block !important;
-            font-family: 'Barlow', Arial, sans-serif !important; color: #111 !important;
-            background: white !important; border: none !important; padding: 0 !important;
-            width: 100% !important;
-          }
-          #reporte-cierre table { page-break-inside: auto; }
-          #reporte-cierre tr { page-break-inside: avoid; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    const wrapper = document.getElementById("reporte-cierre-wrapper") || (() => {
-      const el = document.createElement("div");
-      el.id = "reporte-cierre-wrapper";
-      document.body.appendChild(el);
-      return el;
-    })();
-    const contenido = document.getElementById("reporte-cierre");
-    const clon = contenido.cloneNode(true);
-    clon.id = "reporte-cierre";
-    wrapper.innerHTML = "";
-    wrapper.appendChild(clon);
-    window.print();
-    setTimeout(() => { wrapper.innerHTML = ""; }, 500);
-  };
+  const imprimirReporte = () => imprimirNodo("reporte-cierre", "formato-reporte");
 
   return (
     <>

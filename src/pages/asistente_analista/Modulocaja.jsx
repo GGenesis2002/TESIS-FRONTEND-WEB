@@ -92,6 +92,18 @@ const estadoInicial = () => ({
   ],
 });
 
+// ─── ESTADO INICIAL DEL FORMULARIO DE REEMBOLSO ──────────────────────────────
+// Mismo patrón que el cobro: soporta reembolso simple (un método) o mixto
+// (Efectivo + Transferencia), dividiendo el monto total a reembolsar.
+const estadoInicialReembolso = () => ({
+  modoPago: "simple",          // "simple" | "mixto"
+  montoTotal: "",
+  partes: [
+    { metodo_reembolso: "Efectivo", monto: "", referencia: "" }
+  ],
+  motivo: "",
+});
+
 export default function ModuloCaja() {
   const [ordenesGeneradas, setOrdenesGeneradas] = useState([]);
   const [pagosHistorial, setPagosHistorial]     = useState([]);
@@ -170,7 +182,7 @@ export default function ModuloCaja() {
 
   // Resetear a la página 1 cada vez que cambian los filtros del historial de reembolsos
   useEffect(() => { setPaginaActual(1); }, [filtroTicket, filtroFechaInicio, filtroFechaFin]);
-  const [formReembolso, setFormReembolso]     = useState({ monto: "", metodo_reembolso: "Efectivo", referencia: "", motivo: "" });
+  const [formReembolso, setFormReembolso]     = useState(estadoInicialReembolso());
   const [procesandoReembolso, setProcesandoReembolso] = useState(false);
   const [msgReembolso, setMsgReembolso]       = useState(null);
 
@@ -328,6 +340,16 @@ export default function ModuloCaja() {
     return acc;
   }, {});
 
+  // ── Saldo real disponible EN LA CAJA del turno activo, por forma de pago ──
+  // Efectivo: fondo inicial + cobrado - ya reembolsado (mismo cálculo que "esperado en caja").
+  // Transferencia: cobrado - ya reembolsado (no hay fondo inicial en transferencia).
+  const disponibleEfectivoTurno = turnoActivo
+    ? parseFloat(turnoActivo.efectivo_esperado_actual || 0)
+    : 0;
+  const disponibleTransferenciaTurno = turnoActivo
+    ? parseFloat(turnoActivo.total_transferencia_sistema || 0) - parseFloat(turnoActivo.total_reembolsos_transferencia || 0)
+    : 0;
+
   const abrirReembolso = (pago) => {
     // Política: solo se puede reembolsar el mismo día en que se pagó la orden.
     if (!isToday(pago.fecha_pago)) {
@@ -345,27 +367,131 @@ export default function ModuloCaja() {
     }
     const yaReembolsado = reembolsadoPorOrden[pago.id_orden] || 0;
     const disponible = Math.max(0, parseFloat(pago.monto || 0) - yaReembolsado);
-    setFormReembolso({ monto: disponible.toFixed(2), metodo_reembolso: "Efectivo", referencia: "", motivo: "" });
+    setFormReembolso({
+      modoPago: "simple",
+      montoTotal: disponible.toFixed(2),
+      partes: [{ metodo_reembolso: "Efectivo", monto: disponible.toFixed(2), referencia: "" }],
+      motivo: "",
+    });
     setMsgReembolso(null);
     setShowReembolso(pago);
   };
 
+  // Cambiar modo de reembolso (simple ↔ mixto), dividiendo el monto total actual
+  const cambiarModoReembolso = (modo) => {
+    const total = parseFloat(formReembolso.montoTotal || 0);
+    if (modo === "simple") {
+      setFormReembolso(f => ({
+        ...f,
+        modoPago: "simple",
+        partes: [{ metodo_reembolso: f.partes[0]?.metodo_reembolso || "Efectivo", monto: total.toFixed(2), referencia: "" }],
+      }));
+    } else {
+      const mitad = (total / 2).toFixed(2);
+      const resto = (total - parseFloat(mitad)).toFixed(2);
+      setFormReembolso(f => ({
+        ...f,
+        modoPago: "mixto",
+        partes: [
+          { metodo_reembolso: "Efectivo",      monto: mitad, referencia: "" },
+          { metodo_reembolso: "Transferencia", monto: resto, referencia: "" },
+        ],
+      }));
+    }
+    setMsgReembolso(null);
+  };
+
+  // Editar el monto total a reembolsar (recalcula las partes proporcionalmente)
+  const actualizarMontoTotalReembolso = (valor) => {
+    setFormReembolso(f => {
+      if (f.modoPago === "simple") {
+        return { ...f, montoTotal: valor, partes: [{ ...f.partes[0], monto: valor }] };
+      }
+      const total = parseFloat(valor) || 0;
+      const mitad = (total / 2).toFixed(2);
+      const resto = (total - parseFloat(mitad)).toFixed(2);
+      return {
+        ...f,
+        montoTotal: valor,
+        partes: [
+          { ...f.partes[0], monto: mitad },
+          { ...f.partes[1], monto: resto },
+        ],
+      };
+    });
+    setMsgReembolso(null);
+  };
+
+  // Actualizar una parte del reembolso (método / monto / referencia)
+  const actualizarParteReembolso = (idx, campo, valor) => {
+    setFormReembolso(f => {
+      const nuevas = [...f.partes];
+      nuevas[idx] = { ...nuevas[idx], [campo]: valor };
+
+      if (campo === "monto") {
+        if (f.modoPago === "simple") {
+          // En modo simple, la única parte ES el monto total.
+          return { ...f, montoTotal: valor, partes: nuevas };
+        }
+        if (nuevas.length === 2) {
+          // En modo mixto: ajustar la otra parte para que la suma siga
+          // siendo igual al monto total elegido.
+          const total = parseFloat(f.montoTotal || 0);
+          const esteVal = parseFloat(valor) || 0;
+          const otro = Math.max(0, total - esteVal);
+          const otroIdx = idx === 0 ? 1 : 0;
+          nuevas[otroIdx] = { ...nuevas[otroIdx], monto: otro.toFixed(2) };
+        }
+      }
+
+      return { ...f, partes: nuevas };
+    });
+    setMsgReembolso(null);
+  };
+
   const handleProcesarReembolso = async () => {
-    const { monto, metodo_reembolso, referencia, motivo } = formReembolso;
+    const { partes, motivo } = formReembolso;
 
     // Doble validación defensiva: aunque la lista ya solo muestra pagos de hoy,
     // nos aseguramos de que el pago seleccionado siga siendo del día actual.
     if (!isToday(showReembolso?.fecha_pago)) {
       return setMsgReembolso({ type: "error", text: "Este pago ya no es de hoy: solo se permite reembolsar el mismo día del pago." });
     }
-    if (!monto || parseFloat(monto) <= 0) {
-      return setMsgReembolso({ type: "error", text: "El monto del reembolso debe ser mayor a 0." });
+
+    for (const p of partes) {
+      if (!p.monto || parseFloat(p.monto) <= 0) {
+        return setMsgReembolso({ type: "error", text: `El monto para "${p.metodo_reembolso}" debe ser mayor a 0.` });
+      }
+      if (p.metodo_reembolso === "Transferencia" && !p.referencia.trim()) {
+        return setMsgReembolso({ type: "error", text: "Ingresa el número de referencia de la transferencia." });
+      }
     }
-    if (metodo_reembolso === "Transferencia" && !referencia.trim()) {
-      return setMsgReembolso({ type: "error", text: "Ingresa el número de referencia de la transferencia." });
+    if (partes.length === 2 && partes[0].metodo_reembolso === partes[1].metodo_reembolso) {
+      return setMsgReembolso({ type: "error", text: "En un reembolso mixto los dos métodos deben ser diferentes." });
     }
     if (!motivo.trim()) {
       return setMsgReembolso({ type: "error", text: "Indica el motivo del reembolso." });
+    }
+
+    // Validación 1: la suma de las partes no puede superar lo disponible de ESTA orden.
+    const yaReembolsado = reembolsadoPorOrden[showReembolso.id_orden] || 0;
+    const disponibleOrden = Math.max(0, parseFloat(showReembolso.monto || 0) - yaReembolsado);
+    const sumaPartes = partes.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+    if (sumaPartes > disponibleOrden + 0.01) {
+      return setMsgReembolso({ type: "error", text: `El monto a reembolsar ($${sumaPartes.toFixed(2)}) supera lo disponible para esta orden ($${disponibleOrden.toFixed(2)}).` });
+    }
+
+    // Validación 2: cada parte no puede superar lo que realmente hay disponible
+    // en esa forma de pago dentro de la caja del turno actual. El backend
+    // vuelve a validar esto, pero avisamos aquí antes de enviar la petición.
+    for (const p of partes) {
+      const montoP = parseFloat(p.monto) || 0;
+      if (p.metodo_reembolso === "Efectivo" && montoP > disponibleEfectivoTurno + 0.01) {
+        return setMsgReembolso({ type: "error", text: `No hay suficiente efectivo en caja: disponible $${disponibleEfectivoTurno.toFixed(2)}, solicitado $${montoP.toFixed(2)}.` });
+      }
+      if (p.metodo_reembolso === "Transferencia" && montoP > disponibleTransferenciaTurno + 0.01) {
+        return setMsgReembolso({ type: "error", text: `No hay suficiente saldo por transferencia en caja: disponible $${disponibleTransferenciaTurno.toFixed(2)}, solicitado $${montoP.toFixed(2)}.` });
+      }
     }
 
     setProcesandoReembolso(true);
@@ -373,9 +499,11 @@ export default function ModuloCaja() {
     try {
       await API.post("/pagos/reembolsar", {
         id_orden: showReembolso.id_orden,
-        monto: parseFloat(monto),
-        metodo_reembolso,
-        referencia: referencia.trim() || undefined,
+        reembolsos: partes.map(p => ({
+          monto: parseFloat(p.monto),
+          metodo_reembolso: p.metodo_reembolso,
+          referencia: p.referencia.trim() || undefined,
+        })),
         motivo: motivo.trim(),
       });
       setShowReembolso(null);
@@ -1503,47 +1631,87 @@ export default function ModuloCaja() {
           <div style={S.modalBody}>
             {msgReembolso && <Alert msg={msgReembolso} />}
 
-            <div style={{ background: "#FEF2F2", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1.25rem", border: "1px solid #FECACA" }}>
+            <div style={{ background: "#FEF2F2", borderRadius: "10px", padding: "0.85rem 1rem", marginBottom: "1rem", border: "1px solid #FECACA" }}>
               <p style={{ fontSize: "0.8rem", color: "#991B1B", margin: 0 }}>
                 Paciente: <strong>{showReembolso.nombres} {showReembolso.apellidos}</strong> · Pagado: <strong>${parseFloat(showReembolso.monto || 0).toFixed(2)}</strong>
               </p>
             </div>
 
-            <label style={S.label}>Monto a reembolsar</label>
-            <input
-              type="number" min="0" step="0.01"
-              value={formReembolso.monto}
-              onChange={e => setFormReembolso(f => ({ ...f, monto: e.target.value }))}
-              style={{ ...S.input, width: "100%", marginBottom: "1rem" }}
-            />
-
-            <label style={S.label}>Método de reembolso</label>
-            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-              {METODOS.map(m => (
-                <button
-                  key={m}
-                  onClick={() => setFormReembolso(f => ({ ...f, metodo_reembolso: m }))}
-                  style={{
-                    flex: 1, padding: "0.6rem", borderRadius: "8px",
-                    border: `1.5px solid ${formReembolso.metodo_reembolso === m ? "#EF4444" : "#E5E7EB"}`,
-                    background: formReembolso.metodo_reembolso === m ? "#FEF2F2" : "#FAFAFA",
-                    color: formReembolso.metodo_reembolso === m ? "#EF4444" : "#374151",
-                    fontFamily: FONTC, fontWeight: 700, fontSize: "0.82rem", cursor: "pointer",
-                  }}
-                >{m}</button>
-              ))}
+            {/* Saldo real disponible en la caja del turno, por forma de pago */}
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+              <div style={{ flex: 1, background: "#F8FAFC", border: "1px solid #F1F5F9", borderRadius: "8px", padding: "0.5rem 0.75rem" }}>
+                <p style={{ fontFamily: FONT, fontSize: "0.75rem", color: "#6B7280", margin: 0 }}>💵 Efectivo en caja</p>
+                <p style={{ fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: DARK, margin: 0 }}>${disponibleEfectivoTurno.toFixed(2)}</p>
+              </div>
+              <div style={{ flex: 1, background: "#F8FAFC", border: "1px solid #F1F5F9", borderRadius: "8px", padding: "0.5rem 0.75rem" }}>
+                <p style={{ fontFamily: FONT, fontSize: "0.75rem", color: "#6B7280", margin: 0 }}>🏦 Transferencia en caja</p>
+                <p style={{ fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: DARK, margin: 0 }}>${disponibleTransferenciaTurno.toFixed(2)}</p>
+              </div>
             </div>
 
-            {formReembolso.metodo_reembolso === "Transferencia" && (
-              <>
-                <label style={S.label}>Número de referencia</label>
-                <input
-                  placeholder="Ej: TRX123456"
-                  value={formReembolso.referencia}
-                  onChange={e => setFormReembolso(f => ({ ...f, referencia: e.target.value }))}
-                  style={{ ...S.input, width: "100%", marginBottom: "1rem" }}
-                />
-              </>
+            <label style={S.label}>Monto total a reembolsar</label>
+            <input
+              type="number" min="0" step="0.01"
+              value={formReembolso.montoTotal}
+              onChange={e => actualizarMontoTotalReembolso(e.target.value)}
+              style={{ ...S.input, width: "100%", marginBottom: "1.25rem" }}
+            />
+
+            {/* Selector modo reembolso */}
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={S.label}>Modo de Reembolso</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                {[
+                  { key: "simple", label: "💳 Un solo método" },
+                  { key: "mixto",  label: "🔀 Reembolso mixto" },
+                ].map(({ key, label }) => {
+                  const activo = formReembolso.modoPago === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => cambiarModoReembolso(key)}
+                      style={{
+                        padding: "0.65rem",
+                        borderRadius: "8px",
+                        border: `1.5px solid ${activo ? "#EF4444" : "#E5E7EB"}`,
+                        background: activo ? "#FEF2F2" : "#FAFAFA",
+                        color: activo ? "#EF4444" : "#374151",
+                        fontFamily: FONTC,
+                        fontWeight: activo ? 700 : 500,
+                        fontSize: "0.82rem",
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {formReembolso.modoPago === "mixto" && (
+                <p style={{ fontSize: "0.75rem", color: "#6B7280", margin: "0.5rem 0 0", fontFamily: FONT }}>
+                  Divide el reembolso entre Efectivo y Transferencia. La suma debe ser igual al monto total.
+                </p>
+              )}
+            </div>
+
+            {/* Partes del reembolso */}
+            {formReembolso.partes.map((parte, idx) => (
+              <ReembolsoParteSub
+                key={idx}
+                parte={parte}
+                idx={idx}
+                esMixto={formReembolso.modoPago === "mixto"}
+                onChange={actualizarParteReembolso}
+                disponibleEfectivo={disponibleEfectivoTurno}
+                disponibleTransferencia={disponibleTransferenciaTurno}
+              />
+            ))}
+
+            {/* Resumen si es mixto */}
+            {formReembolso.modoPago === "mixto" && (
+              <ResumenMixtoReembolso partes={formReembolso.partes} total={parseFloat(formReembolso.montoTotal || 0)} />
             )}
 
             <label style={S.label}>Motivo del reembolso</label>
@@ -1742,6 +1910,125 @@ function ResumenMixto({ partes, total }) {
         </div>
       ))}
       <div style={{ borderTop: "1px dashed #D1FAE5", marginTop: "0.5rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: ok ? "#065F46" : "#991B1B" }}>
+        <span>SUMA</span>
+        <span>${suma.toFixed(2)}</span>
+      </div>
+      {!ok && (
+        <p style={{ fontSize: "0.78rem", color: "#DC2626", margin: "0.4rem 0 0", fontFamily: FONT }}>
+          Diferencia: ${diff.toFixed(2)}. Ajusta los montos hasta que sumen ${total.toFixed(2)}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── SUB-COMPONENTE: PARTE DEL REEMBOLSO (simple o mixto) ───────────────────
+// Igual patrón que PagoParteSub, pero además avisa si el monto de esa parte
+// supera lo que realmente hay disponible en esa forma de pago en la caja
+// del turno activo (no solo lo que la orden permite reembolsar).
+function ReembolsoParteSub({ parte, idx, esMixto, onChange, disponibleEfectivo, disponibleTransferencia }) {
+  const titulo = esMixto ? `Parte ${idx + 1}` : "Método de Reembolso";
+  const disponibleMetodo = parte.metodo_reembolso === "Efectivo" ? disponibleEfectivo : disponibleTransferencia;
+  const excede = parseFloat(parte.monto || 0) > disponibleMetodo + 0.01;
+
+  return (
+    <div style={{
+      background: "#FEF2F2",
+      border: "1.5px solid #FECACA",
+      borderRadius: "10px",
+      padding: "1rem",
+      marginBottom: "0.85rem",
+    }}>
+      <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: "#991B1B", letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.75rem" }}>
+        {titulo}
+      </p>
+
+      {/* Selector de método */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem", marginBottom: "0.75rem" }}>
+        {METODOS.map(m => {
+          const activo = parte.metodo_reembolso === m;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange(idx, "metodo_reembolso", m)}
+              style={{
+                padding: "0.55rem",
+                borderRadius: "7px",
+                border: `1.5px solid ${activo ? "#EF4444" : "#E5E7EB"}`,
+                background: activo ? "#FEE2E2" : "#FFF",
+                color: activo ? "#EF4444" : "#374151",
+                fontFamily: FONTC,
+                fontWeight: activo ? 700 : 500,
+                fontSize: "0.8rem",
+                cursor: "pointer",
+              }}
+            >
+              {m === "Efectivo" ? "💵" : "🏦"} {m}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Monto */}
+      <div style={{ marginBottom: parte.metodo_reembolso === "Transferencia" ? "0.5rem" : 0 }}>
+        <label style={S.label}>Monto *</label>
+        <input
+          type="number"
+          step="0.01"
+          min="0.01"
+          value={parte.monto}
+          onChange={e => onChange(idx, "monto", e.target.value)}
+          style={{ ...S.input, width: "100%", borderColor: excede ? "#EF4444" : undefined }}
+          placeholder="0.00"
+        />
+        <p style={{ fontSize: "0.72rem", margin: "0.3rem 0 0", fontFamily: FONT, color: excede ? "#DC2626" : "#9CA3AF" }}>
+          Disponible en {parte.metodo_reembolso.toLowerCase()} en esta caja: ${disponibleMetodo.toFixed(2)}
+          {excede ? " — ¡excede lo disponible!" : ""}
+        </p>
+      </div>
+
+      {/* Referencia (solo Transferencia) */}
+      {parte.metodo_reembolso === "Transferencia" && (
+        <div>
+          <label style={S.label}>N° de Referencia / Comprobante *</label>
+          <input
+            type="text"
+            value={parte.referencia}
+            onChange={e => onChange(idx, "referencia", e.target.value)}
+            style={{ ...S.input, width: "100%", textTransform: "uppercase" }}
+            placeholder="Ej: TRX123456"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SUB-COMPONENTE: RESUMEN MIXTO (REEMBOLSO) ──────────────────────────────
+function ResumenMixtoReembolso({ partes, total }) {
+  const suma = partes.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+  const diff = Math.abs(suma - total);
+  const ok   = diff <= 0.01;
+
+  return (
+    <div style={{
+      background: ok ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)",
+      border: `1.5px solid ${ok ? "#BBF7D0" : "#FCA5A5"}`,
+      borderRadius: "10px",
+      padding: "0.85rem 1rem",
+      marginBottom: "1rem",
+    }}>
+      <p style={{ fontFamily: FONTC, fontSize: "0.7rem", fontWeight: 700, color: ok ? "#065F46" : "#991B1B", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>
+        {ok ? "✓ Desglose correcto" : "⚠ La suma no coincide con el monto total"}
+      </p>
+      {partes.map((p, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#1F2937", marginBottom: "0.2rem" }}>
+          <span>{p.metodo_reembolso || "—"}{p.referencia ? ` (${p.referencia.toUpperCase()})` : ""}</span>
+          <span style={{ fontFamily: FONTC, fontWeight: 700 }}>${parseFloat(p.monto || 0).toFixed(2)}</span>
+        </div>
+      ))}
+      <div style={{ borderTop: "1px dashed #FCA5A5", marginTop: "0.5rem", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: ok ? "#065F46" : "#991B1B" }}>
         <span>SUMA</span>
         <span>${suma.toFixed(2)}</span>
       </div>

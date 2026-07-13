@@ -2242,6 +2242,7 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
             background: white !important; z-index: 99999 !important;
           }
           #reporte-cierre {
+            display: block !important;
             font-family: 'Barlow', Arial, sans-serif !important; color: #111 !important;
             background: white !important; border: none !important; padding: 0 !important;
             width: 100% !important;

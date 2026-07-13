@@ -115,6 +115,48 @@ function ArqueoRapidoCard({ onClick }) {
   );
 }
 
+// ─── ARQUEO DE CAJA — CIERRES POR TURNO (TARJETA) ────────────────────────────
+// Trae el resumen de /dashboard/cierres-caja (hoy) para mostrar cuántos
+// cierres hubo y si alguno quedó descuadrado.
+function CierresCajaCard({ onClick }) {
+  const [resumen, setResumen] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const hoyISO = new Date().toISOString().split("T")[0];
+    API.get(`/dashboard/cierres-caja?desde=${hoyISO}&hasta=${hoyISO}`)
+      .then((r) => setResumen(r.data?.resumen || null))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const descuadres = resumen?.cierres_con_descuadre || 0;
+
+  return (
+    <div
+      style={{ ...kpiCard, background: "#1E293B", color: "#FFF", cursor: "pointer", border: "none" }}
+      onClick={onClick}
+      title="Ver arqueo de caja detallado por turno"
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ ...kpiLabel, color: "#94A3B8" }}>🧾 Cierres de Caja (Hoy)</p>
+          <p style={{ ...kpiValue, color: descuadres > 0 ? "#F87171" : "#34D399" }}>
+            {loading ? "—" : resumen?.total_cierres ?? 0}
+          </p>
+          <p style={{ margin: "0.35rem 0 0", fontSize: "0.7rem", color: "#94A3B8", fontFamily: "'Barlow', sans-serif" }}>
+            {loading ? "—" : descuadres > 0 ? `⚠️ ${descuadres} con descuadre` : "✅ Todos cuadrados"}
+          </p>
+        </div>
+        <div style={{ ...kpiIcon, background: "#334155" }}>
+          <span style={{ fontSize: "1.3rem" }}>🧾</span>
+        </div>
+      </div>
+      <p style={{ margin: "0.6rem 0 0", fontSize: "0.68rem", color: "#94A3B8", fontFamily: "'Barlow', sans-serif" }}>Ver detalle →</p>
+    </div>
+  );
+}
+
 // ─── BADGE ────────────────────────────────────────────────────────────────────
 function Badge({ estado }) {
   const map = {
@@ -204,6 +246,57 @@ function DonutChart({ slices, size = 160 }) {
       <text x={cx} y={cy + size * 0.1} textAnchor="middle" fontSize={size * 0.07} fill="#9CA3AF" style={{ fontFamily: "'Barlow', sans-serif" }}>órdenes</text>
     </svg>
   );
+}
+
+// ─── TENDENCIA DE DIFERENCIAS DE CAJA (SVG, barras +/- sobre línea cero) ─────
+// Verde hacia arriba = sobrante, rojo hacia abajo = faltante. Se usa en el
+// arqueo de caja para detectar si un cajero o un período tiene descuadres
+// recurrentes en vez de casos aislados.
+function DiferenciaTrendChart({ items }) {
+  if (!items || items.length === 0) return null;
+  const W = 520, H = 140, PAD = { top: 14, right: 10, bot: 10, left: 46 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bot;
+  const maxAbs = Math.max(...items.map((d) => Math.abs(d.value)), 0.01);
+  const zeroY  = PAD.top + innerH / 2;
+  const barW   = Math.max(6, Math.floor(innerW / items.length) - 5);
+  const step   = innerW / items.length;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+      <line x1={PAD.left} x2={W - PAD.right} y1={zeroY} y2={zeroY} stroke="#CBD5E1" strokeWidth="1.5" />
+      <text x={PAD.left - 6} y={zeroY + 3} textAnchor="end" fontSize="9" fill="#9CA3AF">$0</text>
+      {items.map((d, i) => {
+        const h        = Math.max(1.5, (Math.abs(d.value) / maxAbs) * (innerH / 2 - 4));
+        const cx       = PAD.left + step * i + step / 2;
+        const x        = cx - barW / 2;
+        const positive = d.value >= 0;
+        const y        = positive ? zeroY - h : zeroY;
+        const cuadrada = Math.abs(d.value) <= 0.01;
+        const color    = cuadrada ? "#CBD5E1" : positive ? "#10B981" : "#EF4444";
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={barW} height={h} rx="2" fill={color} opacity="0.9">
+              <title>{`${d.label}: ${d.value >= 0 ? "+" : ""}$${d.value.toFixed(2)}`}</title>
+            </rect>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─── BADGE DE DIFERENCIA DE CIERRE DE CAJA ───────────────────────────────────
+function DiferenciaBadge({ value }) {
+  if (value === null || value === undefined) {
+    return <span style={{ color: "#9CA3AF", fontSize: "0.78rem", fontFamily: "'Barlow', sans-serif" }}>Turno abierto</span>;
+  }
+  const v = Number(value);
+  const cuadrado = Math.abs(v) <= 0.01;
+  const bg    = cuadrado ? "#D1FAE5" : v < 0 ? "#FEE2E2" : "#FEF3C7";
+  const color = cuadrado ? "#065F46" : v < 0 ? "#991B1B" : "#92400E";
+  const label = cuadrado ? "Cuadrada" : v < 0 ? `Faltante ${fmtMoney(Math.abs(v))}` : `Sobrante ${fmtMoney(v)}`;
+  return <span style={{ ...badgeBase, background: bg, color }}>{label}</span>;
 }
 
 // ─── SECCIÓN DE GRÁFICOS ──────────────────────────────────────────────────────
@@ -639,6 +732,317 @@ function ModalIngresos({ open, onClose }) {
   );
 }
 
+// ─── MODAL: ARQUEO DE CAJA — CIERRES POR TURNO (drill-down completo) ────────
+// A diferencia de ModalIngresos (que agrega pago/reembolso por fecha), este
+// modal consulta /dashboard/cierres-caja: turno por turno, quién lo cerró,
+// fondo inicial, cobrado, reembolsado, esperado vs contado y diferencia.
+// Incluye resumen de descuadres, tendencia de diferencias y ranking por cajero.
+function ModalCierresCaja({ open, onClose }) {
+  const hoyISO = new Date().toISOString().split("T")[0];
+  const [desde, setDesde]       = useState(hoyISO);
+  const [hasta, setHasta]       = useState(hoyISO);
+  const [q, setQ]               = useState("");
+  const [data, setData]         = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(null);
+  const [detalleId, setDetalleId] = useState(null);
+
+  const cargar = useCallback(() => {
+    if (!desde || !hasta) return;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams({ desde, hasta });
+    if (q.trim()) params.set("q", q.trim());
+    API.get(`/dashboard/cierres-caja?${params.toString()}`)
+      .then((r) => setData(r.data))
+      .catch(() => setError("No se pudo cargar el arqueo de caja."))
+      .finally(() => setLoading(false));
+  }, [desde, hasta, q]);
+
+  useEffect(() => { if (open) cargar(); }, [open, cargar]);
+
+  const tendenciaChart = (data?.tendencia || []).map((t) => ({
+    label: new Date(t.fecha).toLocaleDateString("es-EC", { day: "2-digit", month: "2-digit" }) + " · " + (t.cajero || "").split(" ")[0],
+    value: Number(t.diferencia || 0),
+  }));
+
+  return (
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title="🧾 Arqueo de Caja — Cierres por Turno"
+        subtitle="Detalle completo de cada cierre de caja: fondo, cobros, reembolsos y diferencia"
+        extraWide
+      >
+        {/* ── Filtros ── */}
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end", marginBottom: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <p style={{ ...sectionLabel, marginBottom: "0.25rem" }}>Desde</p>
+            <input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} style={dateInput} />
+          </div>
+          <div>
+            <p style={{ ...sectionLabel, marginBottom: "0.25rem" }}>Hasta</p>
+            <input type="date" value={hasta} min={desde} max={hoyISO} onChange={(e) => setHasta(e.target.value)} style={dateInput} />
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <p style={{ ...sectionLabel, marginBottom: "0.25rem" }}>Buscar cajero o # de cierre</p>
+            <SearchBox value={q} onChange={setQ} placeholder="Nombre, usuario o # de cierre…" />
+          </div>
+          <button
+            onClick={cargar}
+            style={{ padding: "0.48rem 1rem", background: "#E88B3A", color: "#FFF", border: "none", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", whiteSpace: "nowrap" }}
+          >
+            🔍 Consultar
+          </button>
+          {desde !== hoyISO || hasta !== hoyISO || q ? (
+            <button
+              onClick={() => { setDesde(hoyISO); setHasta(hoyISO); setQ(""); }}
+              style={{ padding: "0.48rem 0.8rem", background: "#F1F5F9", color: "#374151", border: "1px solid #E2E8F0", borderRadius: "8px", fontFamily: "'Barlow', sans-serif", fontSize: "0.78rem", cursor: "pointer" }}
+            >
+              Hoy
+            </button>
+          ) : null}
+        </div>
+
+        {loading ? <p style={loadingTxt}>Cargando…</p> : error ? <p style={{ ...emptyTxt, color: "#EF4444" }}>{error}</p> : !data ? null : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+
+            {/* ── Resumen ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.75rem" }}>
+              {[
+                { label: "Cierres en el rango", value: data.resumen.total_cierres,        color: "#3B82F6", icon: "🧾" },
+                { label: "Cuadrados",            value: data.resumen.cierres_cuadrados,     color: "#10B981", icon: "✅" },
+                { label: "Con descuadre",        value: data.resumen.cierres_con_descuadre, color: "#EF4444", icon: "⚠️" },
+                { label: "Turnos abiertos",      value: data.resumen.cierres_abiertos,      color: "#F59E0B", icon: "🔓" },
+              ].map((m) => (
+                <div key={m.label} style={{ background: `${m.color}10`, border: `1px solid ${m.color}30`, borderRadius: "10px", padding: "0.75rem 0.9rem" }}>
+                  <p style={{ margin: "0 0 0.2rem", fontSize: "0.68rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif", textTransform: "uppercase", letterSpacing: "0.05em" }}>{m.icon} {m.label}</p>
+                  <p style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.3rem", color: m.color }}>{m.value ?? 0}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Descuadres detallados ── */}
+            {(data.resumen.descuadres_faltante.count > 0 || data.resumen.descuadres_sobrante.count > 0) && (
+              <div style={{ padding: "0.7rem 1rem", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "0.82rem", fontFamily: "'Barlow', sans-serif", color: "#7F1D1D" }}>
+                  🔻 Faltantes: <strong>{data.resumen.descuadres_faltante.count}</strong> por un total de <strong>{fmtMoney(data.resumen.descuadres_faltante.monto)}</strong>
+                </span>
+                <span style={{ fontSize: "0.82rem", fontFamily: "'Barlow', sans-serif", color: "#92400E" }}>
+                  🔺 Sobrantes: <strong>{data.resumen.descuadres_sobrante.count}</strong> por un total de <strong>{fmtMoney(data.resumen.descuadres_sobrante.monto)}</strong>
+                </span>
+              </div>
+            )}
+
+            {/* ── Tendencia de diferencias ── */}
+            {tendenciaChart.length > 0 && (
+              <div>
+                <p style={sectionLabel}>📈 Tendencia de Diferencias (verde = sobrante, rojo = faltante)</p>
+                <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "0.75rem 0.5rem" }}>
+                  <DiferenciaTrendChart items={tendenciaChart} />
+                </div>
+              </div>
+            )}
+
+            {/* ── Ranking por cajero ── */}
+            {data.rankingCajeros.length > 0 && (
+              <div>
+                <p style={sectionLabel}>🏆 Precisión por Cajero</p>
+                <table style={tbl}>
+                  <thead><tr>{["Cajero","Turnos","Cuadrados","Descuadres","Precisión","Monto Gestionado"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {data.rankingCajeros.map((c, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #F1F5F9", background: i % 2 ? "#FAFAFA" : "#FFF" }}>
+                        <td style={td}><strong>{c.cajero}</strong></td>
+                        <td style={{ ...td, textAlign: "center" }}>{c.total_cierres}</td>
+                        <td style={{ ...td, textAlign: "center", color: "#10B981", fontWeight: 700 }}>{c.cuadrados}</td>
+                        <td style={{ ...td, textAlign: "center", color: c.con_descuadre > 0 ? "#EF4444" : "#9CA3AF", fontWeight: 700 }}>{c.con_descuadre}</td>
+                        <td style={td}>
+                          {c.precision_pct === null ? "—" : (
+                            <span style={{
+                              ...badgeBase,
+                              background: c.precision_pct >= 90 ? "#D1FAE5" : c.precision_pct >= 70 ? "#FEF3C7" : "#FEE2E2",
+                              color:      c.precision_pct >= 90 ? "#065F46" : c.precision_pct >= 70 ? "#92400E" : "#991B1B",
+                            }}>
+                              {c.precision_pct}%
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ ...td, fontWeight: 700, color: "#1F2937" }}>{fmtMoney(c.monto_gestionado)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* ── Listado de cierres (click = drill-down) ── */}
+            <div>
+              <p style={sectionLabel}>📋 Cierres del Rango ({data.cierres.length})</p>
+              {data.cierres.length === 0 ? <p style={emptyTxt}>No hay cierres de caja en el rango seleccionado</p> : (
+                <table style={tbl}>
+                  <thead>
+                    <tr>{["#","Cajero","Apertura","Cierre","Fondo Inicial","Cobrado","Reembolsado","Esperado","Contado","Estado"].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {data.cierres.map((c) => (
+                      <tr
+                        key={c.id_cierre}
+                        style={{ borderBottom: "1px solid #F1F5F9", cursor: "pointer" }}
+                        onClick={() => setDetalleId(c.id_cierre)}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "#F8FAFC"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <td style={td}><span style={ticketStyle}>#{c.id_cierre}</span></td>
+                        <td style={td}>{c.cajero}</td>
+                        <td style={{ ...td, color: "#9CA3AF", fontSize: "0.78rem" }}>
+                          {new Date(c.fecha_apertura).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                        </td>
+                        <td style={{ ...td, color: "#9CA3AF", fontSize: "0.78rem" }}>
+                          {c.fecha_cierre ? new Date(c.fecha_cierre).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+                        </td>
+                        <td style={td}>{fmtMoney(c.monto_inicial)}</td>
+                        <td style={td}>{fmtMoney(c.cobrado_efectivo + c.cobrado_transferencia)}</td>
+                        <td style={{ ...td, color: (c.reembolsado_efectivo + c.reembolsado_transferencia) > 0 ? "#EF4444" : "#9CA3AF" }}>
+                          {(c.reembolsado_efectivo + c.reembolsado_transferencia) > 0 ? fmtMoney(c.reembolsado_efectivo + c.reembolsado_transferencia) : "—"}
+                        </td>
+                        <td style={td}>{fmtMoney(c.efectivo_esperado)}</td>
+                        <td style={td}>{c.efectivo_contado === null ? "—" : fmtMoney(c.efectivo_contado)}</td>
+                        <td style={td}>
+                          {c.estado === "ABIERTO"
+                            ? <span style={{ ...badgeBase, background: "#DBEAFE", color: "#1E40AF" }}>Abierto</span>
+                            : <DiferenciaBadge value={c.diferencia} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p style={{ margin: "0.6rem 0 0", fontSize: "0.72rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif" }}>
+                Haz clic en un cierre para ver el detalle de sus pagos y reembolsos.
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ModalDetalleCierre cierreId={detalleId} onClose={() => setDetalleId(null)} />
+    </>
+  );
+}
+
+// ─── MODAL: DETALLE DE UN CIERRE PUNTUAL (drill-down anidado) ───────────────
+// Trae /dashboard/cierres-caja/:id — cabecera + pagos + reembolsos de ese
+// turno específico. Reutiliza el mismo endpoint que usa la secretaria para
+// imprimir su comprobante, así que los números siempre coinciden.
+function ModalDetalleCierre({ cierreId, onClose }) {
+  const [detalle, setDetalle] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => {
+    if (!cierreId) { setDetalle(null); return; }
+    setLoading(true);
+    setError(null);
+    API.get(`/dashboard/cierres-caja/${cierreId}`)
+      .then((r) => setDetalle(r.data))
+      .catch(() => setError("No se pudo cargar el detalle de este cierre."))
+      .finally(() => setLoading(false));
+  }, [cierreId]);
+
+  const cierre = detalle?.cierre;
+
+  return (
+    <Modal
+      open={!!cierreId}
+      onClose={onClose}
+      title={cierre ? `Turno #${cierre.id_cierre}` : "Detalle de Cierre"}
+      subtitle={cierre ? `${cierre.nombres} ${cierre.apellidos} — @${cierre.username}` : ""}
+      wide
+    >
+      {loading ? <p style={loadingTxt}>Cargando…</p> : error ? <p style={{ ...emptyTxt, color: "#EF4444" }}>{error}</p> : !detalle ? null : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+
+          {/* ── Resumen del turno ── */}
+          <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", rowGap: "0.45rem", fontFamily: "'Barlow', sans-serif", fontSize: "0.85rem" }}>
+              <span style={{ color: "#6B7280" }}>Apertura</span>
+              <span style={{ textAlign: "right", color: "#1F2937" }}>{new Date(cierre.fecha_apertura).toLocaleString("es-EC")}</span>
+
+              <span style={{ color: "#6B7280" }}>Cierre</span>
+              <span style={{ textAlign: "right", color: "#1F2937" }}>{cierre.fecha_cierre ? new Date(cierre.fecha_cierre).toLocaleString("es-EC") : "Turno abierto"}</span>
+
+              <span style={{ color: "#6B7280" }}>Fondo inicial</span>
+              <span style={{ textAlign: "right", color: "#1F2937" }}>{fmtMoney(cierre.monto_inicial)}</span>
+
+              <span style={{ color: "#6B7280" }}>Efectivo esperado</span>
+              <span style={{ textAlign: "right", color: "#1F2937", fontWeight: 700 }}>{fmtMoney(cierre.efectivo_esperado)}</span>
+
+              {cierre.estado === "CERRADO" && (
+                <>
+                  <span style={{ color: "#6B7280" }}>Efectivo contado</span>
+                  <span style={{ textAlign: "right", color: "#1F2937", fontWeight: 700 }}>{fmtMoney(cierre.efectivo_contado)}</span>
+
+                  <span style={{ color: "#6B7280" }}>Diferencia</span>
+                  <span style={{ textAlign: "right" }}><DiferenciaBadge value={Number(cierre.diferencia)} /></span>
+                </>
+              )}
+
+              {cierre.observaciones && (
+                <>
+                  <span style={{ color: "#6B7280" }}>Observaciones</span>
+                  <span style={{ textAlign: "right", color: "#1F2937" }}>{cierre.observaciones}</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* ── Pagos del turno ── */}
+          <div>
+            <p style={sectionLabel}>💵 Pagos del Turno ({detalle.pagos.length})</p>
+            {detalle.pagos.length === 0 ? <p style={emptyTxt}>Sin pagos registrados en este turno</p> : (
+              <table style={tbl}>
+                <thead><tr>{["Ticket","Paciente","Método","Monto"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {detalle.pagos.map((p, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <td style={td}><span style={ticketStyle}>{p.numero_ticket}</span></td>
+                      <td style={td}>{p.paciente_nombres} {p.paciente_apellidos}</td>
+                      <td style={td}>{p.metodo_pago}</td>
+                      <td style={{ ...td, fontWeight: 700, color: "#10B981" }}>{fmtMoney(p.monto)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* ── Reembolsos del turno ── */}
+          {detalle.reembolsos.length > 0 && (
+            <div>
+              <p style={sectionLabel}>↩️ Reembolsos del Turno ({detalle.reembolsos.length})</p>
+              <table style={tbl}>
+                <thead><tr>{["Ticket","Método","Motivo","Monto"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {detalle.reembolsos.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <td style={td}><span style={ticketStyle}>{r.numero_ticket}</span></td>
+                      <td style={td}>{r.metodo_reembolso}{r.referencia ? ` (REF: ${r.referencia})` : ""}</td>
+                      <td style={{ ...td, color: "#6B7280" }}>{r.motivo || "—"}</td>
+                      <td style={{ ...td, fontWeight: 700, color: "#EF4444" }}>{fmtMoney(r.monto)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // ─── MODAL: PACIENTES REGISTRADOS — con filtro de fechas ────────────────────
 function ModalPacientes({ open, onClose }) {
   const hoyISO = new Date().toISOString().split("T")[0];
@@ -1057,6 +1461,7 @@ export default function AdminDashboard() {
       <ModalUsuarios    open={modal === "usuarios"}   onClose={closeModal} />
       <ModalOrdenes     open={modal === "ordenes"}    onClose={closeModal} />
       <ModalIngresos    open={modal === "ingresos"}   onClose={closeModal} />
+      <ModalCierresCaja open={modal === "cierresCaja"} onClose={closeModal} />
       <ModalPacientes   open={modal === "pacientes"}  onClose={closeModal} />
       <ModalCriticos    open={modal === "criticos"}   onClose={closeModal} />
       <ModalPorValidar  open={modal === "porValidar"} onClose={closeModal} />
@@ -1083,6 +1488,7 @@ export default function AdminDashboard() {
       <div style={kpiGrid}>
         {kpis.map((kp, i) => <KpiCard key={i} {...kp} />)}
         <ArqueoRapidoCard onClick={() => openModal("ingresos")} />
+        <CierresCajaCard onClick={() => openModal("cierresCaja")} />
       </div>
 
       {/* ── GRÁFICOS ── */}

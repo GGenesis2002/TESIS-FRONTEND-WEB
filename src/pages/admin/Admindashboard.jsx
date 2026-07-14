@@ -95,9 +95,9 @@ function ArqueoRapidoCard({ onClick }) {
     API.get(`/dashboard/arqueo-hoy?desde=${hoyISO}&hasta=${hoyISO}`)
       .then((r) => {
         setCaja({
-          efectivo: Number(r.data?.efectivo || 0),
-          transferencia: Number(r.data?.transferencia || 0),
-        });
+        efectivo: Number(r.data?.efectivo || 0),
+        transferencia: Number(r.data?.transferencia || 0),
+      });
       })
       .catch(() => {})
       .finally(() => setLoading(false));

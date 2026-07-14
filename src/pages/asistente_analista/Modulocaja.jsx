@@ -88,7 +88,7 @@ const isToday = (dateString) => {
 const estadoInicial = () => ({
   modoPago: "simple",          // "simple" | "mixto"
   partes: [
-    { metodo_pago: "Efectivo", monto: "", referencia: "" }
+    { metodo_pago: "Efectivo", monto: "", referencia: "", banco: "", titular: "", cedula_titular: "" }
   ],
 });
 
@@ -99,7 +99,7 @@ const estadoInicialReembolso = () => ({
   modoPago: "simple",          // "simple" | "mixto"
   montoTotal: "",
   partes: [
-    { metodo_reembolso: "Efectivo", monto: "", referencia: "" }
+    { metodo_reembolso: "Efectivo", monto: "", referencia: "", banco: "", titular: "", cedula_titular: "" }
   ],
   motivo: "",
 });
@@ -373,7 +373,7 @@ export default function ModuloCaja() {
     setFormReembolso({
       modoPago: "simple",
       montoTotal: disponible.toFixed(2),
-      partes: [{ metodo_reembolso: "Efectivo", monto: disponible.toFixed(2), referencia: "" }],
+      partes: [{ metodo_reembolso: "Efectivo", monto: disponible.toFixed(2), referencia: "", banco: "", titular: "", cedula_titular: "" }],
       motivo: "",
     });
     setMsgReembolso(null);
@@ -387,7 +387,7 @@ export default function ModuloCaja() {
       setFormReembolso(f => ({
         ...f,
         modoPago: "simple",
-        partes: [{ metodo_reembolso: f.partes[0]?.metodo_reembolso || "Efectivo", monto: total.toFixed(2), referencia: "" }],
+        partes: [{ metodo_reembolso: f.partes[0]?.metodo_reembolso || "Efectivo", monto: total.toFixed(2), referencia: "", banco: "", titular: "", cedula_titular: "" }],
       }));
     } else {
       const mitad = (total / 2).toFixed(2);
@@ -396,8 +396,8 @@ export default function ModuloCaja() {
         ...f,
         modoPago: "mixto",
         partes: [
-          { metodo_reembolso: "Efectivo",      monto: mitad, referencia: "" },
-          { metodo_reembolso: "Transferencia", monto: resto, referencia: "" },
+          { metodo_reembolso: "Efectivo",      monto: mitad, referencia: "", banco: "", titular: "", cedula_titular: "" },
+          { metodo_reembolso: "Transferencia", monto: resto, referencia: "", banco: "", titular: "", cedula_titular: "" },
         ],
       }));
     }
@@ -468,6 +468,15 @@ export default function ModuloCaja() {
       if (p.metodo_reembolso === "Transferencia" && !p.referencia.trim()) {
         return setMsgReembolso({ type: "error", text: "Ingresa el número de referencia de la transferencia." });
       }
+      if (p.metodo_reembolso === "Transferencia" && !p.banco.trim()) {
+        return setMsgReembolso({ type: "error", text: "Ingresa el banco de la transferencia." });
+      }
+      if (p.metodo_reembolso === "Transferencia" && !p.titular.trim()) {
+        return setMsgReembolso({ type: "error", text: "Ingresa el nombre del titular de la cuenta receptora." });
+      }
+      if (p.metodo_reembolso === "Transferencia" && !p.cedula_titular.trim()) {
+        return setMsgReembolso({ type: "error", text: "Ingresa la cédula del titular de la cuenta receptora." });
+      }
     }
     if (partes.length === 2 && partes[0].metodo_reembolso === partes[1].metodo_reembolso) {
       return setMsgReembolso({ type: "error", text: "En un reembolso mixto los dos métodos deben ser diferentes." });
@@ -506,6 +515,9 @@ export default function ModuloCaja() {
           monto: parseFloat(p.monto),
           metodo_reembolso: p.metodo_reembolso,
           referencia: p.referencia.trim() || undefined,
+          banco: p.banco.trim() || undefined,
+          titular: p.titular.trim() || undefined,
+          cedula_titular: p.cedula_titular.trim() || undefined,
         })),
         motivo: motivo.trim(),
       });
@@ -529,7 +541,7 @@ export default function ModuloCaja() {
     const total = parseFloat(orden.total || 0).toFixed(2);
     setFormCobro({
       modoPago: "simple",
-      partes: [{ metodo_pago: "Efectivo", monto: total, referencia: "" }],
+      partes: [{ metodo_pago: "Efectivo", monto: total, referencia: "", banco: "", titular: "", cedula_titular: "" }],
     });
     setShowCobro(orden);
     setMsg(null);
@@ -542,7 +554,7 @@ export default function ModuloCaja() {
       setFormCobro(f => ({
         ...f,
         modoPago: "simple",
-        partes: [{ metodo_pago: f.partes[0]?.metodo_pago || "Efectivo", monto: total.toFixed(2), referencia: "" }],
+        partes: [{ metodo_pago: f.partes[0]?.metodo_pago || "Efectivo", monto: total.toFixed(2), referencia: "", banco: "", titular: "", cedula_titular: "" }],
       }));
     } else {
       // Mixto: dividir 50/50 como punto de partida
@@ -552,8 +564,8 @@ export default function ModuloCaja() {
         ...f,
         modoPago: "mixto",
         partes: [
-          { metodo_pago: "Efectivo",       monto: mitad, referencia: "" },
-          { metodo_pago: "Transferencia",  monto: resto, referencia: "" },
+          { metodo_pago: "Efectivo",       monto: mitad, referencia: "", banco: "", titular: "", cedula_titular: "" },
+          { metodo_pago: "Transferencia",  monto: resto, referencia: "", banco: "", titular: "", cedula_titular: "" },
         ],
       }));
     }
@@ -592,6 +604,15 @@ export default function ModuloCaja() {
       if (p.metodo_pago === "Transferencia" && !p.referencia.trim()) {
         return setMsg({ type: "error", text: "Ingresa el número de referencia de la transferencia." });
       }
+      if (p.metodo_pago === "Transferencia" && !p.banco.trim()) {
+        return setMsg({ type: "error", text: "Ingresa el banco desde el que se hizo la transferencia." });
+      }
+      if (p.metodo_pago === "Transferencia" && !p.titular.trim()) {
+        return setMsg({ type: "error", text: "Ingresa el nombre de quien realizó la transferencia." });
+      }
+      if (p.metodo_pago === "Transferencia" && !p.cedula_titular.trim()) {
+        return setMsg({ type: "error", text: "Ingresa la cédula de quien realizó la transferencia." });
+      }
     }
 
     const suma = partes.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
@@ -608,6 +629,9 @@ export default function ModuloCaja() {
           monto: parseFloat(p.monto),
           metodo_pago: p.metodo_pago,
           referencia: p.referencia.trim() || undefined,
+          banco: p.banco.trim() || undefined,
+          titular: p.titular.trim() || undefined,
+          cedula_titular: p.cedula_titular.trim() || undefined,
         })),
       };
 
@@ -1900,9 +1924,36 @@ function PagoParteSub({ parte, idx, esMixto, totalOrden, onChange }) {
             style={{ ...S.input, width: "100%", textTransform: "uppercase" }}
             placeholder="Ej: TRF-20250629-001"
           />
-          <p style={{ fontSize: "0.73rem", color: "#6B7280", margin: "0.3rem 0 0", fontFamily: FONT }}>
+          <p style={{ fontSize: "0.73rem", color: "#6B7280", margin: "0.3rem 0 0.6rem", fontFamily: FONT }}>
             Ingresa el número de transacción que aparece en el comprobante bancario.
           </p>
+
+          <label style={S.label}>Banco *</label>
+          <input
+            type="text"
+            value={parte.banco}
+            onChange={e => onChange(idx, "banco", e.target.value)}
+            style={{ ...S.input, width: "100%", marginBottom: "0.6rem" }}
+            placeholder="Ej: Banco Pichincha"
+          />
+
+          <label style={S.label}>Titular de la transferencia *</label>
+          <input
+            type="text"
+            value={parte.titular}
+            onChange={e => onChange(idx, "titular", e.target.value)}
+            style={{ ...S.input, width: "100%", marginBottom: "0.6rem" }}
+            placeholder="Nombre de quien transfirió"
+          />
+
+          <label style={S.label}>Cédula del titular *</label>
+          <input
+            type="text"
+            value={parte.cedula_titular}
+            onChange={e => onChange(idx, "cedula_titular", e.target.value)}
+            style={{ ...S.input, width: "100%" }}
+            placeholder="Ej: 0912345678"
+          />
         </div>
       )}
     </div>
@@ -2020,6 +2071,33 @@ function ReembolsoParteSub({ parte, idx, esMixto, onChange, disponibleEfectivo, 
             onChange={e => onChange(idx, "referencia", e.target.value)}
             style={{ ...S.input, width: "100%", textTransform: "uppercase" }}
             placeholder="Ej: TRX123456"
+          />
+
+          <label style={{ ...S.label, marginTop: "0.6rem" }}>Banco (destino) *</label>
+          <input
+            type="text"
+            value={parte.banco}
+            onChange={e => onChange(idx, "banco", e.target.value)}
+            style={{ ...S.input, width: "100%", marginBottom: "0.6rem" }}
+            placeholder="Ej: Banco Pichincha"
+          />
+
+          <label style={S.label}>Titular de la cuenta receptora *</label>
+          <input
+            type="text"
+            value={parte.titular}
+            onChange={e => onChange(idx, "titular", e.target.value)}
+            style={{ ...S.input, width: "100%", marginBottom: "0.6rem" }}
+            placeholder="Nombre de quien recibe la transferencia"
+          />
+
+          <label style={S.label}>Cédula del titular *</label>
+          <input
+            type="text"
+            value={parte.cedula_titular}
+            onChange={e => onChange(idx, "cedula_titular", e.target.value)}
+            style={{ ...S.input, width: "100%" }}
+            placeholder="Ej: 0912345678"
           />
         </div>
       )}

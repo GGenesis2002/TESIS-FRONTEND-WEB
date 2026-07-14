@@ -91,18 +91,19 @@ function ArqueoRapidoCard({ onClick }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const hoyISO = getHoyLocal();
+    const hoyISO = getHoyLocal(); // Obtiene YYYY-MM-DD local
+    setLoading(true);
+    // Agregamos explícitamente desde y hasta para evitar que el backend use su propia hora UTC
     API.get(`/dashboard/arqueo-hoy?desde=${hoyISO}&hasta=${hoyISO}`)
       .then((r) => {
         setCaja({
-        efectivo: Number(r.data?.efectivo || 0),
-        transferencia: Number(r.data?.transferencia || 0),
-      });
+          efectivo: Number(r.data?.efectivo || 0),
+          transferencia: Number(r.data?.transferencia || 0),
+        });
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
-
   const total = caja.efectivo + caja.transferencia;
 
   return (

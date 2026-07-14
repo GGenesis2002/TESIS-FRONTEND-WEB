@@ -1603,6 +1603,15 @@ export default function AdminResultados() {
                             📄 Abrir PDF
                           </button>
                         )}
+                        {/* Orden devuelta al especialista: ni Validar ni Devolver deben
+                            estar habilitados hasta que el especialista corrija y reenvíe
+                            (eso actualiza estado_orden/porValidar en el backend y, al
+                            recargar, los botones de acción vuelven a aparecer solos). */}
+                        {o.estado_orden === "Devuelto" && (
+                          <span style={{ color: "#991B1B", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                            ⏳ Esperando corrección del especialista
+                          </span>
+                        )}
                       </div>
                     </td>
                   </tr>

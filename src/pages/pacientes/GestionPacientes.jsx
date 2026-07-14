@@ -89,6 +89,7 @@ export default function GestionPacientes() {
   const [buscandoDoc, setBuscandoDoc] = useState(false);
   const [buscandoCedula, setBuscandoCedula] = useState(false);
   const [usuarioExistente, setUsuarioExistente] = useState(false); // true si la cédula ya pertenece a un usuario con otro rol
+  const [mostrarCampoPassword, setMostrarCampoPassword] = useState(false); // se activa con el botón "Habilitar cambio de contraseña"
 
   const [form, setForm] = useState({
     tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "", correo: "",
@@ -213,7 +214,15 @@ export default function GestionPacientes() {
     }
 
     // Usuario y contraseña ya no se piden manualmente: se generan automáticamente al registrar.
-
+    // La contraseña SOLO se valida si el admin activó explícitamente "Habilitar cambio de contraseña".
+    if (isEditing && mostrarCampoPassword) {
+      const nueva = (form.password || "").trim();
+      if (!nueva) {
+        e.password = "Ingresa la nueva contraseña o cancela el cambio.";
+      } else if (nueva.length < 6) {
+        e.password = "La contraseña debe tener al menos 6 caracteres.";
+      }
+    }
 
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -234,11 +243,20 @@ export default function GestionPacientes() {
   if (!payload.direccion || payload.direccion.trim() === "") {
     payload.direccion = null;
   }
+  // La contraseña solo viaja al backend si el admin activó el cambio explícitamente.
+  if (!isEditing || !mostrarCampoPassword || !(payload.password || "").trim()) {
+    delete payload.password;
+  } else {
+    payload.password = payload.password.trim();
+  }
 
   try {
     if (isEditing) {
+      const passwordFueCambiada = !!payload.password;
       await API.put(`/pacientes/${form.id_usuario}`, payload);
-      showToast("success", "Paciente actualizado correctamente.");
+      showToast("success", passwordFueCambiada
+        ? "Paciente actualizado y contraseña cambiada correctamente."
+        : "Paciente actualizado correctamente.");
       setShowModal(false);
       resetForm();
       cargarPacientes();
@@ -314,6 +332,7 @@ export default function GestionPacientes() {
     setErrors({});
     setIsEditing(false);
     setUsuarioExistente(false);
+    setMostrarCampoPassword(false);
   };
 
   const filtrados = pacientes.filter(p =>
@@ -414,9 +433,11 @@ export default function GestionPacientes() {
                         correo: p.correo || "",
                         telefono: p.telefono || "",
                         direccion: p.direccion || "",
-                        fecha_nacimiento: fechaFormateada 
+                        fecha_nacimiento: fechaFormateada,
+                        password: "" // nunca precargar contraseñas; se llena solo si el admin la cambia
                       });
                       setErrors({});
+                      setMostrarCampoPassword(false);
                       setIsEditing(true);
                       setShowModal(true);
                     }}
@@ -688,6 +709,64 @@ export default function GestionPacientes() {
                     </select>
                   </div>
 
+                  {/* ── SECCIÓN SEPARADA: CAMBIO DE CONTRASEÑA (solo al editar) ──────────
+                      Se mantiene aparte del resto de campos a propósito: el admin debe
+                      activarla con un clic antes de poder tocar la contraseña, para evitar
+                      cambios accidentales al editar los demás datos del paciente. */}
+                  {isEditing && (
+                    <div style={s.passSection}>
+                      {!mostrarCampoPassword ? (
+                        <button
+                          type="button"
+                          onClick={() => setMostrarCampoPassword(true)}
+                          style={s.btnPasswordToggle}
+                        >
+                          🔒 HABILITAR CAMBIO DE CONTRASEÑA
+                        </button>
+                      ) : (
+                        <div style={s.passCard}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                            <span style={{ fontFamily: FONTC, fontSize: "0.78rem", fontWeight: 700, color: DARK, letterSpacing: "0.05em" }}>
+                              🔒 NUEVA CONTRASEÑA
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMostrarCampoPassword(false);
+                                setForm({ ...form, password: "" });
+                                setErrors({ ...errors, password: undefined });
+                              }}
+                              style={s.linkCancel}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                          <div style={{ display: "flex", gap: "0.4rem" }}>
+                            <input
+                              type="text"
+                              placeholder="Mínimo 6 caracteres"
+                              value={form.password || ""}
+                              onChange={e => setForm({ ...form, password: e.target.value })}
+                              style={{ ...s.input, borderColor: errors.password ? "#EF4444" : "#E5E7EB" }}
+                            />
+                            <button
+                              type="button"
+                              title="Generar una contraseña automáticamente"
+                              onClick={() => setForm({ ...form, password: generarPasswordTemporal() })}
+                              style={{ ...s.btnPrimary, padding: "0.6rem 0.75rem", fontSize: "0.78rem", whiteSpace: "nowrap", flexShrink: 0 }}
+                            >
+                              Generar
+                            </button>
+                          </div>
+                          {errors.password && <span style={s.errTxt}>{errors.password}</span>}
+                          <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "#6B7280" }}>
+                            Esta contraseña reemplazará a la actual del paciente en cuanto guardes los cambios.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div style={s.modalActions}>
                     <button onClick={cerrarModalRegistro} style={s.btnCancel}>
                       CANCELAR
@@ -882,6 +961,21 @@ const s = {
     outline: "none", width: "100%", cursor: "pointer",
   },
   modalActions: { display: "flex", gap: "0.75rem", marginTop: "0.5rem" },
+  passSection: {
+    marginTop: "0.25rem", paddingTop: "0.9rem", borderTop: "1.5px dashed #E5E7EB",
+  },
+  btnPasswordToggle: {
+    width: "100%", background: "#FFF7ED", color: "#C2410C", border: "1.5px dashed #FDBA74",
+    padding: "0.65rem 1rem", borderRadius: "8px", fontFamily: FONTC, fontWeight: 700,
+    fontSize: "0.8rem", letterSpacing: "0.05em", cursor: "pointer",
+  },
+  passCard: {
+    background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: "10px", padding: "0.85rem 1rem",
+  },
+  linkCancel: {
+    background: "none", border: "none", color: "#6B7280", fontFamily: FONT,
+    fontSize: "0.75rem", textDecoration: "underline", cursor: "pointer", padding: 0,
+  },
   btnSave: {
     flex: 1, background: ORANGE, color: "#FFF", border: "none", padding: "0.75rem",
     borderRadius: "8px", fontFamily: FONTC, fontWeight: 700, fontSize: "0.85rem",

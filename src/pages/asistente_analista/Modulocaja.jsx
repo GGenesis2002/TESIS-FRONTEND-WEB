@@ -818,7 +818,7 @@ export default function ModuloCaja() {
       {/* ── TABS ── */}
       <div style={{ display: "flex", background: "#F3F4F6", borderRadius: "10px", padding: "0.25rem", gap: "0.25rem", marginBottom: "1.5rem", width: "fit-content" }}>
         {[
-          { key: "cierre",     label: `🗄️ Cierre de Caja${turnoActivo ? " •" : ""}` },
+          { key: "cierre",     label: `🗄️ Cierre de Caja${turnoActivo && turnoActivo.esPropio ? " •" : ""}` },
           { key: "cobrar",     label: `💳 Cobrar (${ordenesFiltradas.length})` },
           { key: "reembolsos", label: `↩️ Reembolsos (${pagosReembolsables.length})` },
           { key: "reporte",    label: `📊 Reporte (${totalTransacciones})` },
@@ -1203,6 +1203,20 @@ export default function ModuloCaja() {
           {msg && <Alert msg={msg} />}
           {cargandoCaja && !turnoActivo && cierresHistorial.length === 0 ? (
             <div style={S.empty}>Cargando...</div>
+          ) : turnoActivo && turnoActivo.esPropio === false ? (
+            <div style={{ ...S.tableCard, padding: "2.5rem 1.5rem", textAlign: "center" }}>
+              <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🔒</div>
+              <p style={{ fontFamily: FONTC, fontSize: "1.15rem", fontWeight: 800, color: DARK, margin: "0 0 0.4rem", textTransform: "uppercase" }}>
+                Ya hay una caja abierta
+              </p>
+              <p style={{ fontSize: "0.85rem", color: "#6B7280", margin: "0 0 0.25rem" }}>
+                El turno #{turnoActivo.id_cierre} está abierto por <strong>{turnoActivo.secretaria_nombres} {turnoActivo.secretaria_apellidos}</strong> desde{" "}
+                {new Date(turnoActivo.fecha_apertura).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.
+              </p>
+              <p style={{ fontSize: "0.8rem", color: "#9CA3AF", margin: 0 }}>
+                La caja es física y única: debes esperar a que esa persona la cierre antes de poder abrir un turno propio.
+              </p>
+            </div>
           ) : !turnoActivo ? (
             <div style={{ ...S.tableCard, padding: "2.5rem 1.5rem", textAlign: "center" }}>
               <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🗄️</div>
@@ -2396,53 +2410,93 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
           </>
         )}
 
-        <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>
-          Detalle de cobros ({pagos.length})
-        </p>
-        <table style={{ width: "100%", fontSize: "0.75rem", borderCollapse: "collapse", marginBottom: "16px" }}>
-          <thead>
-            <tr style={{ background: "#F3F4F6" }}>
-              <th style={S.thReporte}>Ticket</th><th style={S.thReporte}>Paciente</th>
-              <th style={S.thReporte}>Método</th><th style={{ ...S.thReporte, textAlign: "right" }}>Monto</th>
-              <th style={S.thReporte}>Hora</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pagos.map(p => (
-              <tr key={`rp-${p.id_pago}`} style={{ borderBottom: "1px solid #E5E7EB" }}>
-                <td style={S.tdReporte}>{p.numero_ticket}</td>
-                <td style={S.tdReporte}>{p.paciente_nombres} {p.paciente_apellidos}</td>
-                <td style={S.tdReporte}>{p.metodo_pago}</td>
-                <td style={{ ...S.tdReporte, textAlign: "right" }}>${parseFloat(p.monto).toFixed(2)}</td>
-                <td style={S.tdReporte}>{new Date(p.fecha_pago).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })}</td>
-              </tr>
-            ))}
-            {pagos.length === 0 && <tr><td colSpan={5} style={{ ...S.tdReporte, textAlign: "center", color: "#9CA3AF" }}>Sin cobros en este turno</td></tr>}
-          </tbody>
-        </table>
+        {(() => {
+          const pagosEfectivo      = pagos.filter(p => (p.metodo_pago || "").includes("Efectivo"));
+          const pagosTransferencia = pagos.filter(p => (p.metodo_pago || "").includes("Transferencia"));
+          const subtotalPagos = arr => arr.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
 
-        <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>
-          Detalle de reembolsos ({reembolsos.length})
-        </p>
-        <table style={{ width: "100%", fontSize: "0.75rem", borderCollapse: "collapse", marginBottom: "24px" }}>
-          <thead>
-            <tr style={{ background: "#FEF2F2" }}>
-              <th style={S.thReporte}>Ticket</th><th style={S.thReporte}>Motivo</th>
-              <th style={S.thReporte}>Método</th><th style={{ ...S.thReporte, textAlign: "right" }}>Monto</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reembolsos.map(r => (
-              <tr key={`rr-${r.id_reembolso}`} style={{ borderBottom: "1px solid #E5E7EB" }}>
-                <td style={S.tdReporte}>{r.numero_ticket}</td>
-                <td style={S.tdReporte}>{r.motivo}</td>
-                <td style={S.tdReporte}>{r.metodo_reembolso}</td>
-                <td style={{ ...S.tdReporte, textAlign: "right", color: "#EF4444" }}>-${parseFloat(r.monto).toFixed(2)}</td>
-              </tr>
-            ))}
-            {reembolsos.length === 0 && <tr><td colSpan={4} style={{ ...S.tdReporte, textAlign: "center", color: "#9CA3AF" }}>Sin reembolsos en este turno</td></tr>}
-          </tbody>
-        </table>
+          const TablaCobros = ({ titulo, lista, color }) => (
+            <>
+              <p style={{ fontWeight: 700, fontSize: "0.82rem", color, margin: "0 0 4px" }}>
+                {titulo} ({lista.length}) — Subtotal: ${subtotalPagos(lista).toFixed(2)}
+              </p>
+              <table style={{ width: "100%", fontSize: "0.75rem", borderCollapse: "collapse", marginBottom: "12px" }}>
+                <thead>
+                  <tr style={{ background: "#F3F4F6" }}>
+                    <th style={S.thReporte}>Ticket</th><th style={S.thReporte}>Paciente</th>
+                    <th style={S.thReporte}>Método</th><th style={{ ...S.thReporte, textAlign: "right" }}>Monto</th>
+                    <th style={S.thReporte}>Hora</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lista.map(p => (
+                    <tr key={`rp-${p.id_pago}`} style={{ borderBottom: "1px solid #E5E7EB" }}>
+                      <td style={S.tdReporte}>{p.numero_ticket}</td>
+                      <td style={S.tdReporte}>{p.paciente_nombres} {p.paciente_apellidos}</td>
+                      <td style={S.tdReporte}>{p.metodo_pago}</td>
+                      <td style={{ ...S.tdReporte, textAlign: "right" }}>${parseFloat(p.monto).toFixed(2)}</td>
+                      <td style={S.tdReporte}>{new Date(p.fecha_pago).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })}</td>
+                    </tr>
+                  ))}
+                  {lista.length === 0 && <tr><td colSpan={5} style={{ ...S.tdReporte, textAlign: "center", color: "#9CA3AF" }}>Sin cobros por este método</td></tr>}
+                </tbody>
+              </table>
+            </>
+          );
+
+          return (
+            <>
+              <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>
+                Detalle de cobros ({pagos.length})
+              </p>
+              <TablaCobros titulo="💵 Efectivo" lista={pagosEfectivo} color="#10B981" />
+              <TablaCobros titulo="🏧 Transferencia" lista={pagosTransferencia} color="#3B82F6" />
+            </>
+          );
+        })()}
+
+        {(() => {
+          const reembolsosEfectivo      = reembolsos.filter(r => r.metodo_reembolso === "Efectivo");
+          const reembolsosTransferencia = reembolsos.filter(r => r.metodo_reembolso === "Transferencia");
+          const subtotalReembolsos = arr => arr.reduce((s, r) => s + parseFloat(r.monto || 0), 0);
+
+          const TablaReembolsos = ({ titulo, lista, color }) => (
+            <>
+              <p style={{ fontWeight: 700, fontSize: "0.82rem", color, margin: "0 0 4px" }}>
+                {titulo} ({lista.length}) — Subtotal: -${subtotalReembolsos(lista).toFixed(2)}
+              </p>
+              <table style={{ width: "100%", fontSize: "0.75rem", borderCollapse: "collapse", marginBottom: "12px" }}>
+                <thead>
+                  <tr style={{ background: "#FEF2F2" }}>
+                    <th style={S.thReporte}>Ticket</th><th style={S.thReporte}>Motivo</th>
+                    <th style={S.thReporte}>Método</th><th style={{ ...S.thReporte, textAlign: "right" }}>Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lista.map(r => (
+                    <tr key={`rr-${r.id_reembolso}`} style={{ borderBottom: "1px solid #E5E7EB" }}>
+                      <td style={S.tdReporte}>{r.numero_ticket}</td>
+                      <td style={S.tdReporte}>{r.motivo}</td>
+                      <td style={S.tdReporte}>{r.metodo_reembolso}</td>
+                      <td style={{ ...S.tdReporte, textAlign: "right", color: "#EF4444" }}>-${parseFloat(r.monto).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                  {lista.length === 0 && <tr><td colSpan={4} style={{ ...S.tdReporte, textAlign: "center", color: "#9CA3AF" }}>Sin reembolsos por este método</td></tr>}
+                </tbody>
+              </table>
+            </>
+          );
+
+          return (
+            <>
+              <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>
+                Detalle de reembolsos ({reembolsos.length})
+              </p>
+              <TablaReembolsos titulo="💵 Efectivo" lista={reembolsosEfectivo} color="#10B981" />
+              <TablaReembolsos titulo="🏧 Transferencia" lista={reembolsosTransferencia} color="#3B82F6" />
+            </>
+          );
+        })()}
 
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: "40px" }}>
           <div style={{ textAlign: "center", width: "45%" }}>

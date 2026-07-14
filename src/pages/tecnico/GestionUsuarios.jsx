@@ -151,7 +151,7 @@ function ModalVer({ usuario, onClose }) {
               { label: "Cédula", value: usuario.cedula },
               { label: "Correo", value: usuario.correo },
               { label: "Cargo", value: usuario.cargo || "—" },
-              { label: "Especialidad", value: usuario.especialidad || "—" },
+              { label: "Especialidad", value: Array.isArray(usuario.especialidad) ? (usuario.especialidad.join(", ") || "—") : (usuario.especialidad || "—") },
               { label: "Turno", value: usuario.turno || "—" },
               
             ].map(({ label, value }) => (
@@ -187,6 +187,7 @@ export default function GestionUsuarios() {
   const [showVerModal, setShowVerModal] = useState(false);
   const [usuarioVisto, setUsuarioVisto] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [habilitarCambioPassword, setHabilitarCambioPassword] = useState(false);
   const [filtroExamen, setFiltroExamen] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [vistaTabla, setVistaTabla] = useState("todos");
@@ -203,7 +204,7 @@ export default function GestionUsuarios() {
   const [formData, setFormData] = useState({
     id_usuario: null, tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "",
     correo: "", username: "", password: "",
-    id_rol: "", cargo: "", especialidad: "", turno: "",
+    id_rol: "", cargo: "", especialidades: [], turno: "",
     id_roles: [], examenes_asignados: []
   });
 
@@ -290,6 +291,18 @@ export default function GestionUsuarios() {
     setFormData({ ...formData, id_roles: nuevosRoles });
   };
 
+  // Especialista puede tener varias áreas de laboratorio (Sangre, Heces, etc.)
+  // Se guarda como arreglo; en la BD viaja como columna TEXT[] (sin tablas nuevas).
+  const handleToggleEspecialidad = (valor) => {
+    let nuevas = [...formData.especialidades];
+    if (nuevas.includes(valor)) {
+      nuevas = nuevas.filter(e => e !== valor);
+    } else {
+      nuevas.push(valor);
+    }
+    setFormData({ ...formData, especialidades: nuevas });
+  };
+
   // ── FIX: normalizamos siempre a String para evitar mismatch de tipos
   // (number vs string) entre lo que devuelve /examenes y /asignaciones.
   const handleToggleExamen = (idExamen) => {
@@ -307,12 +320,13 @@ export default function GestionUsuarios() {
     setFormData({
       id_usuario: null, tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "",
       correo: "", username: "", password: "",
-      id_rol: "", cargo: "", especialidad: "", turno: "",
+      id_rol: "", cargo: "", especialidades: [], turno: "",
       id_roles: [], examenes_asignados: []
     });
     setFormErrors({});
     setFiltroExamen("");
     setShowPassword(false);
+    setHabilitarCambioPassword(false);
     setCredencialesGeneradas(null);
     setShowModal(true);
   };
@@ -373,7 +387,11 @@ if (rolesActuales.includes("3")) {
       password: "",
       id_rol: rolPrincipal,
       cargo: u.cargo || "",
-      especialidad: u.especialidad || "",
+      // u.especialidad ahora llega como arreglo (columna TEXT[] en la BD).
+      // Se deja un fallback por si en algún punto llega como string suelto.
+      especialidades: Array.isArray(u.especialidad)
+        ? u.especialidad
+        : (u.especialidad ? [u.especialidad] : []),
       turno: u.turno || "",
       id_roles: rolesActuales,
       examenes_asignados: examenesPrevios
@@ -381,6 +399,7 @@ if (rolesActuales.includes("3")) {
     setFormErrors({});
     setFiltroExamen("");
     setShowPassword(false);
+    setHabilitarCambioPassword(false);
     setCredencialesGeneradas(null);
     setShowModal(true);
   };
@@ -428,6 +447,9 @@ if (rolesActuales.includes("3")) {
 
     // Especialista sin exámenes asignados → advertencia (no bloquea)
     const esEsp = tieneRolEspecialista(formData.id_rol, formData.id_roles);
+    if (esEsp && formData.especialidades.length === 0) {
+      e.especialidades = "Selecciona al menos una especialidad (área de laboratorio).";
+    }
     if (esEsp && formData.examenes_asignados.length === 0) {
       e._warn_examenes = "El especialista no tiene exámenes asignados. Puedes continuar, pero no podrá procesar resultados hasta que se le asignen.";
     }
@@ -534,7 +556,11 @@ if (rolesActuales.includes("3")) {
   });
 
   const examenesPorCategoria = examenesFiltrados.reduce((grupos, ex) => {
-    const cat = ex.categoria || ex.tipo || "General";
+    // FIX: el backend (examenModule.getAllActive/getByCategoria) devuelve el
+    // nombre de la categoría en "nombre_categoria" (viene del JOIN con
+    // categoria_examen), no en "categoria" ni "tipo". Antes esto hacía que
+    // TODOS los exámenes cayeran en "General" y la agrupación no sirviera.
+    const cat = ex.nombre_categoria || "Sin categoría";
     if (!grupos[cat]) grupos[cat] = [];
     grupos[cat].push(ex);
     return grupos;
@@ -671,7 +697,11 @@ if (rolesActuales.includes("3")) {
                         <div>
                           <span style={{ fontWeight: 600, color: DARK, display: "block" }}>{u.nombres} {u.apellidos}</span>
                           {u.cargo && <span style={styles.subtextBlock}>Cargo: {u.cargo}</span>}
-                          {u.especialidad && <span style={styles.subtextBlock}>Esp: {u.especialidad}</span>}
+                          {u.especialidad && (!Array.isArray(u.especialidad) || u.especialidad.length > 0) && (
+                            <span style={styles.subtextBlock}>
+                              Esp: {Array.isArray(u.especialidad) ? u.especialidad.join(", ") : u.especialidad}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -916,34 +946,66 @@ if (rolesActuales.includes("3")) {
 
               <div style={styles.grid2}>
                 <div>
-                  <label style={styles.fieldLabel}>
-                    {formData.id_usuario ? "Contraseña (Opcional — mín. 6 chars si cambia)" : "Contraseña Temporal (autogenerada)"}
-                  </label>
-                  <div style={{ position: "relative" }}>
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      name="password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      readOnly={!formData.id_usuario}
-                      style={!formData.id_usuario ? { ...errStyle("password"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed", paddingRight: "4.4rem" } : { ...errStyle("password"), paddingRight: "2.4rem" }}
-                    />
-                    {!formData.id_usuario && (
-                      <button
-                        type="button"
-                        title="Generar otra contraseña"
-                        onClick={() => setFormData(f => ({ ...f, password: generarPasswordTemporal() }))}
-                        style={{ ...styles.eyeBtn, right: "2.2rem" }}
-                      >
-                        🔄
-                      </button>
-                    )}
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                      {showPassword ? "🙈" : "👁️"}
-                    </button>
-                  </div>
-                  {formErrors.password && <span style={styles.errTxt}>{formErrors.password}</span>}
-                  {!formData.id_usuario && <span style={{ fontSize: "0.7rem", color: "#9CA3AF", display: "block", marginTop: "0.2rem" }}>Se la mostraremos completa al terminar el registro para que se la entregues a la persona.</span>}
+                  {formData.id_usuario && (
+                    <label style={{
+                      display: "flex", alignItems: "center", gap: "0.45rem",
+                      marginBottom: "0.4rem", fontFamily: FONT, fontSize: "0.85rem",
+                      color: DARK, cursor: "pointer", userSelect: "none"
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={habilitarCambioPassword}
+                        onChange={() => {
+                          const activar = !habilitarCambioPassword;
+                          setHabilitarCambioPassword(activar);
+                          // Si se desmarca, limpiamos cualquier valor escrito para
+                          // no enviar por error una contraseña a medio escribir.
+                          if (!activar) {
+                            setFormData(f => ({ ...f, password: "" }));
+                            setFormErrors(prev => {
+                              const { password, ...rest } = prev;
+                              return rest;
+                            });
+                          }
+                        }}
+                        style={{ accentColor: ORANGE }}
+                      />
+                      Habilitar cambio de contraseña
+                    </label>
+                  )}
+
+                  {(!formData.id_usuario || habilitarCambioPassword) && (
+                    <>
+                      <label style={styles.fieldLabel}>
+                        {formData.id_usuario ? "Nueva Contraseña (mín. 6 caracteres)" : "Contraseña Temporal (autogenerada)"}
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          name="password"
+                          value={formData.password}
+                          onChange={handleChange}
+                          readOnly={!formData.id_usuario}
+                          style={!formData.id_usuario ? { ...errStyle("password"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed", paddingRight: "4.4rem" } : { ...errStyle("password"), paddingRight: "2.4rem" }}
+                        />
+                        {!formData.id_usuario && (
+                          <button
+                            type="button"
+                            title="Generar otra contraseña"
+                            onClick={() => setFormData(f => ({ ...f, password: generarPasswordTemporal() }))}
+                            style={{ ...styles.eyeBtn, right: "2.2rem" }}
+                          >
+                            🔄
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                          {showPassword ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+                      {formErrors.password && <span style={styles.errTxt}>{formErrors.password}</span>}
+                      {!formData.id_usuario && <span style={{ fontSize: "0.7rem", color: "#9CA3AF", display: "block", marginTop: "0.2rem" }}>Se la mostraremos completa al terminar el registro para que se la entregues a la persona.</span>}
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -999,12 +1061,32 @@ if (rolesActuales.includes("3")) {
 
               {esEspecialistaEnForm && (
                 <>
-                  <div style={{ marginBottom: "1rem" }}>
-                    <label style={styles.fieldLabel}>Especialidad (Área de Laboratorio) *</label>
-                    <select name="especialidad" value={formData.especialidad} onChange={handleChange} required={needsEspecialidad} style={styles.select}>
-                      <option value="">-- Seleccione una Especialidad --</option>
-                      {ESPECIALIDADES.map((e) => <option key={e} value={e}>{e}</option>)}
-                    </select>
+                  <div style={{ marginBottom: "1rem", padding: "0.75rem", background: "#F9FAFB", borderRadius: "8px", border: "1px dashed #E5E7EB" }}>
+                    <label style={styles.fieldLabel}>
+                      Especialidades (Áreas de Laboratorio) *
+                      {formData.especialidades.length > 0 && (
+                        <span style={{ marginLeft: "0.5rem", background: "#FEF3C7", color: "#B45309", padding: "0.1rem 0.45rem", borderRadius: "4px", fontSize: "0.7rem" }}>
+                          {formData.especialidades.length} seleccionada{formData.especialidades.length !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </label>
+                    <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
+                      {ESPECIALIDADES.map((esp) => {
+                        const marcada = formData.especialidades.includes(esp);
+                        return (
+                          <label key={esp} style={{ display: "flex", alignItems: "center", gap: "0.35rem", cursor: "pointer", fontSize: "0.82rem", padding: "0.35rem 0.6rem", borderRadius: "6px", background: marcada ? "#FEF3C7" : "#F3F4F6", border: `1.5px solid ${marcada ? ORANGE : "#E5E7EB"}`, transition: "all 0.15s" }}>
+                            <input
+                              type="checkbox"
+                              checked={marcada}
+                              onChange={() => handleToggleEspecialidad(esp)}
+                              style={{ accentColor: ORANGE }}
+                            />
+                            <span style={{ fontWeight: marcada ? 700 : 500, color: marcada ? "#B45309" : DARK }}>{esp}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {formErrors.especialidades && <span style={styles.errTxt}>{formErrors.especialidades}</span>}
                   </div>
 
                   <div style={{ marginBottom: "1rem", padding: "0.85rem", background: "#FFFBEB", borderRadius: "8px", border: "1px solid #FDE68A" }}>

@@ -1373,8 +1373,6 @@ export default function AdminResultados() {
     setTimeout(() => setMsg(null), 4000);
   };
 
-  const abrirDevolver = (r) => { setSeleccionado(r); setModal("devolver"); };
-
   const abrirPublicar = async (orden) => {
     try {
       const detalle = await api.getDetalleOrden(orden.id_orden);
@@ -1583,25 +1581,25 @@ export default function AdminResultados() {
                     </td>
                     <td style={td}>
                       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                        {/* Orden lista (estado correcto 'Por Validar') */}
+                        {/* Orden lista (estado correcto 'Por Validar') — un solo botón
+                            "Revisar" que abre el modal de revisión examen por examen. */}
                         {o.estado_orden === "Por Validar" && (
                           <button onClick={() => abrirPublicar(o)}
                             style={{ ...btnSmall, background: "#10B981", color: "#FFF", border: "none" }}>
-                            ✅ Validar
+                            🔍 Revisar
                           </button>
                         )}
                         
-                        {/* En Proceso pero ya hay resultados listos (la orden no cambió de estado por el bug del backend) */}
+                        {/* En Proceso pero ya hay resultados listos (la orden no cambió de estado por el bug del backend).
+                            Un único botón "Revisar" — nada se ha validado todavía, así que no
+                            tiene sentido mostrar también un botón "Devolver" suelto aquí: eso
+                            daría a entender que ya se decidió algo sobre la orden cuando en
+                            realidad la validación/devolución se decide examen por examen dentro
+                            del modal de revisión. */}
                         {o.estado_orden === "En Proceso" && porValidar > 0 && (
                           <button onClick={() => abrirPublicar(o)}
                             style={{ ...btnSmall, background: "#10B981", color: "#FFF", border: "none" }}>
-                            ✅ Validar
-                          </button>
-                        )}
-                        {o.estado_orden === "En Proceso" && porValidar > 0 && (
-                          <button onClick={() => { setSeleccionado({ id_resultado: null, id_orden: o.id_orden, numero_ticket: o.numero_ticket }); setModal("devolver"); }}
-                            style={{ ...btnSmall, background: "#FEE2E2", color: "#991B1B", border: "1px solid #FCA5A5" }}>
-                            ↩ Devolver
+                            🔍 Revisar
                           </button>
                         )}
                         {/* En elaboración real: ningún especialista ha enviado todavía */}

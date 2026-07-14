@@ -8,6 +8,19 @@ const fmtMoney = (n) => `$${Number(n || 0).toFixed(2)}`;
 const MESES    = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const PAGE_SIZE = 8;
 
+// new Date().toISOString() devuelve la fecha en UTC, no en la hora local del
+// navegador. En Ecuador (GMT-5), entre las 19:00 y las 23:59 eso hace que
+// "hoy" salte al día siguiente y los endpoints de "hoy" (arqueo de caja,
+// KPIs, etc.) no encuentren nada -> se ve $0.00 aunque sí hubo movimientos.
+// Esta función arma la fecha YYYY-MM-DD usando la hora local del navegador.
+function getHoyLocal() {
+  const hoy = new Date();
+  const y = hoy.getFullYear();
+  const m = String(hoy.getMonth() + 1).padStart(2, "0");
+  const d = String(hoy.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 // ─── MODAL BASE ───────────────────────────────────────────────────────────────
 function Modal({ open, onClose, title, subtitle, children, wide, extraWide }) {
   useEffect(() => {
@@ -78,7 +91,7 @@ function ArqueoRapidoCard({ onClick }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const hoyISO = new Date().toISOString().split("T")[0];
+    const hoyISO = getHoyLocal();
     API.get(`/dashboard/arqueo-hoy?desde=${hoyISO}&hasta=${hoyISO}`)
       .then((r) => {
         setCaja({
@@ -123,7 +136,7 @@ function CierresCajaCard({ onClick }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const hoyISO = new Date().toISOString().split("T")[0];
+    const hoyISO = getHoyLocal();
     API.get(`/dashboard/cierres-caja?desde=${hoyISO}&hasta=${hoyISO}`)
       .then((r) => setResumen(r.data?.resumen || null))
       .catch(() => {})
@@ -595,7 +608,7 @@ function ModalOrdenes({ open, onClose }) {
 
 // ─── MODAL: INGRESOS / ARQUEO — con filtro de fechas ─────────────────────────
 function ModalIngresos({ open, onClose }) {
-  const hoyISO  = new Date().toISOString().split("T")[0];
+  const hoyISO  = getHoyLocal();
   const [desde, setDesde]     = useState(hoyISO);
   const [hasta, setHasta]     = useState(hoyISO);
   const [data, setData]       = useState(null);
@@ -738,7 +751,7 @@ function ModalIngresos({ open, onClose }) {
 // fondo inicial, cobrado, reembolsado, esperado vs contado y diferencia.
 // Incluye resumen de descuadres, tendencia de diferencias y ranking por cajero.
 function ModalCierresCaja({ open, onClose }) {
-  const hoyISO = new Date().toISOString().split("T")[0];
+  const hoyISO = getHoyLocal();
   const [desde, setDesde]       = useState(hoyISO);
   const [hasta, setHasta]       = useState(hoyISO);
   const [q, setQ]               = useState("");
@@ -1045,7 +1058,7 @@ function ModalDetalleCierre({ cierreId, onClose }) {
 
 // ─── MODAL: PACIENTES REGISTRADOS — con filtro de fechas ────────────────────
 function ModalPacientes({ open, onClose }) {
-  const hoyISO = new Date().toISOString().split("T")[0];
+  const hoyISO = getHoyLocal();
   const [desde, setDesde]     = useState("");   // vacío = sin límite inferior
   const [hasta, setHasta]     = useState("");   // vacío = sin límite superior
   const [lista, setLista]     = useState([]);

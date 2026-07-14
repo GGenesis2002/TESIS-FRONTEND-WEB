@@ -1230,7 +1230,7 @@ export default function ModuloCaja() {
                 Debes abrir un turno antes de poder registrar cobros. Indica el fondo inicial de efectivo con el que arrancas.
               </p>
               <div style={{ textAlign: "left", maxWidth: "640px", margin: "0 auto 1.25rem" }}>
-                <UltimoCierreCard cierre={ultimoCierre} onVerComprobante={ultimoCierre ? () => verDetalleCierre(ultimoCierre) : null} />
+                <UltimoCierreCard cierre={ultimoCierre} />
               </div>
               <button onClick={abrirModalTurno} style={{ ...S.btnFull2, padding: "0.75rem 1.5rem" }}>🔓 ABRIR TURNO DE CAJA</button>
             </div>
@@ -1481,7 +1481,7 @@ export default function ModuloCaja() {
           <div style={S.modalBody}>
             {msgAbrir && <Alert msg={msgAbrir} />}
 
-            <UltimoCierreCard cierre={ultimoCierre} onVerComprobante={ultimoCierre ? () => verDetalleCierre(ultimoCierre) : null} />
+            <UltimoCierreCard cierre={ultimoCierre} />
 
             <ModoConteoToggle modo={modoApertura} setModo={setModoApertura} />
 
@@ -2703,7 +2703,7 @@ function FilaCascada({ signo, label, value, bold, color }) {
 // Cascada de caja del turno EN VIVO: separa Efectivo y Transferencia y muestra
 // explícitamente cobrado − reembolsado = neto, para que se entienda a dónde
 // "se fue" el dinero de un reembolso en vez de mostrar cifras sueltas sin relación.
-function UltimoCierreCard({ cierre, onVerComprobante }) {
+function UltimoCierreCard({ cierre }) {
   if (!cierre) {
     return (
       <div style={{ ...S.tableCard, padding: "1rem 1.25rem", marginBottom: "1.25rem", background: "#F8FAFC" }}>
@@ -2714,44 +2714,19 @@ function UltimoCierreCard({ cierre, onVerComprobante }) {
     );
   }
 
-  const fondo         = parseFloat(cierre.monto_inicial || 0);
-  const cobradoEf     = parseFloat(cierre.total_efectivo_sistema || 0);
-  const cobradoTrans  = parseFloat(cierre.total_transferencia_sistema || 0);
-  const reembEf       = parseFloat(cierre.total_reembolsos_efectivo || 0);
-  const reembTrans    = parseFloat(cierre.total_reembolsos_transferencia || 0);
-  const diferencia    = parseFloat(cierre.diferencia || 0);
+  const efectivoFinal = parseFloat(cierre.efectivo_contado || 0);
 
   return (
     <div style={{ ...S.tableCard, padding: "1.1rem 1.25rem", marginBottom: "1.25rem", textAlign: "left" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem" }}>
-        <div>
-          <p style={{ fontFamily: FONTC, fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.15rem" }}>
-            🗓️ Último cierre registrado
-          </p>
-          <p style={{ fontSize: "0.8rem", color: "#6B7280", margin: 0 }}>
-            Cerrado por <strong>{cierre.nombres} {cierre.apellidos}</strong> — {cierre.fecha_cierre ? new Date(cierre.fecha_cierre).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
-          </p>
-        </div>
-        {onVerComprobante && (
-          <button onClick={onVerComprobante} style={{ ...S.btnFull2, padding: "0.45rem 0.9rem", fontSize: "0.78rem", width: "auto" }}>
-            🖨️ Ver / descargar comprobante
-          </button>
-        )}
-      </div>
-
+      <p style={{ fontFamily: FONTC, fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.6rem" }}>
+        🗓️ Último cierre de caja
+      </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.6rem" }}>
-        <DetalleItem label="Fondo inicial" value={`$${fondo.toFixed(2)}`} />
-        <DetalleItem label="Cobrado (efectivo)" value={`$${cobradoEf.toFixed(2)}`} />
-        <DetalleItem label="Cobrado (transf.)" value={`$${cobradoTrans.toFixed(2)}`} />
-        <DetalleItem label="Reembolsado (efectivo)" value={`$${reembEf.toFixed(2)}`} />
-        <DetalleItem label="Reembolsado (transf.)" value={`$${reembTrans.toFixed(2)}`} />
+        <DetalleItem label="Fondo final (efectivo)" value={`$${efectivoFinal.toFixed(2)}`} />
+        <DetalleItem label="Cerrado por" value={`${cierre.nombres || ""} ${cierre.apellidos || ""}`.trim() || "—"} />
         <DetalleItem
-          label="Diferencia"
-          value={
-            <span style={{ color: diferencia === 0 ? "#10B981" : diferencia > 0 ? "#3B82F6" : "#EF4444" }}>
-              {diferencia > 0 ? "+" : ""}${diferencia.toFixed(2)}
-            </span>
-          }
+          label="Cerrado el"
+          value={cierre.fecha_cierre ? new Date(cierre.fecha_cierre).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
         />
       </div>
     </div>

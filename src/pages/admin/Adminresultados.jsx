@@ -777,6 +777,7 @@ firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || nu
   );
 
   const handlePreviewPDF = async () => {
+    if (!todosValidados) return; // no se genera PDF hasta validar todos los exámenes de la orden
     const doc = await generarPDFResultado(orden, resultados, admin);
     setPdfDoc(doc);
     setPdfGenerado(true);
@@ -1230,10 +1231,20 @@ firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || nu
               <p style={{ margin: 0, fontSize: "0.82rem", color: "#166534", fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>{admin.nombre}</p>
               <p style={{ margin: 0, fontSize: "0.71rem", color: "#4ADE80" }}>{admin.cargo} · Firmado electrónicamente</p>
             </div>
-            {/* Botón preview PDF integrado en la fila de firma */}
+            {/* Botón preview PDF integrado en la fila de firma.
+                Solo se habilita cuando TODOS los exámenes de la orden están
+                validados — no basta con que uno solo lo esté, porque el PDF
+                final incluye a todos los especialistas/exámenes de la orden. */}
             {totalValidados > 0 && (
               <button onClick={handlePreviewPDF}
-                style={{ ...btnSmall, background: "rgba(139,92,246,0.08)", color: "#7C3AED", border: "1px solid rgba(139,92,246,0.2)", display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                disabled={!todosValidados}
+                title={!todosValidados ? "Debes validar todos los exámenes de la orden antes de generar el PDF" : ""}
+                style={{ ...btnSmall,
+                  background: todosValidados ? "rgba(139,92,246,0.08)" : "#F3F4F6",
+                  color: todosValidados ? "#7C3AED" : "#9CA3AF",
+                  border: todosValidados ? "1px solid rgba(139,92,246,0.2)" : "1px solid #E5E7EB",
+                  cursor: todosValidados ? "pointer" : "not-allowed",
+                  display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
                 📄 Visualizar PDF
               </button>
             )}

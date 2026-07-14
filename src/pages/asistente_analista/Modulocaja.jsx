@@ -1160,7 +1160,7 @@ export default function ModuloCaja() {
                 Ya hay una caja abierta
               </p>
               <p style={{ fontSize: "0.85rem", color: "#6B7280", margin: "0 0 0.25rem" }}>
-                El turno #{turnoActivo.id_cierre} está abierto por <strong>{turnoActivo.secretaria_nombres} {turnoActivo.secretaria_apellidos}</strong> desde{" "}
+                La caja está abierto por <strong>{turnoActivo.secretaria_nombres} {turnoActivo.secretaria_apellidos}</strong> desde{" "}
                 {new Date(turnoActivo.fecha_apertura).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.
               </p>
               <p style={{ fontSize: "0.8rem", color: "#9CA3AF", margin: 0 }}>

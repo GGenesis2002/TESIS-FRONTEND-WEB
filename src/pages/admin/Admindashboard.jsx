@@ -696,7 +696,6 @@ function ModalIngresos({ open, onClose }) {
       </p>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", fontFamily: "'Barlow', sans-serif" }}>
         <span style={{ color: "#7F1D1D" }}>💵 Efectivo: <strong>{fmtMoney(data.arqueo?.reembolsos_efectivo)}</strong></span>
-        <span style={{ color: "#7F1D1D" }}>🏦 Transferencia: <strong>{fmtMoney(data.arqueo?.reembolsos_transferencia)}</strong></span>
       </div>
     </div>
   )}

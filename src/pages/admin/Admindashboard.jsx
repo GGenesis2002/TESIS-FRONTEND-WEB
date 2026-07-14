@@ -897,7 +897,7 @@ function ModalCierresCaja({ open, onClose }) {
               {data.cierres.length === 0 ? <p style={emptyTxt}>No hay cierres de caja en el rango seleccionado</p> : (
                 <table style={tbl}>
                   <thead>
-                    <tr>{["#","Cajero","Apertura","Cierre","Fondo Inicial","Cobrado","Reembolsado","Esperado","Contado","Estado"].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+                    <tr>{["Cód. Cierre","Cajero","Apertura","Cierre","Fondo Inicial","Cobrado","Reembolsado","Esperado","Contado","Estado"].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
                   </thead>
                   <tbody>
                     {data.cierres.map((c) => (
@@ -908,7 +908,7 @@ function ModalCierresCaja({ open, onClose }) {
                         onMouseEnter={(e) => { e.currentTarget.style.background = "#F8FAFC"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                       >
-                        <td style={td}><span style={ticketStyle}>#{c.id_cierre}</span></td>
+                        <td style={td}><span style={{ ...ticketStyle, color: "#9CA3AF", fontSize: "0.75rem" }}>COD-{c.id_cierre}</span></td>
                         <td style={td}>{c.cajero}</td>
                         <td style={{ ...td, color: "#9CA3AF", fontSize: "0.78rem" }}>
                           {new Date(c.fecha_apertura).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
@@ -971,8 +971,8 @@ function ModalDetalleCierre({ cierreId, onClose }) {
     <Modal
       open={!!cierreId}
       onClose={onClose}
-      title={cierre ? `Turno #${cierre.id_cierre}` : "Detalle de Cierre"}
-      subtitle={cierre ? `${cierre.nombres} ${cierre.apellidos} — @${cierre.username}` : ""}
+      title={cierre ? "Detalle del Cierre de Caja" : "Detalle de Cierre"}
+      subtitle={cierre ? `${cierre.nombres} ${cierre.apellidos} — @${cierre.username}  ·  Código interno: COD-${cierre.id_cierre}` : ""}
       wide
     >
       {loading ? <p style={loadingTxt}>Cargando…</p> : error ? <p style={{ ...emptyTxt, color: "#EF4444" }}>{error}</p> : !detalle ? null : (

@@ -821,7 +821,7 @@ export default function ModuloCaja() {
           { key: "cierre",     label: `🗄️ Cierre de Caja${turnoActivo && turnoActivo.esPropio ? " •" : ""}` },
           { key: "cobrar",     label: `💳 Cobrar (${ordenesFiltradas.length})` },
           { key: "reembolsos", label: `↩️ Reembolsos (${pagosReembolsables.length})` },
-          { key: "reporte",    label: `📊 Reporte (${totalTransacciones})` },
+          { key: "reporte",    label: `📊 Mis Movimientos (${totalTransacciones})` },
         ].map(t => (
           <button key={t.key} onClick={() => setVistaTab(t.key)} style={{
             ...S.tabBtn,

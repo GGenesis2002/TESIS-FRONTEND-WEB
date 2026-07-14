@@ -148,6 +148,7 @@ export default function ModuloCaja() {
   // ── CIERRE DE CAJA ────────────────────────────────────────────────────────
   const [turnoActivo, setTurnoActivo]         = useState(null);   // turno abierto de la secretaria (o null)
   const [cierresHistorial, setCierresHistorial] = useState([]);
+  const [ultimoCierre, setUltimoCierre]       = useState(null);   // último cierre registrado en el sistema (de cualquier secretaria)
   const [cargandoCaja, setCargandoCaja]       = useState(false);
 
   const [showAbrirTurno, setShowAbrirTurno]   = useState(false);
@@ -223,14 +224,16 @@ export default function ModuloCaja() {
   const cargarCaja = async () => {
     setCargandoCaja(true);
     try {
-      const [resActual, resHistorial, resReembolsos] = await Promise.all([
+      const [resActual, resHistorial, resReembolsos, resUltimo] = await Promise.all([
         API.get("/caja/actual").catch(() => ({ data: null })),
         API.get("/caja/historial").catch(() => ({ data: [] })),
         API.get("/pagos/reembolsos").catch(() => ({ data: [] })),
+        API.get("/caja/ultimo-cierre").catch(() => ({ data: null })),
       ]);
       setTurnoActivo(resActual.data || null);
       setCierresHistorial(Array.isArray(resHistorial.data) ? resHistorial.data : []);
       setReembolsosHistorial(Array.isArray(resReembolsos.data) ? resReembolsos.data : []);
+      setUltimoCierre(resUltimo.data || null);
     } catch (e) {
       console.error("Error al cargar datos de cierre de caja:", e);
     } finally {
@@ -1226,6 +1229,9 @@ export default function ModuloCaja() {
               <p style={{ fontSize: "0.85rem", color: "#6B7280", margin: "0 0 1.25rem" }}>
                 Debes abrir un turno antes de poder registrar cobros. Indica el fondo inicial de efectivo con el que arrancas.
               </p>
+              <div style={{ textAlign: "left", maxWidth: "640px", margin: "0 auto 1.25rem" }}>
+                <UltimoCierreCard cierre={ultimoCierre} onVerComprobante={ultimoCierre ? () => verDetalleCierre(ultimoCierre) : null} />
+              </div>
               <button onClick={abrirModalTurno} style={{ ...S.btnFull2, padding: "0.75rem 1.5rem" }}>🔓 ABRIR TURNO DE CAJA</button>
             </div>
           ) : (
@@ -1474,6 +1480,8 @@ export default function ModuloCaja() {
           <ModalHeader title="ABRIR" titleOrange="TURNO DE CAJA" subtitle="Registra el fondo inicial de efectivo" onClose={() => !procesandoAbrir && setShowAbrirTurno(false)} />
           <div style={S.modalBody}>
             {msgAbrir && <Alert msg={msgAbrir} />}
+
+            <UltimoCierreCard cierre={ultimoCierre} onVerComprobante={ultimoCierre ? () => verDetalleCierre(ultimoCierre) : null} />
 
             <ModoConteoToggle modo={modoApertura} setModo={setModoApertura} />
 
@@ -2695,6 +2703,61 @@ function FilaCascada({ signo, label, value, bold, color }) {
 // Cascada de caja del turno EN VIVO: separa Efectivo y Transferencia y muestra
 // explícitamente cobrado − reembolsado = neto, para que se entienda a dónde
 // "se fue" el dinero de un reembolso en vez de mostrar cifras sueltas sin relación.
+function UltimoCierreCard({ cierre, onVerComprobante }) {
+  if (!cierre) {
+    return (
+      <div style={{ ...S.tableCard, padding: "1rem 1.25rem", marginBottom: "1.25rem", background: "#F8FAFC" }}>
+        <p style={{ fontSize: "0.82rem", color: "#9CA3AF", margin: 0, textAlign: "center" }}>
+          Todavía no hay ningún cierre de caja registrado en el sistema.
+        </p>
+      </div>
+    );
+  }
+
+  const fondo         = parseFloat(cierre.monto_inicial || 0);
+  const cobradoEf     = parseFloat(cierre.total_efectivo_sistema || 0);
+  const cobradoTrans  = parseFloat(cierre.total_transferencia_sistema || 0);
+  const reembEf       = parseFloat(cierre.total_reembolsos_efectivo || 0);
+  const reembTrans    = parseFloat(cierre.total_reembolsos_transferencia || 0);
+  const diferencia    = parseFloat(cierre.diferencia || 0);
+
+  return (
+    <div style={{ ...S.tableCard, padding: "1.1rem 1.25rem", marginBottom: "1.25rem", textAlign: "left" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        <div>
+          <p style={{ fontFamily: FONTC, fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.15rem" }}>
+            🗓️ Último cierre registrado
+          </p>
+          <p style={{ fontSize: "0.8rem", color: "#6B7280", margin: 0 }}>
+            Cerrado por <strong>{cierre.nombres} {cierre.apellidos}</strong> — {cierre.fecha_cierre ? new Date(cierre.fecha_cierre).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+          </p>
+        </div>
+        {onVerComprobante && (
+          <button onClick={onVerComprobante} style={{ ...S.btnFull2, padding: "0.45rem 0.9rem", fontSize: "0.78rem", width: "auto" }}>
+            🖨️ Ver / descargar comprobante
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.6rem" }}>
+        <DetalleItem label="Fondo inicial" value={`$${fondo.toFixed(2)}`} />
+        <DetalleItem label="Cobrado (efectivo)" value={`$${cobradoEf.toFixed(2)}`} />
+        <DetalleItem label="Cobrado (transf.)" value={`$${cobradoTrans.toFixed(2)}`} />
+        <DetalleItem label="Reembolsado (efectivo)" value={`$${reembEf.toFixed(2)}`} />
+        <DetalleItem label="Reembolsado (transf.)" value={`$${reembTrans.toFixed(2)}`} />
+        <DetalleItem
+          label="Diferencia"
+          value={
+            <span style={{ color: diferencia === 0 ? "#10B981" : diferencia > 0 ? "#3B82F6" : "#EF4444" }}>
+              {diferencia > 0 ? "+" : ""}${diferencia.toFixed(2)}
+            </span>
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
 function CascadaCaja({ turno }) {
   const fondo            = parseFloat(turno.monto_inicial || 0);
   const efCobrado         = parseFloat(turno.total_efectivo_sistema || 0);

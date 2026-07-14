@@ -101,9 +101,9 @@ export default function DashboardAsistente() {
                 efectivo: Number(resCaja.data.efectivo || 0),
                 transferencia: Number(resCaja.data.transferencia || 0),
                 efectivoCobrado: Number(resCaja.data.efectivo_cobrado ?? resCaja.data.efectivoCobrado ?? 0),
-                efectivoReembolsado: Number(resCaja.data.efectivo_reembolsado ?? resCaja.data.efectivoReembolsado ?? 0),
+                efectivoReembolsado: Number(resCaja.data.reembolsos_efectivo ?? resCaja.data.efectivo_reembolsado ?? resCaja.data.efectivoReembolsado ?? 0),
                 transferenciaCobrada: Number(resCaja.data.transferencia_cobrada ?? resCaja.data.transferenciaCobrada ?? 0),
-                transferenciaReembolsada: Number(resCaja.data.transferencia_reembolsada ?? resCaja.data.transferenciaReembolsada ?? 0),
+                transferenciaReembolsada: Number(resCaja.data.reembolsos_transferencia ?? resCaja.data.transferencia_reembolsada ?? resCaja.data.transferenciaReembolsada ?? 0),
                 movimientos: Array.isArray(resCaja.data.movimientos) ? resCaja.data.movimientos : []
             });
         }

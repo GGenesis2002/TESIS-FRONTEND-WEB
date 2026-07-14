@@ -763,6 +763,14 @@ firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || nu
   // "revisables" — no deben bloquear el progreso ni mostrar sus botones.
   const examenesAccionables = todosExamenes.filter(ex => ex.estado_resultado !== "Devuelto");
 
+  // ¿Hay exámenes de OTRA especialidad que ya quedaron devueltos en una
+  // revisión anterior y todavía no han sido corregidos/reenviados? Si es
+  // así, el PDF de la orden NO se puede generar todavía aunque todo lo
+  // "accionable" en esta pantalla esté validado — al PDF le faltaría esa
+  // parte. Antes esto no se tomaba en cuenta y permitía generar/publicar
+  // el PDF con exámenes pendientes de corrección.
+  const hayEsperandoCorreccion = todosExamenes.some(ex => ex.estado_resultado === "Devuelto");
+
   // Resumen
   const totalExamenes   = examenesAccionables.length;
   const totalValidados  = examenesAccionables.filter(ex => decisiones[ex.key] === "validado").length;
@@ -770,7 +778,9 @@ firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || nu
   const totalRevisados  = totalValidados + totalDevueltos;
   const todoRevisado    = totalRevisados === totalExamenes && totalExamenes > 0;
   const algunoDevuelto  = totalDevueltos > 0;
-  const todosValidados  = totalValidados === totalExamenes && totalExamenes > 0;
+  // Solo se consideran "todos validados" (habilitando el PDF) cuando además
+  // NO queda ningún examen esperando corrección de una devolución anterior.
+  const todosValidados  = totalValidados === totalExamenes && totalExamenes > 0 && !hayEsperandoCorreccion;
 
   const hayFueraRango = todosExamenes.some(ex =>
     (ex.parametros || []).some(estaFueraDeRango)
@@ -789,12 +799,18 @@ firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || nu
 
   const handleConfirmar = async () => {
     if (!todoRevisado) return;
+    if (hayEsperandoCorreccion && totalDevueltos === 0) return; // nada que confirmar aún
     setSaving(true);
     try {
       let docFinal = pdfDoc;
 
-      // Solo generar PDF si hay exámenes validados
-      if (todosValidados || (!algunoDevuelto && totalValidados > 0)) {
+      // Solo generar y publicar el PDF cuando de verdad está TODO validado,
+      // incluyendo que no quede ningún examen de otra especialidad esperando
+      // corrección de una devolución anterior (todosValidados ya lo exige).
+      // Antes, si no había devoluciones NUEVAS en esta pantalla y algo se
+      // validó, se generaba el PDF igual — aunque hubiera exámenes de otro
+      // especialista todavía devueltos sin corregir. Eso quedó corregido.
+      if (todosValidados) {
         if (!docFinal) {
           docFinal = await generarPDFResultado(orden, resultados, admin);
         }
@@ -1205,6 +1221,8 @@ firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || nu
               <p style={{ margin: 0, fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.95rem", color: algunoDevuelto && !todosValidados ? "#92400E" : "#166534" }}>
                 {todosValidados
                   ? "✅ Todos los exámenes validados — listo para publicar"
+                  : hayEsperandoCorreccion && totalValidados === totalExamenes
+                  ? "⏳ Validado lo revisable, pero falta corregir un examen devuelto antes"
                   : algunoDevuelto && totalValidados === 0
                   ? "↩ Todos los exámenes serán devueltos al especialista"
                   : `⚠️ ${totalValidados} validado(s) · ${totalDevueltos} devuelto(s)`}
@@ -1212,8 +1230,10 @@ firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || nu
               <p style={{ margin: 0, fontSize: "0.76rem", color: "#6B7280", fontFamily: "'Barlow', sans-serif" }}>
                 {todosValidados
                   ? "Se generará el PDF con firma electrónica y se notificará al paciente."
+                  : hayEsperandoCorreccion && totalValidados === totalExamenes
+                  ? "No se puede generar el PDF: hay un examen de otro especialista devuelto en una revisión anterior que todavía no ha sido corregido y reenviado."
                   : totalValidados > 0
-                  ? "Los exámenes validados se publicarán. Los devueltos volverán al especialista para corrección."
+                  ? "No se generará PDF todavía. Los devueltos ahora irán al especialista para corrección; los validados quedan pendientes hasta que TODA la orden esté validada."
                   : "No se generará PDF. Los exámenes volverán al especialista para corrección."}
               </p>
             </div>
@@ -1255,20 +1275,25 @@ firma:  orden?.admin_firma_url || orden?.admin_firma || user.firma_digital || nu
             <button onClick={onClose} disabled={saving} style={btnSec}>Cancelar</button>
             <button
               onClick={handleConfirmar}
-              disabled={!todoRevisado || saving}
-              title={!todoRevisado ? `Faltan ${totalExamenes - totalRevisados} examen(es) por revisar` : ""}
+              disabled={!todoRevisado || saving || (hayEsperandoCorreccion && totalDevueltos === 0)}
+              title={!todoRevisado
+                ? `Faltan ${totalExamenes - totalRevisados} examen(es) por revisar`
+                : (hayEsperandoCorreccion && totalDevueltos === 0)
+                ? "No hay nada que confirmar todavía: espera a que el especialista corrija el examen devuelto"
+                : ""}
               style={{
                 ...btnBase,
-                background: !todoRevisado ? "#E5E7EB"
+                background: (!todoRevisado || (hayEsperandoCorreccion && totalDevueltos === 0)) ? "#E5E7EB"
                             : saving ? "#E5E7EB"
                             : algunoDevuelto && !todosValidados ? "#F59E0B"
                             : "#10B981",
-                color: !todoRevisado || saving ? "#9CA3AF" : "#FFF",
-                cursor: !todoRevisado || saving ? "not-allowed" : "pointer",
+                color: (!todoRevisado || saving || (hayEsperandoCorreccion && totalDevueltos === 0)) ? "#9CA3AF" : "#FFF",
+                cursor: (!todoRevisado || saving || (hayEsperandoCorreccion && totalDevueltos === 0)) ? "not-allowed" : "pointer",
                 display: "flex", alignItems: "center", gap: "0.4rem",
               }}>
               {saving ? "⏳ Procesando…"
                : !todoRevisado ? `⏳ Revisar ${totalExamenes - totalRevisados} examen(es) más`
+               : (hayEsperandoCorreccion && totalDevueltos === 0) ? "⏳ Esperando corrección del otro especialista"
                : todosValidados ? "✅ Confirmar Validación y Generar PDF"
                : totalValidados === 0 ? "↩ Confirmar Devolución"
                : "⚠️ Confirmar (validar + devolver)"}

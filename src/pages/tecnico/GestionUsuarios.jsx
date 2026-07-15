@@ -549,7 +549,7 @@ if (rolesActuales.includes("3")) {
       if (esRegistroNuevo) {
         // Mostramos usuario/contraseña generados para que se los entreguen al técnico,
         // en vez de cerrar el modal de inmediato.
-        setCredencialesGeneradas({ username: usernameFinal, password: formData.password });
+        setCredencialesGeneradas({ username: usernameFinal, password: formData.password, esCuentaExistente: usuarioExistente });
       } else {
         setShowModal(false);
       }
@@ -872,14 +872,20 @@ if (rolesActuales.includes("3")) {
               <div style={styles.modalBody}>
                 <div style={{ background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)", border: "1.5px solid #86EFAC", borderRadius: "10px", padding: "1rem" }}>
                   <p style={{ margin: "0 0 0.6rem", fontFamily: FONTC, fontWeight: 700, fontSize: "0.9rem", color: "#166534" }}>
-                    ✓ Cuenta creada — entrégale estos datos de acceso al técnico
+                    {credencialesGeneradas.esCuentaExistente
+                      ? "✓ Rol asignado — esta persona ya tenía cuenta (ej. como paciente), conserva su usuario y contraseña actuales"
+                      : "✓ Cuenta creada — entrégale estos datos de acceso al técnico"}
                   </p>
                   <div style={{ background: "#FFF", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "0.75rem 0.9rem", marginBottom: "0.6rem" }}>
-                    <p style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", color: DARK }}><b>Usuario:</b> {credencialesGeneradas.username}</p>
-                    <p style={{ margin: 0, fontSize: "0.9rem", color: DARK }}><b>Contraseña temporal:</b> {credencialesGeneradas.password}</p>
+                    <p style={credencialesGeneradas.esCuentaExistente ? { margin: 0, fontSize: "0.9rem", color: DARK } : { margin: "0 0 0.4rem", fontSize: "0.9rem", color: DARK }}><b>Usuario:</b> {credencialesGeneradas.username}</p>
+                    {!credencialesGeneradas.esCuentaExistente && (
+                      <p style={{ margin: 0, fontSize: "0.9rem", color: DARK }}><b>Contraseña temporal:</b> {credencialesGeneradas.password}</p>
+                    )}
                   </div>
                   <p style={{ margin: "0 0 0.75rem", fontSize: "0.78rem", color: "#166534" }}>
-                    La persona podrá cambiar esta contraseña luego desde su perfil.
+                    {credencialesGeneradas.esCuentaExistente
+                      ? "No necesita credenciales nuevas: puede seguir usando las que ya tenía."
+                      : "La persona podrá cambiar esta contraseña luego desde su perfil."}
                   </p>
                   <button type="button" onClick={handleCloseModal} style={styles.btnSaveFull}>
                     Listo, cerrar

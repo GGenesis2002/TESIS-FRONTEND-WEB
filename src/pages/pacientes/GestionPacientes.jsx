@@ -89,6 +89,7 @@ export default function GestionPacientes() {
   const [buscandoDoc, setBuscandoDoc] = useState(false);
   const [buscandoCedula, setBuscandoCedula] = useState(false);
   const [usuarioExistente, setUsuarioExistente] = useState(false); // true si la cédula ya pertenece a un usuario con otro rol
+  const [cedulaBloqueada, setCedulaBloqueada] = useState(false); // true si la cédula ya pertenece a un PACIENTE existente: no se autollena ni se permite registrar
   const [mostrarCampoPassword, setMostrarCampoPassword] = useState(false); // se activa con el botón "Habilitar cambio de contraseña"
 
   const [form, setForm] = useState({
@@ -133,10 +134,22 @@ export default function GestionPacientes() {
     if (form.tipo_documento !== "cedula" || !/^\d{10}$/.test(cedula)) return;
     setBuscandoDoc(true);
     setUsuarioExistente(false);
+    setCedulaBloqueada(false);
 
     try {
       const { data } = await API.get(`/pacientes/consultar-cedula/${cedula}`);
       if (data?.existe) {
+        // ¿Esa cédula ya tiene el rol de Paciente? Entonces NO se autollena nada:
+        // no se puede crear/duplicar un registro de paciente con esta cédula.
+        const yaEsPaciente = data.esPaciente === true || (data.roles || "").toLowerCase().includes("paciente");
+        if (yaEsPaciente) {
+          setCedulaBloqueada(true);
+          setErrors(prev => ({ ...prev, cedula: "Esta cédula ya está registrada como paciente. No se puede crear un nuevo registro." }));
+          showToast("error", "Esta cédula ya pertenece a un paciente registrado.");
+          setBuscandoDoc(false);
+          return;
+        }
+
         setForm(f => ({
           ...f,
           nombres: data.nombres || f.nombres,
@@ -177,6 +190,13 @@ export default function GestionPacientes() {
 
   const validarForm = () => {
     const e = {};
+
+    // Bloqueo duro: esta cédula ya pertenece a un paciente existente.
+    if (cedulaBloqueada) {
+      e.cedula = "Esta cédula ya está registrada como paciente. No se puede crear un nuevo registro.";
+      setErrors(e);
+      return false;
+    }
     
     // Cédula / Pasaporte
     if (!(form.cedula || "").trim()) {
@@ -202,7 +222,9 @@ export default function GestionPacientes() {
     }
 
     // Teléfono
-    if ((form.telefono || "").trim() && !validarTelefono(form.telefono)) {
+    if (!(form.telefono || "").trim()) {
+      e.telefono = "El teléfono es obligatorio.";
+    } else if (!validarTelefono(form.telefono)) {
       e.telefono = "El teléfono debe tener exactamente 10 números.";
     }
 
@@ -211,6 +233,16 @@ export default function GestionPacientes() {
       e.correo = "El correo es obligatorio.";
     } else if (!validarCorreo(form.correo)) {
       e.correo = "Ingresa un correo electrónico válido.";
+    }
+
+    // Fecha de nacimiento
+    if (!(form.fecha_nacimiento || "").trim()) {
+      e.fecha_nacimiento = "La fecha de nacimiento es obligatoria.";
+    }
+
+    // Dirección
+    if (!(form.direccion || "").trim()) {
+      e.direccion = "La dirección es obligatoria.";
     }
 
     // Usuario y contraseña ya no se piden manualmente: se generan automáticamente al registrar.
@@ -231,18 +263,12 @@ export default function GestionPacientes() {
   const handleGuardar = async () => {
   if (!validarForm()) return;
 
-  // ─── LIMPIEZA DE CAMPOS OPCIONALES VACÍOS ────────────────────────
+  // Todos los campos son obligatorios (validarForm ya lo garantiza), solo
+  // recortamos espacios sobrantes antes de enviar.
   const payload = { ...form };
-  
-  if (!payload.fecha_nacimiento || payload.fecha_nacimiento.trim() === "") {
-    payload.fecha_nacimiento = null;
-  }
-  if (!payload.telefono || payload.telefono.trim() === "") {
-    payload.telefono = null;
-  }
-  if (!payload.direccion || payload.direccion.trim() === "") {
-    payload.direccion = null;
-  }
+  payload.fecha_nacimiento = (payload.fecha_nacimiento || "").trim();
+  payload.telefono = (payload.telefono || "").trim();
+  payload.direccion = (payload.direccion || "").trim();
   // La contraseña solo viaja al backend si el admin activó el cambio explícitamente.
   if (!isEditing || !mostrarCampoPassword || !(payload.password || "").trim()) {
     delete payload.password;
@@ -332,6 +358,7 @@ export default function GestionPacientes() {
     setErrors({});
     setIsEditing(false);
     setUsuarioExistente(false);
+    setCedulaBloqueada(false);
     setMostrarCampoPassword(false);
   };
 
@@ -599,7 +626,13 @@ export default function GestionPacientes() {
                           placeholder={form.tipo_documento === "pasaporte" ? "AB123456" : "0000000000"}
                           value={form.cedula || ""}
                           // VALIDACIÓN EN VIVO: limita los caracteres según el tipo de documento seleccionado
-                          onChange={e => setForm({ ...form, cedula: limpiarDocumento(form.tipo_documento, e.target.value) })}
+                          onChange={e => {
+                            setForm({ ...form, cedula: limpiarDocumento(form.tipo_documento, e.target.value) });
+                            if (cedulaBloqueada) {
+                              setCedulaBloqueada(false);
+                              setErrors(prev => ({ ...prev, cedula: undefined }));
+                            }
+                          }}
                           maxLength={form.tipo_documento === "pasaporte" ? 15 : 10}
                           style={{ ...s.input, borderColor: errors.cedula ? "#EF4444" : "#E5E7EB" }}
                         />
@@ -660,16 +693,17 @@ export default function GestionPacientes() {
                       type="email"
                     />
                     <div style={s.fieldGroup}>
-                      <label style={s.label}>Fecha de Nacimiento</label>
+                      <label style={s.label}>Fecha de Nacimiento *</label>
                       <input
                         type="date"
                         value={form.fecha_nacimiento || ""}
                         onChange={e => setForm({ ...form, fecha_nacimiento: e.target.value })}
-                        style={s.input}
+                        style={{ ...s.input, borderColor: errors.fecha_nacimiento ? "#EF4444" : "#E5E7EB" }}
                       />
+                      {errors.fecha_nacimiento && <span style={s.errTxt}>{errors.fecha_nacimiento}</span>}
                     </div>
                     <div style={s.fieldGroup}>
-                      <label style={s.label}>Teléfono</label>
+                      <label style={s.label}>Teléfono *</label>
                       <input
                         placeholder="0999999999"
                         value={form.telefono || ""}
@@ -689,13 +723,14 @@ export default function GestionPacientes() {
                   )}
 
                   <div style={s.fieldGroup}>
-                    <label style={s.label}>Dirección</label>
+                    <label style={s.label}>Dirección *</label>
                     <input
                       placeholder="Dirección completa"
                       value={form.direccion || ""}
                       onChange={e => setForm({ ...form, direccion: e.target.value })}
-                      style={s.input}
+                      style={{ ...s.input, borderColor: errors.direccion ? "#EF4444" : "#E5E7EB" }}
                     />
+                    {errors.direccion && <span style={s.errTxt}>{errors.direccion}</span>}
                   </div>
 
                   <div style={s.fieldGroup}>

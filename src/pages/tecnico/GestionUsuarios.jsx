@@ -468,15 +468,17 @@ if (rolesActuales.includes("3")) {
 
     if (!formData.username.trim()) e.username = "Campo obligatorio.";
 
-    if (!formData.id_usuario) {
-      // Registro nuevo: contraseña obligatoria y mínimo 6 chars
+    if (!formData.id_usuario && !usuarioExistente) {
+      // Registro nuevo de cuenta desde cero: contraseña obligatoria y mínimo 6 chars
       if (!formData.password) {
         e.password = "La contraseña es obligatoria.";
       } else if (!validarPassword(formData.password)) {
         e.password = "La contraseña debe tener al menos 6 caracteres.";
       }
     } else if (formData.password && !validarPassword(formData.password)) {
-      // Edición: si ingresa contraseña nueva, también debe cumplir mínimo
+      // Edición, o cédula ya existente: si ingresa contraseña nueva (opcional),
+      // también debe cumplir el mínimo. Si la deja vacía, el backend simplemente
+      // conserva la contraseña actual de la cuenta.
       e.password = "La contraseña debe tener al menos 6 caracteres.";
     }
 
@@ -1011,7 +1013,7 @@ if (rolesActuales.includes("3")) {
 
               <div style={styles.grid2}>
                 <div>
-                  {formData.id_usuario && (
+                  {(formData.id_usuario || usuarioExistente) && (
                     <label style={{
                       display: "flex", alignItems: "center", gap: "0.45rem",
                       marginBottom: "0.4rem", fontFamily: FONT, fontSize: "0.85rem",
@@ -1039,38 +1041,46 @@ if (rolesActuales.includes("3")) {
                     </label>
                   )}
 
-                  {(!formData.id_usuario || habilitarCambioPassword) && (
-                    <>
-                      <label style={styles.fieldLabel}>
-                        {formData.id_usuario ? "Nueva Contraseña (mín. 6 caracteres)" : "Contraseña Temporal (autogenerada)"}
-                      </label>
-                      <div style={{ position: "relative" }}>
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          name="password"
-                          value={formData.password}
-                          onChange={handleChange}
-                          readOnly={!formData.id_usuario}
-                          style={!formData.id_usuario ? { ...errStyle("password"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed", paddingRight: "4.4rem" } : { ...errStyle("password"), paddingRight: "2.4rem" }}
-                        />
-                        {!formData.id_usuario && (
-                          <button
-                            type="button"
-                            title="Generar otra contraseña"
-                            onClick={() => setFormData(f => ({ ...f, password: generarPasswordTemporal() }))}
-                            style={{ ...styles.eyeBtn, right: "2.2rem" }}
-                          >
-                            🔄
+                  {(() => {
+                    // Cuenta realmente nueva: la única situación donde forzamos una
+                    // contraseña temporal autogenerada y de solo lectura. Si la cédula
+                    // ya existe (usuarioExistente) se trata igual que una edición: el
+                    // campo queda oculto salvo que marquen "Habilitar cambio de contraseña".
+                    const esCuentaNueva = !formData.id_usuario && !usuarioExistente;
+                    if (!esCuentaNueva && !habilitarCambioPassword) return null;
+                    return (
+                      <>
+                        <label style={styles.fieldLabel}>
+                          {esCuentaNueva ? "Contraseña Temporal (autogenerada)" : "Nueva Contraseña (mín. 6 caracteres)"}
+                        </label>
+                        <div style={{ position: "relative" }}>
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            name="password"
+                            value={formData.password}
+                            onChange={handleChange}
+                            readOnly={esCuentaNueva}
+                            style={esCuentaNueva ? { ...errStyle("password"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed", paddingRight: "4.4rem" } : { ...errStyle("password"), paddingRight: "2.4rem" }}
+                          />
+                          {esCuentaNueva && (
+                            <button
+                              type="button"
+                              title="Generar otra contraseña"
+                              onClick={() => setFormData(f => ({ ...f, password: generarPasswordTemporal() }))}
+                              style={{ ...styles.eyeBtn, right: "2.2rem" }}
+                            >
+                              🔄
+                            </button>
+                          )}
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                            {showPassword ? "🙈" : "👁️"}
                           </button>
-                        )}
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                          {showPassword ? "🙈" : "👁️"}
-                        </button>
-                      </div>
-                      {formErrors.password && <span style={styles.errTxt}>{formErrors.password}</span>}
-                      {!formData.id_usuario && <span style={{ fontSize: "0.7rem", color: "#9CA3AF", display: "block", marginTop: "0.2rem" }}>Se la mostraremos completa al terminar el registro para que se la entregues a la persona.</span>}
-                    </>
-                  )}
+                        </div>
+                        {formErrors.password && <span style={styles.errTxt}>{formErrors.password}</span>}
+                        {esCuentaNueva && <span style={{ fontSize: "0.7rem", color: "#9CA3AF", display: "block", marginTop: "0.2rem" }}>Se la mostraremos completa al terminar el registro para que se la entregues a la persona.</span>}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

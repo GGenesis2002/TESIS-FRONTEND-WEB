@@ -200,6 +200,11 @@ export default function GestionUsuarios() {
   const [buscandoDoc, setBuscandoDoc] = useState(false);
   const [credencialesGeneradas, setCredencialesGeneradas] = useState(null); // { username, password }
   const [guardando, setGuardando] = useState(false);
+  // true cuando la cédula ingresada ya pertenece a un usuario existente en el sistema
+  // (ej. ya registrado como Paciente desde la app móvil). En ese caso NO se tocan
+  // sus datos de cuenta (nombres, apellidos, correo, username): solo se le suman roles.
+  const [usuarioExistente, setUsuarioExistente] = useState(false);
+  const [rolesExistente, setRolesExistente] = useState("");
 
   const [formData, setFormData] = useState({
     id_usuario: null, tipo_documento: "cedula", cedula: "", nombres: "", apellidos: "",
@@ -246,6 +251,7 @@ export default function GestionUsuarios() {
   // temporal aleatoria, apenas hay datos suficientes para generarlos.
   useEffect(() => {
     if (formData.id_usuario) return; // en edición no se autogenera nada
+    if (usuarioExistente) return; // la cédula ya tiene cuenta: se conservan su username/password propios
     const cedula = (formData.cedula || "").trim();
     const listo = formData.nombres.trim() && formData.apellidos.trim() && validarDocumento(formData.tipo_documento, cedula);
     if (!listo) return;
@@ -258,24 +264,55 @@ export default function GestionUsuarios() {
       return { ...f, username: nuevoUsername, password: nuevoPassword };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.nombres, formData.apellidos, formData.cedula, formData.tipo_documento, formData.id_usuario]);
+  }, [formData.nombres, formData.apellidos, formData.cedula, formData.tipo_documento, formData.id_usuario, usuarioExistente]);
 
-  // Autocompleta nombres/apellidos consultando el servicio gratuito del SRI.
-  // Solo aplica para cédula (no pasaporte); los campos quedan siempre editables.
+  // Primero revisa si la cédula ya pertenece a un usuario existente en NUESTRA base
+  // (ej. alguien que ya es Paciente desde la app móvil). Si es así, autocompleta con
+  // esos datos y los bloquea, para no pisar la cuenta ya existente al guardar.
+  // Si no existe internamente, cae al autocompletado externo del SRI (solo nombres/apellidos,
+  // esos campos quedan editables porque es una cuenta nueva).
   const buscarDatosPorCedula = async () => {
     const cedula = (formData.cedula || "").trim();
     if (formData.tipo_documento !== "cedula" || !/^\d{10}$/.test(cedula)) return;
     setBuscandoDoc(true);
     try {
-      const { data } = await API.get(`/documento/consultar/${cedula}`);
+      const { data } = await API.get(`/personal/consultar-cedula/${cedula}`);
+      // Ya existe en el sistema (con este u otro rol) → reutilizamos su cuenta.
+      setUsuarioExistente(true);
+      setRolesExistente(data.roles || "");
       setFormData(f => ({
         ...f,
         nombres: data.nombres || f.nombres,
         apellidos: data.apellidos || f.apellidos,
+        correo: data.correo || f.correo,
+        username: data.username || f.username,
+        password: "",
       }));
-      showToast("success", "Datos encontrados. Verifica que estén correctos antes de guardar.");
+      showToast(
+        "success",
+        data.roles
+          ? `Esta cédula ya está registrada (rol actual: ${data.roles}). Se mantendrán sus datos de cuenta y solo se le sumarán los nuevos roles que selecciones.`
+          : "Esta cédula ya está registrada. Se mantendrán sus datos de cuenta y solo se le sumarán los nuevos roles que selecciones."
+      );
     } catch (err) {
-      showToast("error", err.response?.data?.error || "No se encontraron datos para esta cédula.");
+      if (err.response?.status === 404) {
+        // No existe aún en nuestra base → es una cuenta nueva, intentamos autocompletar con el SRI.
+        setUsuarioExistente(false);
+        setRolesExistente("");
+        try {
+          const { data } = await API.get(`/documento/consultar/${cedula}`);
+          setFormData(f => ({
+            ...f,
+            nombres: data.nombres || f.nombres,
+            apellidos: data.apellidos || f.apellidos,
+          }));
+          showToast("success", "Datos encontrados. Verifica que estén correctos antes de guardar.");
+        } catch (err2) {
+          showToast("error", err2.response?.data?.error || "No se encontraron datos para esta cédula.");
+        }
+      } else {
+        showToast("error", err.response?.data?.error || "Ocurrió un error al consultar la cédula.");
+      }
     } finally {
       setBuscandoDoc(false);
     }
@@ -858,15 +895,32 @@ if (rolesActuales.includes("3")) {
                 </div>
               )}
 
+              {usuarioExistente && !formData.id_usuario && (
+                <div style={{
+                  background: "#FFF7ED", border: "1px solid #FDBA74", borderRadius: "8px",
+                  padding: "0.65rem 0.85rem", marginBottom: "0.9rem", fontFamily: FONT,
+                  fontSize: "0.82rem", color: "#9A3412"
+                }}>
+                  Esta cédula ya está registrada{rolesExistente ? ` (rol actual: ${rolesExistente})` : ""}. Los datos de cuenta (nombres, apellidos, correo y usuario) no se pueden editar desde aquí — solo se le sumarán los roles de personal que selecciones abajo.
+                </div>
+              )}
               <div style={styles.grid2}>
                 <div>
                   <label style={styles.fieldLabel}>Nombres *</label>
-                  <input type="text" name="nombres" value={formData.nombres} onChange={handleChange} required style={errStyle("nombres")} />
+                  <input
+                    type="text" name="nombres" value={formData.nombres} onChange={handleChange} required
+                    disabled={usuarioExistente && !formData.id_usuario}
+                    style={usuarioExistente && !formData.id_usuario ? { ...errStyle("nombres"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" } : errStyle("nombres")}
+                  />
                   {formErrors.nombres && <span style={styles.errTxt}>{formErrors.nombres}</span>}
                 </div>
                 <div>
                   <label style={styles.fieldLabel}>Apellidos *</label>
-                  <input type="text" name="apellidos" value={formData.apellidos} onChange={handleChange} required style={errStyle("apellidos")} />
+                  <input
+                    type="text" name="apellidos" value={formData.apellidos} onChange={handleChange} required
+                    disabled={usuarioExistente && !formData.id_usuario}
+                    style={usuarioExistente && !formData.id_usuario ? { ...errStyle("apellidos"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" } : errStyle("apellidos")}
+                  />
                   {formErrors.apellidos && <span style={styles.errTxt}>{formErrors.apellidos}</span>}
                 </div>
               </div>
@@ -896,7 +950,10 @@ if (rolesActuales.includes("3")) {
                       type="text"
                       name="cedula"
                       value={formData.cedula}
-                      onChange={e => setFormData({ ...formData, cedula: limpiarDocumento(formData.tipo_documento, e.target.value) })}
+                      onChange={e => {
+                        setFormData({ ...formData, cedula: limpiarDocumento(formData.tipo_documento, e.target.value) });
+                        if (!formData.id_usuario) { setUsuarioExistente(false); setRolesExistente(""); }
+                      }}
                       maxLength={formData.tipo_documento === "pasaporte" ? 15 : 10}
                       style={errStyle("cedula")}
                     />
@@ -923,7 +980,11 @@ if (rolesActuales.includes("3")) {
               <div style={styles.grid2}>
                 <div>
                   <label style={styles.fieldLabel}>Correo Electrónico *</label>
-                  <input type="email" name="correo" value={formData.correo} onChange={handleChange} style={errStyle("correo")} />
+                  <input
+                    type="email" name="correo" value={formData.correo} onChange={handleChange}
+                    disabled={usuarioExistente && !formData.id_usuario}
+                    style={usuarioExistente && !formData.id_usuario ? { ...errStyle("correo"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" } : errStyle("correo")}
+                  />
                   {formErrors.correo && <span style={styles.errTxt}>{formErrors.correo}</span>}
                 </div>
                 <div>
@@ -935,12 +996,16 @@ if (rolesActuales.includes("3")) {
                       type="text"
                       value={formData.username}
                       readOnly
-                      placeholder="Se genera solo con nombres + apellido + documento"
+                      placeholder={usuarioExistente ? "Cuenta ya existente: se conserva su usuario actual" : "Se genera solo con nombres + apellido + documento"}
                       style={{ ...errStyle("username"), background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" }}
                     />
                   )}
                   {formErrors.username && <span style={styles.errTxt}>{formErrors.username}</span>}
-                  {!formData.id_usuario && <span style={{ fontSize: "0.7rem", color: "#9CA3AF", display: "block", marginTop: "0.2rem" }}>Autogenerado, no hace falta escribirlo.</span>}
+                  {!formData.id_usuario && (
+                    <span style={{ fontSize: "0.7rem", color: "#9CA3AF", display: "block", marginTop: "0.2rem" }}>
+                      {usuarioExistente ? "Ya tiene cuenta: se mantiene su usuario y contraseña actuales." : "Autogenerado, no hace falta escribirlo."}
+                    </span>
+                  )}
                 </div>
               </div>
 

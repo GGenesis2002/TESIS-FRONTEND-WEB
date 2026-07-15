@@ -77,7 +77,6 @@ export default function GestionOrdenes() {
 
   // Registro rápido de paciente (desde el modal de Nueva Orden)
   const [showRegistroRapido, setShowRegistroRapido] = useState(false);
-  const [showMasDatosRegistro, setShowMasDatosRegistro] = useState(false);
   const [formRegistro, setFormRegistro] = useState({
     nombres: "", apellidos: "", correo: "",
     fecha_nacimiento: "", telefono: "", direccion: "", genero: "",
@@ -199,7 +198,6 @@ export default function GestionOrdenes() {
     setFormRegistro({ nombres: "", apellidos: "", correo: "", fecha_nacimiento: "", telefono: "", direccion: "", genero: "" });
     setMsgRegistro(null);
     setShowRegistroRapido(false);
-    setShowMasDatosRegistro(false);
     setCredencialesGeneradas(null);
   };
 
@@ -248,7 +246,7 @@ export default function GestionOrdenes() {
   };
 
   const handleRegistroRapido = async () => {
-    const { nombres, apellidos, correo, fecha_nacimiento } = formRegistro;
+    const { nombres, apellidos, correo, fecha_nacimiento, telefono, direccion, genero } = formRegistro;
     const cedula = cedulaInput.trim();
     if (!cedula) {
       return setMsgRegistro({ type: "error", text: tipoDocumentoInput === "pasaporte" ? "Falta el pasaporte." : "Falta la cédula." });
@@ -261,8 +259,8 @@ export default function GestionOrdenes() {
           : "La cédula debe tener exactamente 10 dígitos numéricos.",
       });
     }
-    if (!nombres || !apellidos || !correo || !fecha_nacimiento) {
-      return setMsgRegistro({ type: "error", text: "Completa nombres, apellidos, correo y fecha de nacimiento." });
+    if (!nombres || !apellidos || !correo || !fecha_nacimiento || !telefono || !direccion || !genero) {
+      return setMsgRegistro({ type: "error", text: "Todos los campos son obligatorios. Completa nombres, apellidos, correo, fecha de nacimiento, teléfono, género y dirección." });
     }
     setGuardandoRegistro(true); setMsgRegistro(null);
 
@@ -904,21 +902,15 @@ export default function GestionOrdenes() {
                           <input type="date" placeholder="Fecha de nacimiento *" value={formRegistro.fecha_nacimiento} onChange={e => setFormRegistro(f => ({ ...f, fecha_nacimiento: e.target.value }))} style={{ ...s.input, gridColumn: "1 / -1" }} />
                         </div>
 
-                        {!showMasDatosRegistro ? (
-                          <button type="button" onClick={() => setShowMasDatosRegistro(true)} style={{ background: "none", border: "none", color: ORANGE, fontFamily: FONTC, fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", padding: "0.2rem 0", marginBottom: "0.5rem" }}>
-                            + Más datos (opcional)
-                          </button>
-                        ) : (
-                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                            <input type="text" placeholder="Teléfono" value={formRegistro.telefono} onChange={e => setFormRegistro(f => ({ ...f, telefono: e.target.value }))} style={s.input} />
-                            <select value={formRegistro.genero} onChange={e => setFormRegistro(f => ({ ...f, genero: e.target.value }))} style={s.select}>
-                              <option value="">Género</option>
-                              <option value="M">Masculino</option>
-                              <option value="F">Femenino</option>
-                            </select>
-                            <input type="text" placeholder="Dirección" value={formRegistro.direccion} onChange={e => setFormRegistro(f => ({ ...f, direccion: e.target.value }))} style={{ ...s.input, gridColumn: "1 / -1" }} />
-                          </div>
-                        )}
+                        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                          <input type="text" placeholder="Teléfono *" value={formRegistro.telefono} onChange={e => setFormRegistro(f => ({ ...f, telefono: e.target.value }))} style={s.input} />
+                          <select value={formRegistro.genero} onChange={e => setFormRegistro(f => ({ ...f, genero: e.target.value }))} style={s.select}>
+                            <option value="">Género *</option>
+                            <option value="M">Masculino</option>
+                            <option value="F">Femenino</option>
+                          </select>
+                          <input type="text" placeholder="Dirección *" value={formRegistro.direccion} onChange={e => setFormRegistro(f => ({ ...f, direccion: e.target.value }))} style={{ ...s.input, gridColumn: "1 / -1" }} />
+                        </div>
 
                         <div style={{ display: "flex", gap: "0.5rem" }}>
                           <button

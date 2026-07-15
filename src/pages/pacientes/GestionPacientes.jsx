@@ -128,7 +128,11 @@ export default function GestionPacientes() {
   //    guardar, no se sobrescriba su usuario/contraseña actuales.
   // 2) Si no existe internamente, consulta el servicio gratuito del SRI para
   //    autocompletar solo nombres/apellidos (comportamiento original).
-  // Los campos siempre quedan editables por si hace falta corregir algo.
+  // Los campos propios del paciente (teléfono, dirección, género, fecha de
+  // nacimiento) siempre quedan editables por si hace falta completarlos o
+  // corregirlos. Los campos de la cuenta (nombres, apellidos, correo, username)
+  // se bloquean cuando la cédula ya pertenece a un usuario existente con otro
+  // rol: no se deben editar, se mantienen tal cual estaban registrados.
   const buscarDatosPorCedula = async () => {
     const cedula = (form.cedula || "").trim();
     if (form.tipo_documento !== "cedula" || !/^\d{10}$/.test(cedula)) return;
@@ -162,7 +166,7 @@ export default function GestionPacientes() {
           username: data.username || f.username,
         }));
         setUsuarioExistente(true);
-        showToast("success", `Esta cédula ya está registrada (${data.roles || "otro rol"}). Se completaron los datos conocidos; al guardar solo se le añadirá el rol de Paciente, sin tocar su usuario/contraseña actuales.`);
+        showToast("success", `Esta cédula ya está registrada (${data.roles || "otro rol"}). Sus datos de cuenta (nombres, correo, usuario, contraseña) no se pueden editar aquí; al guardar solo se le añadirá el rol de Paciente y se guardarán sus datos de paciente (teléfono, dirección, género, fecha de nacimiento).`);
         setBuscandoDoc(false);
         return;
       }
@@ -292,7 +296,7 @@ export default function GestionPacientes() {
       // El backend detecta la cédula repetida y solo le suma el rol de Paciente.
       await API.post("/pacientes/registro", payload);
 
-      showToast("success", "Se vinculó el rol de Paciente a la cuenta existente. Su usuario y contraseña no cambiaron.");
+      showToast("success", "Se vinculó el rol de Paciente a la cuenta existente. Sus datos de cuenta (nombres, correo, usuario, contraseña) no cambiaron.");
       setCredencialesGeneradas({ username: form.username, vinculado: true });
       cargarPacientes();
     } else {
@@ -671,6 +675,8 @@ export default function GestionPacientes() {
                       error={errors.nombres}
                       placeholder="Nombres completos"
                       value={form.nombres || ""}
+                      disabled={usuarioExistente}
+                      style={usuarioExistente ? { background: "#F3F4F6", color: "#9CA3AF" } : undefined}
                       // VALIDACIÓN EN VIVO: Elimina números y caracteres especiales
                       onChange={e => setForm({ ...form, nombres: e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '') })}
                     />
@@ -680,6 +686,8 @@ export default function GestionPacientes() {
                       error={errors.apellidos}
                       placeholder="Apellidos completos"
                       value={form.apellidos || ""}
+                      disabled={usuarioExistente}
+                      style={usuarioExistente ? { background: "#F3F4F6", color: "#9CA3AF" } : undefined}
                       // VALIDACIÓN EN VIVO: Elimina números y caracteres especiales
                       onChange={e => setForm({ ...form, apellidos: e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '') })}
                     />
@@ -689,6 +697,8 @@ export default function GestionPacientes() {
                       error={errors.correo}
                       placeholder="correo@ejemplo.com"
                       value={form.correo || ""}
+                      disabled={usuarioExistente}
+                      style={usuarioExistente ? { background: "#F3F4F6", color: "#9CA3AF" } : undefined}
                       onChange={e => setForm({ ...form, correo: e.target.value })}
                       type="email"
                     />

@@ -546,7 +546,8 @@ function ArqueoDetalle({ caja }) {
                 {m.tipo === "reembolso" ? "−" : "+"}
               </div>
               <div style={{ flex: 1 }}>
-                <p style={c.logName}>{m.usuario || "Usuario N/D"} · {m.metodo || "—"}</p>
+                
+                <p style={c.logName}> {m.metodo || "—"}</p>
                 <p style={c.logSub}>{m.ticket ? `Ticket ${m.ticket} · ` : ""}{m.hora || ""}</p>
               </div>
               <strong style={{ color: m.tipo === "reembolso" ? "#EF4444" : "#10B981" }}>

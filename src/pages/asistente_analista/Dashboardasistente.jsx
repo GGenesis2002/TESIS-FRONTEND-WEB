@@ -534,7 +534,7 @@ function ArqueoDetalle({ caja }) {
       )}
 
       <h4 style={{ fontSize: "0.8rem", fontWeight: 700, color: "#6B7280", textTransform: "uppercase", margin: "0.75rem 0 0.5rem" }}>
-        Movimientos del turno
+        Mis Movimientos del turno
       </h4>
       {(!caja.movimientos || caja.movimientos.length === 0) ? (
         <p style={c.emptyState}>No hay movimientos detallados disponibles todavía.</p>

@@ -867,7 +867,7 @@ export default function GestionPacientes() {
                   }}>
                     {confirmEstado.estado ? "Confirmar desactivación" : "Confirmar reactivación"}
                   </p>
-                  <p style={{ fontSize: "0.88rem", fontWeight: 700, color: DARK, margin: "0 0 0.15rem" }}>
+                  <p style={{ fontSize: "0.88rem", fontWeight: 700, color: DARK, margin: "0 0 0.15rem", textTransform: "uppercase" }}>
                     {confirmEstado.nombres} {confirmEstado.apellidos}
                   </p>
                   <p style={{ fontSize: "0.78rem", color: "#6B7280", margin: 0 }}>
@@ -941,7 +941,7 @@ const s = {
     display: "flex", alignItems: "center", padding: "0.85rem 1.25rem",
     borderBottom: "1px solid #F3F4F6", transition: "background 0.15s",
   },
-  rowName: { fontWeight: 600, fontSize: "0.875rem", color: DARK },
+  rowName: { fontWeight: 600, fontSize: "0.875rem", color: DARK, textTransform: "uppercase" },
   cedulaBadge: {
     background: "#F3F4F6", color: "#374151", padding: "0.2rem 0.6rem",
     borderRadius: "6px", fontSize: "0.8rem", fontFamily: FONTC, fontWeight: 700, letterSpacing: "0.04em",

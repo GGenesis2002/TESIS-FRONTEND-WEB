@@ -136,7 +136,7 @@ function ModalVer({ usuario, onClose }) {
               {(usuario.nombres || "?")[0]}{(usuario.apellidos || "")[0]}
             </div>
             <div>
-              <h3 style={{ fontFamily: FONTC, fontSize: "1.2rem", margin: 0, fontWeight: 700, color: "#FFF" }}>
+              <h3 style={{ fontFamily: FONTC, fontSize: "1.2rem", margin: 0, fontWeight: 700, color: "#FFF", textTransform: "uppercase" }}>
                 {usuario.nombres} {usuario.apellidos}
               </h3>
               <span style={{ fontSize: "0.78rem", color: "#9CA3AF" }}>@{usuario.username}</span>
@@ -734,7 +734,7 @@ if (rolesActuales.includes("3")) {
                           {(u.nombres || "?")[0]}{(u.apellidos || "")[0]}
                         </div>
                         <div>
-                          <span style={{ fontWeight: 600, color: DARK, display: "block" }}>{u.nombres} {u.apellidos}</span>
+                          <span style={{ fontWeight: 600, color: DARK, display: "block", textTransform: "uppercase" }}>{u.nombres} {u.apellidos}</span>
                           {u.cargo && <span style={styles.subtextBlock}>Cargo: {u.cargo}</span>}
                           {u.especialidad && (!Array.isArray(u.especialidad) || u.especialidad.length > 0) && (
                             <span style={styles.subtextBlock}>
@@ -1254,7 +1254,7 @@ if (rolesActuales.includes("3")) {
             </h3>
             
             <p style={{ color: "#6B7280", fontSize: "0.95rem", margin: "1rem 0 2rem", lineHeight: "1.5" }}>
-              ¿Estás seguro de que deseas {userToToggle.estado ? "desactivar" : "activar"} la cuenta de <strong style={{ color: DARK }}>{userToToggle.nombres} {userToToggle.apellidos}</strong>?
+              ¿Estás seguro de que deseas {userToToggle.estado ? "desactivar" : "activar"} la cuenta de <strong style={{ color: DARK, textTransform: "uppercase" }}>{userToToggle.nombres} {userToToggle.apellidos}</strong>?
               {userToToggle.estado && <br/>}
               {userToToggle.estado && <span style={{ fontSize: "0.85rem", color: "#EF4444", marginTop: "0.5rem", display: "inline-block" }}>El usuario no podrá acceder al sistema.</span>}
             </p>

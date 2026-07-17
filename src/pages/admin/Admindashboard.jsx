@@ -492,24 +492,48 @@ function ModalUsuarios({ open, onClose }) {
   );
 }
 
-// ─── MODAL: ÓRDENES DEL DÍA — con scroll + paginado por usuario ──────────────
+// ─── MODAL: ÓRDENES — con scroll + paginado por usuario ──────────────────────
+// Cada orden puede venir del Sistema Web (generada por un Asistente/Analista)
+// o del App Móvil (generada directamente por el Paciente). El backend ya
+// separa ambos casos por usuario real; aquí solo se identifica el canal
+// visualmente y se ofrece filtro Hoy / Rango / Histórico.
+const CANAL_STYLE = {
+  "Sistema Web": { bg: "#DBEAFE", color: "#1E40AF", icon: "💻" },
+  "App Móvil":   { bg: "#EDE9FE", color: "#5B21B6", icon: "📱" },
+};
+
 function ModalOrdenes({ open, onClose }) {
+  const hoyISO = getHoyLocal();
   const [grupos, setGrupos]     = useState([]);
   const [loading, setLoading]   = useState(false);
   const [q, setQ]               = useState("");
   const [expandido, setExpandido] = useState(null);
   const [paginas, setPaginas]   = useState({});   // { username: pageIndex }
 
-  useEffect(() => {
-    if (!open) return;
+  const [rango, setRango]   = useState("hoy");   // "hoy" | "rango" | "historico"
+  const [desde, setDesde]   = useState(hoyISO);
+  const [hasta, setHasta]   = useState(hoyISO);
+
+  const cargar = useCallback(() => {
     setLoading(true);
-    setPaginas({});
-    setExpandido(null);
-    API.get("/dashboard/ordenes-por-usuario")
+    let url = "/dashboard/ordenes-por-usuario";
+    if (rango === "historico") url += "?historico=true";
+    else if (rango === "rango") url += `?desde=${desde}&hasta=${hasta}`;
+    // rango === "hoy" -> sin parámetros, el backend por defecto trae hoy
+
+    API.get(url)
       .then((r) => setGrupos(Array.isArray(r.data) ? r.data : []))
       .catch(() => setGrupos([]))
       .finally(() => setLoading(false));
-  }, [open]);
+  }, [rango, desde, hasta]);
+
+  useEffect(() => {
+    if (!open) return;
+    setPaginas({});
+    setExpandido(null);
+    cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cargar]);
 
   const gruposFiltrados = grupos.map((g) => ({
     ...g,
@@ -522,10 +546,48 @@ function ModalOrdenes({ open, onClose }) {
   const getPage    = (key) => paginas[key] || 0;
   const setPage    = (key, p) => setPaginas((prev) => ({ ...prev, [key]: p }));
 
+  const subtitulo = rango === "historico"
+    ? "Desglose histórico de todas las órdenes, por asistente (web) o paciente (app móvil)"
+    : rango === "rango"
+    ? `Desglose de órdenes del ${desde} al ${hasta}, por asistente (web) o paciente (app móvil)`
+    : "Desglose de órdenes de hoy, por asistente (web) o paciente (app móvil)";
+
+  const emptyMsg = rango === "hoy" ? "Sin órdenes registradas hoy" : "Sin órdenes registradas en ese periodo";
+
   return (
-    <Modal open={open} onClose={onClose} title="📋 Órdenes del Día — Por Usuario" subtitle="Desglose de órdenes generadas por cada asistente" wide>
+    <Modal open={open} onClose={onClose} title="📋 Órdenes — Por Usuario" subtitle={subtitulo} wide>
+      {/* filtro de periodo */}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+        {[
+          { key: "hoy", label: "Hoy" },
+          { key: "rango", label: "Rango de fechas" },
+          { key: "historico", label: "Histórico (todo)" },
+        ].map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setRango(opt.key)}
+            style={{
+              ...pgBtn,
+              borderColor: rango === opt.key ? "#E88B3A" : "#E2E8F0",
+              background: rango === opt.key ? "#E88B3A" : "#FFF",
+              color: rango === opt.key ? "#FFF" : "#374151",
+              fontWeight: 600,
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+        {rango === "rango" && (
+          <>
+            <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} style={{ ...dateInput, width: "auto" }} />
+            <span style={{ color: "#9CA3AF", fontSize: "0.8rem" }}>a</span>
+            <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} style={{ ...dateInput, width: "auto" }} />
+          </>
+        )}
+      </div>
+
       <SearchBox value={q} onChange={setQ} placeholder="Buscar ticket, estado o paciente…" />
-      {loading ? <p style={loadingTxt}>Cargando…</p> : gruposFiltrados.length === 0 ? <p style={emptyTxt}>Sin órdenes registradas hoy</p> : (
+      {loading ? <p style={loadingTxt}>Cargando…</p> : gruposFiltrados.length === 0 ? <p style={emptyTxt}>{emptyMsg}</p> : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.75rem" }}>
           {gruposFiltrados.map((g, gi) => {
             const key    = g.username || `g${gi}`;
@@ -544,9 +606,23 @@ function ModalOrdenes({ open, onClose }) {
                   onClick={() => setExpandido(isOpen ? null : gi)}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                    <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#E88B3A18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem" }}>👤</div>
+                    <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#E88B3A18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem" }}>
+                      {CANAL_STYLE[g.canal]?.icon || "👤"}
+                    </div>
                     <div>
-                      <p style={{ margin: 0, fontWeight: 700, fontSize: "0.88rem", color: "#1F2937", fontFamily: "'Barlow', sans-serif" }}>{g.usuario}</p>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: "0.88rem", color: "#1F2937", fontFamily: "'Barlow', sans-serif" }}>{g.usuario}</p>
+                        {g.canal && (
+                          <span style={{
+                            ...badgeBase,
+                            background: CANAL_STYLE[g.canal]?.bg || "#F3F4F6",
+                            color: CANAL_STYLE[g.canal]?.color || "#374151",
+                            fontSize: "0.65rem",
+                          }}>
+                            {g.canal}
+                          </span>
+                        )}
+                      </div>
                       <p style={{ margin: 0, fontSize: "0.72rem", color: "#10B981", fontFamily: "'Barlow', sans-serif", fontWeight: 600 }}>
                         {fmtMoney(subtotal)} recaudado
                       </p>

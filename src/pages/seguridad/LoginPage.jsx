@@ -31,9 +31,24 @@ export default function LoginPage() {
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
 
-      const rolesUsuario = Array.isArray(data.user.roles) 
+      const normalizarRol = (str) =>
+        str ? str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() : "";
+
+      const todosLosRoles = Array.isArray(data.user.roles) 
         ? data.user.roles 
         : [data.user.rol].filter(Boolean);
+
+      // El panel web es solo para personal del laboratorio: el rol "Paciente"
+      // pertenece exclusivamente a la app móvil y nunca debe ofrecerse aquí.
+      const rolesUsuario = todosLosRoles.filter(r => normalizarRol(r) !== "paciente");
+
+      if (rolesUsuario.length === 0) {
+        // El único rol que tenía esta cuenta era Paciente
+        localStorage.clear();
+        setError("Esta cuenta es de Paciente. Por favor ingresa desde la app móvil.");
+        setLoading(false);
+        return;
+      }
 
       if (rolesUsuario.length > 1) {
         // ESCENARIO A: Si tiene múltiples roles, activamos el selector visual

@@ -37,7 +37,14 @@ export default function SeleccionarRolPage() {
     let user = {};
     try { user = JSON.parse(localStorage.getItem("user") || "{}"); } catch { /* noop */ }
 
-    const listaRoles = Array.isArray(user.roles) ? user.roles : [];
+    const normalizarRol = (str) =>
+      str ? str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() : "";
+
+    const listaRolesCompleta = Array.isArray(user.roles) ? user.roles : [];
+
+    // El panel web es solo para personal del laboratorio: el rol "Paciente"
+    // pertenece exclusivamente a la app móvil y nunca debe ofrecerse aquí.
+    const listaRoles = listaRolesCompleta.filter(r => normalizarRol(r) !== "paciente");
 
     if (listaRoles.length < 2) {
       // El usuario solo tiene un rol: no tiene sentido mostrar el selector.

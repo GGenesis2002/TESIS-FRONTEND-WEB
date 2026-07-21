@@ -2,11 +2,10 @@ import API from './api';
 
 // ─── LOGIN OFICIAL ──────────────────────────────────────────────────────────
 export const loginService = async (username, password) => {
-  
-    const { data } = await API.post('/login/login', { username, password });
+
+    const { data } = await API.post('/login/login', { username, password, origen: 'web' });
     return data;
 };
-
 // ─── RECUPERACIÓN DE CONTRASEÑA (CÓDIGO AL CORREO) ──────────────────────────
 export const solicitarCodigoService = async (correo) => {
     

@@ -117,8 +117,8 @@ export default function GestionOrdenes() {
   const [showDetalle, setShowDetalle] = useState(null);
   const [detalleExamenes, setDetalleExamenes] = useState([]);
   const [loadingDetalle, setLoadingDetalle]   = useState(false);
-  const [regenerandoQR, setRegenerandoQR] = useState(false);
-  const [qrRegenerado, setQrRegenerado]   = useState(null); // { qr, ticket } tras regenerar
+  const [regenerandoQRId, setRegenerandoQRId] = useState(null); // id_orden que se está regenerando
+  const [qrPopup, setQrPopup] = useState(null); // { qr, ticket } tras regenerar, se muestra en un popup aparte
 
   // Editar orden
   const [showEditar, setShowEditar]           = useState(null);
@@ -334,7 +334,6 @@ export default function GestionOrdenes() {
   const abrirDetalle = async (o) => {
     setShowDetalle(o);
     setDetalleExamenes([]);
-    setQrRegenerado(null);
     setLoadingDetalle(true);
     try {
       const res = await API.get(`/ordenes/${o.id_orden}/detalle`).catch(() => null);
@@ -343,31 +342,23 @@ export default function GestionOrdenes() {
     } catch {} finally { setLoadingDetalle(false); }
   };
 
-  const cerrarDetalle = () => {
-    setShowDetalle(null);
-    setQrRegenerado(null);
-  };
+  const cerrarDetalle = () => setShowDetalle(null);
 
-  // ── REGENERAR QR ─────────────────────────────────────────────────────────────
+  // ── REGENERAR QR (desde la tabla, fuera del modal de detalle) ────────────────
   const handleRegenerarQR = async (o) => {
-    setRegenerandoQR(true);
+    setRegenerandoQRId(o.id_orden);
     try {
       const res = await API.put("/ordenes/regenerar-qr", { id_orden: o.id_orden });
-      setQrRegenerado({ qr: res.data.qr, ticket: res.data.ticket });
       showToast("success", res.data.msg || "QR regenerado con éxito.");
-
+      setQrPopup({ qr: res.data.qr, ticket: res.data.ticket || o.numero_ticket });
       // Refrescamos la lista para que el nuevo qr_codigo (con nueva fecha de expiración)
-      // quede reflejado tanto en la tabla como en este mismo modal de detalle.
+      // quede reflejado en la tabla y desaparezca la etiqueta de "expirado".
       const resOrd = await API.get(`/ordenes${filtroEstado ? `?estado=${filtroEstado}` : ""}`).catch(() => null);
-      if (resOrd?.data) {
-        setOrdenes(resOrd.data);
-        const actualizada = resOrd.data.find(x => x.id_orden === o.id_orden);
-        if (actualizada) setShowDetalle(actualizada);
-      }
+      if (resOrd?.data) setOrdenes(resOrd.data);
     } catch (err) {
       showToast("error", err.response?.data?.error || "Error al regenerar el QR.");
     } finally {
-      setRegenerandoQR(false);
+      setRegenerandoQRId(null);
     }
   };
 
@@ -617,6 +608,9 @@ export default function GestionOrdenes() {
             const ec = EC[o.estado] || { bg: "#F8FAFC", color: "#6B7280" };
             const puedeEditar   = PUEDE_EDITAR.includes(o.estado);
             const puedeEliminar = PUEDE_ELIMINAR.includes(o.estado);
+            const qrAplica   = PUEDE_REGENERAR_QR.includes(o.estado);
+            const qrVencido  = qrAplica && qrExpirado(o.qr_codigo);
+            const regenerando = regenerandoQRId === o.id_orden;
             return (
               <div
                 key={o.id_orden}
@@ -630,12 +624,33 @@ export default function GestionOrdenes() {
                   <span style={{ background: ec.bg, color: ec.color, padding: "0.25rem 0.5rem", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700, fontFamily: FONTC, textTransform: "uppercase" }}>
                     {ec.icon} {o.estado}
                   </span>
+                  {qrVencido && (
+                    <span style={{ display: "block", marginTop: "0.3rem", background: "rgba(239,68,68,0.12)", color: "#DC2626", padding: "0.2rem 0.5rem", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, fontFamily: FONTC, textTransform: "uppercase", width: "fit-content" }}>
+                      ⚠️ QR expirado
+                    </span>
+                  )}
                 </span>
                 <span style={{ flex: 1, fontSize: "0.85rem", color: "#6B7280" }}>{o.fecha_orden ? new Date(o.fecha_orden).toLocaleDateString() : "—"}</span>
                 <span style={{ flex: "0 0 90px", textAlign: "right", fontWeight: 700, fontFamily: FONTC }}>${parseFloat(o.total || 0).toFixed(2)}</span>
                 <span style={{ flex: "0 0 185px", display: "flex", gap: "0.35rem", justifyContent: "center" }}>
                   <button onClick={() => abrirDetalle(o)} style={{ ...s.btnIcon, background: "#F3F4F6", color: DARK }} title="Ver detalle">👁️</button>
                   {puedeEditar && <button onClick={() => abrirEditar(o)} style={{ ...s.btnIcon, background: "rgba(59,130,246,0.1)", color: "#3B82F6" }} title="Editar">✏️</button>}
+                  {qrAplica && (
+                    <button
+                      onClick={() => handleRegenerarQR(o)}
+                      disabled={regenerando}
+                      title={qrVencido ? "El QR está expirado — regenerar" : "Regenerar QR"}
+                      style={{
+                        ...s.btnIcon,
+                        background: qrVencido ? "rgba(239,68,68,0.12)" : "rgba(232,139,58,0.12)",
+                        color: qrVencido ? "#DC2626" : ORANGE,
+                        opacity: regenerando ? 0.5 : 1,
+                        cursor: regenerando ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {regenerando ? "⏳" : "🔄"}
+                    </button>
+                  )}
                 </span>
               </div>
             );
@@ -1065,44 +1080,6 @@ export default function GestionOrdenes() {
                       <InfoItem label="Fecha"    value={o.fecha_orden ? new Date(o.fecha_orden).toLocaleString() : "—"} />
                     </div>
 
-                    {PUEDE_REGENERAR_QR.includes(o.estado) && (() => {
-                      const expirado = !qrRegenerado && qrExpirado(o.qr_codigo);
-                      return (
-                        <div style={{
-                          background: expirado ? "#FEF2F2" : "#F0FDF4",
-                          border: `1.5px solid ${expirado ? "#FCA5A5" : "#BBF7D0"}`,
-                          borderRadius: "8px", padding: "0.75rem 1rem", marginBottom: "1rem",
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                          gap: "0.75rem", flexWrap: "wrap"
-                        }}>
-                          <div>
-                            <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.3rem" }}>
-                              Código QR
-                            </p>
-                            {qrRegenerado ? (
-                              <p style={{ fontSize: "0.85rem", color: "#166534", fontWeight: 600, margin: 0 }}>✓ QR regenerado con éxito</p>
-                            ) : expirado ? (
-                              <p style={{ fontSize: "0.85rem", color: "#B91C1C", fontWeight: 600, margin: 0 }}>⚠️ El QR de esta orden está expirado</p>
-                            ) : (
-                              <p style={{ fontSize: "0.85rem", color: "#166534", fontWeight: 600, margin: 0 }}>✓ QR vigente</p>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleRegenerarQR(o)}
-                            disabled={regenerandoQR}
-                            style={{ ...s.btnSecondary, opacity: regenerandoQR ? 0.6 : 1, cursor: regenerandoQR ? "not-allowed" : "pointer" }}
-                          >
-                            {regenerandoQR ? "Regenerando..." : "🔄 Regenerar QR"}
-                          </button>
-                          {qrRegenerado?.qr && (
-                            <div style={{ width: "100%", textAlign: "center", marginTop: "0.25rem" }}>
-                              <img src={qrRegenerado.qr} alt="Nuevo QR" style={{ width: "150px", height: "150px", background: "#FFF", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "0.4rem" }} />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
                     <div style={{ background: "#F8FAFC", padding: "0.75rem 1rem", borderRadius: "8px", border: "1px solid #E5E7EB", marginBottom: "1rem" }}>
                       <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.75rem" }}>
                         Exámenes Solicitados
@@ -1157,7 +1134,23 @@ export default function GestionOrdenes() {
         </Overlay>
       )}
 
-      
+      {/* ════════════════════════════════════════════════════════════
+          POPUP — QR REGENERADO (independiente del modal de detalle)
+      ════════════════════════════════════════════════════════════ */}
+      {qrPopup && (
+        <Overlay onClose={() => setQrPopup(null)}>
+          <div style={{ ...s.modalContainer, width: "360px" }}>
+            <ModalHeader title="QR" titleOrange="REGENERADO" subtitle={qrPopup.ticket} onClose={() => setQrPopup(null)} />
+            <div style={{ ...s.modalBody, textAlign: "center" }}>
+              <p style={{ fontSize: "0.85rem", color: "#166534", fontWeight: 600, marginTop: 0 }}>✓ QR regenerado con éxito</p>
+              {qrPopup.qr && (
+                <img src={qrPopup.qr} alt="Nuevo QR" style={{ width: "220px", height: "220px", background: "#FFF", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "0.5rem" }} />
+              )}
+              <button onClick={() => setQrPopup(null)} style={{ ...s.btnCancel, width: "100%", marginTop: "1.25rem" }}>Cerrar</button>
+            </div>
+          </div>
+        </Overlay>
+      )}
 
     </div>
   );

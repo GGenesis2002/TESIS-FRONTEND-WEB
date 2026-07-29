@@ -15,6 +15,30 @@ const EC = {
 
 const PUEDE_EDITAR   = ["Generada"];
 const PUEDE_ELIMINAR = ["Generada", "Cancelada"];
+const PUEDE_REGENERAR_QR = ["Generada"]; // El QR solo tiene sentido mientras la orden no ha sido pagada
+
+// ── Decodifica el payload de un JWT SIN verificar la firma ────────────────────
+// Solo se usa para leer el "exp" y mostrar en la UI si el QR ya venció.
+// La validación real de expiración/firma siempre ocurre en el backend.
+const decodificarPayloadJWT = (token) => {
+  try {
+    const payload = token.split(".")[1];
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base64).split("").map(c => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("")
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+};
+
+const qrExpirado = (token) => {
+  if (!token) return true;
+  const payload = decodificarPayloadJWT(token);
+  if (!payload?.exp) return true;
+  return Date.now() >= payload.exp * 1000;
+};
 
 // ─── VALIDADORES DE DOCUMENTO ─────────────────────────────────────────────────
 const validarCedula    = (v) => /^\d{10}$/.test((v || "").trim());
@@ -93,6 +117,8 @@ export default function GestionOrdenes() {
   const [showDetalle, setShowDetalle] = useState(null);
   const [detalleExamenes, setDetalleExamenes] = useState([]);
   const [loadingDetalle, setLoadingDetalle]   = useState(false);
+  const [regenerandoQR, setRegenerandoQR] = useState(false);
+  const [qrRegenerado, setQrRegenerado]   = useState(null); // { qr, ticket } tras regenerar
 
   // Editar orden
   const [showEditar, setShowEditar]           = useState(null);
@@ -308,12 +334,41 @@ export default function GestionOrdenes() {
   const abrirDetalle = async (o) => {
     setShowDetalle(o);
     setDetalleExamenes([]);
+    setQrRegenerado(null);
     setLoadingDetalle(true);
     try {
       const res = await API.get(`/ordenes/${o.id_orden}/detalle`).catch(() => null);
       if (res?.data?.detalles) setDetalleExamenes(res.data.detalles);
       else if (res?.data) setDetalleExamenes(Array.isArray(res.data) ? res.data : []);
     } catch {} finally { setLoadingDetalle(false); }
+  };
+
+  const cerrarDetalle = () => {
+    setShowDetalle(null);
+    setQrRegenerado(null);
+  };
+
+  // ── REGENERAR QR ─────────────────────────────────────────────────────────────
+  const handleRegenerarQR = async (o) => {
+    setRegenerandoQR(true);
+    try {
+      const res = await API.put("/ordenes/regenerar-qr", { id_orden: o.id_orden });
+      setQrRegenerado({ qr: res.data.qr, ticket: res.data.ticket });
+      showToast("success", res.data.msg || "QR regenerado con éxito.");
+
+      // Refrescamos la lista para que el nuevo qr_codigo (con nueva fecha de expiración)
+      // quede reflejado tanto en la tabla como en este mismo modal de detalle.
+      const resOrd = await API.get(`/ordenes${filtroEstado ? `?estado=${filtroEstado}` : ""}`).catch(() => null);
+      if (resOrd?.data) {
+        setOrdenes(resOrd.data);
+        const actualizada = resOrd.data.find(x => x.id_orden === o.id_orden);
+        if (actualizada) setShowDetalle(actualizada);
+      }
+    } catch (err) {
+      showToast("error", err.response?.data?.error || "Error al regenerar el QR.");
+    } finally {
+      setRegenerandoQR(false);
+    }
   };
 
   // ── EDITAR ORDEN ──────────────────────────────────────────────────────────────
@@ -983,9 +1038,9 @@ export default function GestionOrdenes() {
           MODAL — DETALLE ORDEN
       ════════════════════════════════════════════════════════════ */}
       {showDetalle && (
-        <Overlay onClose={() => setShowDetalle(null)}>
+        <Overlay onClose={cerrarDetalle}>
           <div style={s.modalContainer}>
-            <ModalHeader title="DETALLE" titleOrange="ORDEN" subtitle={showDetalle.numero_ticket || `Orden #${showDetalle.id_orden}`} onClose={() => setShowDetalle(null)} />
+            <ModalHeader title="DETALLE" titleOrange="ORDEN" subtitle={showDetalle.numero_ticket || `Orden #${showDetalle.id_orden}`} onClose={cerrarDetalle} />
             <div style={s.modalBody}>
               {loadingDetalle ? (
                 <div style={{ textAlign: "center", padding: "2rem 0" }}>
@@ -1009,6 +1064,44 @@ export default function GestionOrdenes() {
                       <InfoItem label="Estado"   value={o.estado} />
                       <InfoItem label="Fecha"    value={o.fecha_orden ? new Date(o.fecha_orden).toLocaleString() : "—"} />
                     </div>
+
+                    {PUEDE_REGENERAR_QR.includes(o.estado) && (() => {
+                      const expirado = !qrRegenerado && qrExpirado(o.qr_codigo);
+                      return (
+                        <div style={{
+                          background: expirado ? "#FEF2F2" : "#F0FDF4",
+                          border: `1.5px solid ${expirado ? "#FCA5A5" : "#BBF7D0"}`,
+                          borderRadius: "8px", padding: "0.75rem 1rem", marginBottom: "1rem",
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          gap: "0.75rem", flexWrap: "wrap"
+                        }}>
+                          <div>
+                            <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.3rem" }}>
+                              Código QR
+                            </p>
+                            {qrRegenerado ? (
+                              <p style={{ fontSize: "0.85rem", color: "#166534", fontWeight: 600, margin: 0 }}>✓ QR regenerado con éxito</p>
+                            ) : expirado ? (
+                              <p style={{ fontSize: "0.85rem", color: "#B91C1C", fontWeight: 600, margin: 0 }}>⚠️ El QR de esta orden está expirado</p>
+                            ) : (
+                              <p style={{ fontSize: "0.85rem", color: "#166534", fontWeight: 600, margin: 0 }}>✓ QR vigente</p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleRegenerarQR(o)}
+                            disabled={regenerandoQR}
+                            style={{ ...s.btnSecondary, opacity: regenerandoQR ? 0.6 : 1, cursor: regenerandoQR ? "not-allowed" : "pointer" }}
+                          >
+                            {regenerandoQR ? "Regenerando..." : "🔄 Regenerar QR"}
+                          </button>
+                          {qrRegenerado?.qr && (
+                            <div style={{ width: "100%", textAlign: "center", marginTop: "0.25rem" }}>
+                              <img src={qrRegenerado.qr} alt="Nuevo QR" style={{ width: "150px", height: "150px", background: "#FFF", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "0.4rem" }} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div style={{ background: "#F8FAFC", padding: "0.75rem 1rem", borderRadius: "8px", border: "1px solid #E5E7EB", marginBottom: "1rem" }}>
                       <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#6B7280", letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 0.75rem" }}>
@@ -1050,11 +1143,11 @@ export default function GestionOrdenes() {
 
                     <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
                       {PUEDE_EDITAR.includes(o.estado) && (
-                        <button onClick={() => { setShowDetalle(null); abrirEditar(o); }} style={{ ...s.btnFull, flex: 1, background: "#3B82F6" }}>
+                        <button onClick={() => { cerrarDetalle(); abrirEditar(o); }} style={{ ...s.btnFull, flex: 1, background: "#3B82F6" }}>
                           ✏️ EDITAR ORDEN
                         </button>
                       )}
-                      <button onClick={() => setShowDetalle(null)} style={s.btnCancel}>Cerrar</button>
+                      <button onClick={cerrarDetalle} style={s.btnCancel}>Cerrar</button>
                     </div>
                   </>
                 );

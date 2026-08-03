@@ -2391,8 +2391,9 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
         })()}
 
         {(() => {
-          const reembolsosEfectivo      = reembolsos.filter(r => r.metodo_reembolso === "Efectivo");
-          const reembolsosTransferencia = reembolsos.filter(r => r.metodo_reembolso === "Transferencia");
+          // Los reembolsos SOLO se procesan en Efectivo (ver estadoInicialReembolso):
+          // no existe la variante "por transferencia" en el sistema, así que el
+          // reporte ya no muestra esa tabla (antes salía siempre vacía).
           const subtotalReembolsos = arr => arr.reduce((s, r) => s + parseFloat(r.monto || 0), 0);
 
           const TablaReembolsos = ({ titulo, lista, color }) => (
@@ -2416,7 +2417,7 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
                       <td style={{ ...S.tdReporte, textAlign: "right", color: "#EF4444" }}>-${parseFloat(r.monto).toFixed(2)}</td>
                     </tr>
                   ))}
-                  {lista.length === 0 && <tr><td colSpan={4} style={{ ...S.tdReporte, textAlign: "center", color: "#9CA3AF" }}>Sin reembolsos por este método</td></tr>}
+                  {lista.length === 0 && <tr><td colSpan={4} style={{ ...S.tdReporte, textAlign: "center", color: "#9CA3AF" }}>Sin reembolsos en este turno</td></tr>}
                 </tbody>
               </table>
             </>
@@ -2427,8 +2428,7 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
               <p style={{ fontWeight: 700, fontSize: "0.9rem", textTransform: "uppercase", borderBottom: "1px solid #D1D5DB", paddingBottom: "4px" }}>
                 Detalle de reembolsos ({reembolsos.length})
               </p>
-              <TablaReembolsos titulo="💵 Efectivo" lista={reembolsosEfectivo} color="#10B981" />
-              <TablaReembolsos titulo="🏧 Transferencia" lista={reembolsosTransferencia} color="#3B82F6" />
+              <TablaReembolsos titulo="💵 Efectivo" lista={reembolsos} color="#10B981" />
             </>
           );
         })()}

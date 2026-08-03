@@ -6,8 +6,13 @@ const DEFAULTS = {
   reintentosLogin: '5',
 };
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function ConfiguracionSistema() {
   const [config, setConfig]       = useState(DEFAULTS);
+  const [correos, setCorreos]     = useState([]);      // correos de notificación de cierre de caja
+  const [nuevoCorreo, setNuevoCorreo] = useState('');
+  const [errorCorreo, setErrorCorreo] = useState('');
   const [loading, setLoading]     = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [toast, setToast]         = useState(null);
@@ -21,6 +26,7 @@ export default function ConfiguracionSistema() {
             expiracionQR:    String(data.data.expiracionQR    ?? DEFAULTS.expiracionQR),
             reintentosLogin: String(data.data.reintentosLogin ?? DEFAULTS.reintentosLogin),
           });
+          setCorreos(Array.isArray(data.data.correosCierreCaja) ? data.data.correosCierreCaja : []);
         }
       } catch {
         mostrarToast('err', 'No se pudo conectar con el servidor.');
@@ -38,13 +44,34 @@ export default function ConfiguracionSistema() {
 
   const handleChange = (key, value) => setConfig(prev => ({ ...prev, [key]: value }));
 
+  const handleAgregarCorreo = () => {
+    const valor = nuevoCorreo.trim().toLowerCase();
+    if (!valor) return;
+    if (!EMAIL_REGEX.test(valor)) {
+      setErrorCorreo('Ese correo no parece válido.');
+      return;
+    }
+    if (correos.includes(valor)) {
+      setErrorCorreo('Ese correo ya está en la lista.');
+      return;
+    }
+    setCorreos(prev => [...prev, valor]);
+    setNuevoCorreo('');
+    setErrorCorreo('');
+  };
+
+  const handleQuitarCorreo = (correo) => {
+    setCorreos(prev => prev.filter(c => c !== correo));
+  };
+
   const handleGuardar = async () => {
     setGuardando(true);
     setToast(null);
     try {
       const datosAEnviar = {
-        expiracionQR:    Number(config.expiracionQR),
-        reintentosLogin: Number(config.reintentosLogin),
+        expiracionQR:      Number(config.expiracionQR),
+        reintentosLogin:   Number(config.reintentosLogin),
+        correosCierreCaja: correos,
       };
       const { data } = await API.put('/configuracion/update', datosAEnviar);
       if (data.status === 'success') {
@@ -108,6 +135,56 @@ export default function ConfiguracionSistema() {
             <option value="48">72 horas</option>
           </select>
         </Fila>
+      </Section>
+
+      {/* Seccion: Notificaciones por correo */}
+      <Section titulo="Notificaciones por correo">
+        <div style={{ padding: '1rem 1.25rem' }}>
+          <p style={S.filaNombre}>Correos para el reporte de cierre de caja</p>
+          <p style={S.filaDesc}>
+            Cada vez que una secretaria/asistente cierre un turno de caja, el reporte en PDF
+            se enviará automáticamente a estos correos. Puedes agregar dos o más.
+          </p>
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+            <input
+              type="email"
+              value={nuevoCorreo}
+              onChange={e => { setNuevoCorreo(e.target.value); setErrorCorreo(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAgregarCorreo(); } }}
+              placeholder="admin@laboratorio.com"
+              style={S.inputCorreo}
+            />
+            <button onClick={handleAgregarCorreo} type="button" style={S.btnAgregar}>
+              + Agregar
+            </button>
+          </div>
+
+          {errorCorreo && (
+            <p style={{ color: '#EF4444', fontSize: '0.78rem', margin: '0.4rem 0 0' }}>{errorCorreo}</p>
+          )}
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.9rem' }}>
+            {correos.length === 0 && (
+              <p style={{ fontSize: '0.8rem', color: '#9CA3AF', margin: 0 }}>
+                Todavía no hay correos configurados.
+              </p>
+            )}
+            {correos.map(correo => (
+              <span key={correo} style={S.chip}>
+                {correo}
+                <button
+                  onClick={() => handleQuitarCorreo(correo)}
+                  type="button"
+                  style={S.chipBtn}
+                  aria-label={`Quitar ${correo}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
       </Section>
 
       {/* Seccion: Seguridad */}
@@ -221,6 +298,29 @@ const S = {
     border: '1.5px solid #E5E7EB', outline: 'none',
     fontFamily: "'Barlow', sans-serif", fontSize: '0.84rem',
     color: '#374151', background: '#FAFAFA', cursor: 'pointer',
+  },
+  inputCorreo: {
+    flex: '1 1 240px',
+    padding: '0.55rem 0.8rem', borderRadius: '8px',
+    border: '1.5px solid #E5E7EB', outline: 'none',
+    fontFamily: "'Barlow', sans-serif", fontSize: '0.86rem',
+    color: '#374151', background: '#FAFAFA',
+  },
+  btnAgregar: {
+    background: '#1F2937', color: '#FFF', border: 'none',
+    padding: '0.55rem 1rem', borderRadius: '8px',
+    fontFamily: "'Barlow', sans-serif", fontWeight: 600,
+    fontSize: '0.84rem', cursor: 'pointer', whiteSpace: 'nowrap',
+  },
+  chip: {
+    display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+    background: '#F1F5F9', color: '#374151',
+    padding: '0.35rem 0.5rem 0.35rem 0.75rem', borderRadius: '999px',
+    fontSize: '0.82rem', fontFamily: "'Barlow', sans-serif",
+  },
+  chipBtn: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    color: '#9CA3AF', fontSize: '1rem', lineHeight: 1, padding: '0 0.2rem',
   },
   toggleBase: {
     width: '44px', height: '24px', borderRadius: '12px',

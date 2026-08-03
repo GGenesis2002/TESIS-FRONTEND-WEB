@@ -70,10 +70,60 @@ const estadoColor = {
   "Cancelada":   { bg: "rgba(239,68,68,0.12)",   color: "#EF4444" },
 };
 
+// ─── BANCOS (Ecuador) ─────────────────────────────────────────────────────────
+// Lista de los bancos/instituciones financieras más comunes en Ecuador para el
+// combobox de "Banco" en transferencias. Si el banco del paciente no está en la
+// lista, se deja "Otro" para que lo escriba manualmente.
+const BANCOS_ECUADOR = [
+  "Banco Pichincha",
+  "Banco de Guayaquil",
+  "Produbanco",
+  "Banco del Pacífico",
+  "Banco Bolivariano",
+  "Banco Internacional",
+  "Banco Machala",
+  "Banco Solidario",
+  "Banco General Rumiñahui",
+  "Banco Austro",
+  "Banco Loja",
+  "Banco ProCredit",
+  "Banco Comercial de Manabí",
+  "Cooperativa JEP",
+  "Cooperativa Policía Nacional",
+  "Otro",
+];
+
 const FONT  = "'Barlow', sans-serif";
 const FONTC = "'Barlow Condensed', sans-serif";
 const DARK  = "#1F2937";
 const ORANGE = "#E88B3A";
+
+// ─── VALIDACIÓN DE CÉDULA (Ecuador) ──────────────────────────────────────────
+// Algoritmo oficial módulo 10: valida los 10 dígitos, el código de provincia
+// (01-24) y el tercer dígito (debe ser menor a 6 para persona natural).
+// Se usa para validar la cédula del titular de una transferencia.
+const validarCedulaEcuador = (cedula) => {
+  if (!/^\d{10}$/.test(cedula || "")) return false;
+
+  const provincia = parseInt(cedula.substring(0, 2), 10);
+  if (provincia < 1 || provincia > 24) return false;
+
+  const tercerDigito = parseInt(cedula[2], 10);
+  if (tercerDigito > 6) return false;
+
+  const coeficientes = [2, 1, 2, 1, 2, 1, 2, 1, 2];
+  let suma = 0;
+  for (let i = 0; i < 9; i++) {
+    let valor = parseInt(cedula[i], 10) * coeficientes[i];
+    if (valor >= 10) valor -= 9;
+    suma += valor;
+  }
+  const digitoVerificador = parseInt(cedula[9], 10);
+  const decenaSuperior = Math.ceil(suma / 10) * 10;
+  const resultado = decenaSuperior - suma === 10 ? 0 : decenaSuperior - suma;
+
+  return resultado === digitoVerificador;
+};
 
 const isToday = (dateString) => {
   if (!dateString) return false;
@@ -88,7 +138,7 @@ const isToday = (dateString) => {
 const estadoInicial = () => ({
   modoPago: "simple",          // "simple" | "mixto"
   partes: [
-    { metodo_pago: "Efectivo", monto: "", referencia: "", banco: "", titular: "", cedula_titular: "" }
+    { metodo_pago: "Efectivo", monto: "", referencia: "", banco: "", bancoManual: "", titular: "", cedula_titular: "" }
   ],
 });
 
@@ -342,15 +392,18 @@ export default function ModuloCaja() {
     return acc;
   }, {});
 
-  // ── Saldo real disponible EN LA CAJA del turno activo, por forma de pago ──
-  // Efectivo: fondo inicial + cobrado - ya reembolsado (mismo cálculo que "esperado en caja").
-  // Transferencia: cobrado - ya reembolsado (no hay fondo inicial en transferencia).
+  // ── Saldo disponible para REEMBOLSAR, en Efectivo ──────────────────────────
+  // OJO: esto se calcula solo con los INGRESOS del turno (lo cobrado en efectivo
+  // menos lo ya reembolsado), NUNCA sumando el fondo inicial. El fondo inicial es
+  // dinero propio de la caja para dar cambio, no es plata que haya "entrado" por
+  // pagos de pacientes, así que no debe usarse como respaldo para reembolsar.
+  const ingresosEfectivoTurno = turnoActivo
+    ? parseFloat(turnoActivo.total_efectivo_sistema || 0)
+    : 0;
   const disponibleEfectivoTurno = turnoActivo
-    ? parseFloat(turnoActivo.efectivo_esperado_actual || 0)
+    ? Math.max(0, ingresosEfectivoTurno - parseFloat(turnoActivo.total_reembolsos_efectivo || 0))
     : 0;
-  const disponibleTransferenciaTurno = turnoActivo
-    ? parseFloat(turnoActivo.total_transferencia_sistema || 0) - parseFloat(turnoActivo.total_reembolsos_transferencia || 0)
-    : 0;
+  const fondoInicialTurno = turnoActivo ? parseFloat(turnoActivo.monto_inicial || 0) : 0;
 
   const abrirReembolso = (pago) => {
     // Política: solo se puede reembolsar el mismo día en que se pagó la orden.
@@ -464,7 +517,7 @@ export default function ModuloCaja() {
     const total = parseFloat(orden.total || 0).toFixed(2);
     setFormCobro({
       modoPago: "simple",
-      partes: [{ metodo_pago: "Efectivo", monto: total, referencia: "", banco: "", titular: "", cedula_titular: "" }],
+      partes: [{ metodo_pago: "Efectivo", monto: total, referencia: "", banco: "", bancoManual: "", titular: "", cedula_titular: "" }],
     });
     setShowCobro(orden);
     setMsg(null);
@@ -477,7 +530,7 @@ export default function ModuloCaja() {
       setFormCobro(f => ({
         ...f,
         modoPago: "simple",
-        partes: [{ metodo_pago: f.partes[0]?.metodo_pago || "Efectivo", monto: total.toFixed(2), referencia: "", banco: "", titular: "", cedula_titular: "" }],
+        partes: [{ metodo_pago: f.partes[0]?.metodo_pago || "Efectivo", monto: total.toFixed(2), referencia: "", banco: "", bancoManual: "", titular: "", cedula_titular: "" }],
       }));
     } else {
       // Mixto: dividir 50/50 como punto de partida
@@ -487,8 +540,8 @@ export default function ModuloCaja() {
         ...f,
         modoPago: "mixto",
         partes: [
-          { metodo_pago: "Efectivo",       monto: mitad, referencia: "", banco: "", titular: "", cedula_titular: "" },
-          { metodo_pago: "Transferencia",  monto: resto, referencia: "", banco: "", titular: "", cedula_titular: "" },
+          { metodo_pago: "Efectivo",       monto: mitad, referencia: "", banco: "", bancoManual: "", titular: "", cedula_titular: "" },
+          { metodo_pago: "Transferencia",  monto: resto, referencia: "", banco: "", bancoManual: "", titular: "", cedula_titular: "" },
         ],
       }));
     }
@@ -528,13 +581,19 @@ export default function ModuloCaja() {
         return setMsg({ type: "error", text: "Ingresa el número de referencia de la transferencia." });
       }
       if (p.metodo_pago === "Transferencia" && !p.banco.trim()) {
-        return setMsg({ type: "error", text: "Ingresa el banco desde el que se hizo la transferencia." });
+        return setMsg({ type: "error", text: "Selecciona el banco desde el que se hizo la transferencia." });
+      }
+      if (p.metodo_pago === "Transferencia" && p.banco === "Otro" && !p.bancoManual.trim()) {
+        return setMsg({ type: "error", text: "Escribe el nombre del banco." });
       }
       if (p.metodo_pago === "Transferencia" && !p.titular.trim()) {
         return setMsg({ type: "error", text: "Ingresa el nombre de quien realizó la transferencia." });
       }
       if (p.metodo_pago === "Transferencia" && !p.cedula_titular.trim()) {
         return setMsg({ type: "error", text: "Ingresa la cédula de quien realizó la transferencia." });
+      }
+      if (p.metodo_pago === "Transferencia" && p.cedula_titular.trim() && !validarCedulaEcuador(p.cedula_titular.trim())) {
+        return setMsg({ type: "error", text: "La cédula del titular no es válida. Revísala." });
       }
     }
 
@@ -552,7 +611,7 @@ export default function ModuloCaja() {
           monto: parseFloat(p.monto),
           metodo_pago: p.metodo_pago,
           referencia: p.referencia.trim() || undefined,
-          banco: p.banco.trim() || undefined,
+          banco: (p.banco === "Otro" ? p.bancoManual.trim() : p.banco.trim()) || undefined,
           titular: p.titular.trim() || undefined,
           cedula_titular: p.cedula_titular.trim() || undefined,
         })),
@@ -1184,9 +1243,9 @@ export default function ModuloCaja() {
           ) : (
             <>
               <CascadaCaja turno={turnoActivo} />
-              {(parseFloat(turnoActivo.total_reembolsos_efectivo || 0) > 0 || parseFloat(turnoActivo.total_reembolsos_transferencia || 0) > 0) && (
+              {parseFloat(turnoActivo.total_reembolsos_efectivo || 0) > 0 && (
                 <p style={{ fontSize: "0.78rem", color: "#6B7280", margin: "-0.5rem 0 1rem", fontFamily: FONT }}>
-                  ↩️ Este turno tiene {turnoActivo.num_reembolsos || 0} reembolso(s) registrado(s). El dinero reembolsado ya se restó de lo cobrado; por eso no aparece en el efectivo/transferencia esperados arriba.
+                  ↩️ Este turno tiene {turnoActivo.num_reembolsos || 0} reembolso(s) registrado(s). El dinero reembolsado ya se restó de lo cobrado; por eso no aparece en el efectivo esperado arriba.
                 </p>
               )}
 
@@ -1482,22 +1541,16 @@ export default function ModuloCaja() {
                 <span style={{ color: ORANGE }}>${parseFloat(turnoActivo.efectivo_esperado_actual || 0).toFixed(2)}</span>
               </div>
 
-              {(parseFloat(turnoActivo.total_transferencia_sistema || 0) > 0 || parseFloat(turnoActivo.total_reembolsos_transferencia || 0) > 0) && (
+              {parseFloat(turnoActivo.total_transferencia_sistema || 0) > 0 && (
                 <>
                   <div style={{ borderTop: "1px solid #E5E7EB", margin: "0.85rem 0" }} />
                   <p style={{ fontFamily: FONTC, fontSize: "0.68rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.5rem" }}>🏧 Transferencia (no afecta el conteo físico de efectivo)</p>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.4rem" }}>
-                    <span style={{ color: "#6B7280" }}>+ Transferencia cobrada</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                    <span style={{ color: "#6B7280" }}>Transferencia cobrada</span>
                     <span style={{ fontWeight: 600, color: "#3B82F6" }}>${parseFloat(turnoActivo.total_transferencia_sistema || 0).toFixed(2)}</span>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
-                    <span style={{ color: "#6B7280" }}>− Reembolsos por transferencia</span>
-                    <span style={{ fontWeight: 600, color: "#EF4444" }}>${parseFloat(turnoActivo.total_reembolsos_transferencia || 0).toFixed(2)}</span>
-                  </div>
-                  <div style={{ borderTop: "1px dashed #E5E7EB", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", fontFamily: FONTC, fontWeight: 700 }}>
-                    <span>NETO TRANSFERENCIA DEL TURNO</span>
-                    <span style={{ color: ORANGE }}>${(parseFloat(turnoActivo.total_transferencia_sistema || 0) - parseFloat(turnoActivo.total_reembolsos_transferencia || 0)).toFixed(2)}</span>
-                  </div>
+                  {/* Los reembolsos solo se procesan en Efectivo, por eso aquí no
+                      hay una línea de "reembolsos por transferencia" que restar. */}
                 </>
               )}
             </div>
@@ -1606,17 +1659,22 @@ export default function ModuloCaja() {
               </p>
             </div>
 
-            {/* Saldo real disponible en la caja del turno, por forma de pago */}
-            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
-              <div style={{ flex: 1, background: "#F8FAFC", border: "1px solid #F1F5F9", borderRadius: "8px", padding: "0.5rem 0.75rem" }}>
-                <p style={{ fontFamily: FONT, fontSize: "0.75rem", color: "#6B7280", margin: 0 }}>💵 Efectivo en caja</p>
-                <p style={{ fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: DARK, margin: 0 }}>${disponibleEfectivoTurno.toFixed(2)}</p>
+            {/* Ingresos de HOY (lo que sí se puede reembolsar) vs Fondo inicial
+                (dinero de cambio, no es un ingreso y no respalda reembolsos).
+                Se muestran por separado a propósito para que no se confundan. */}
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+              <div style={{ flex: 1, background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "0.5rem 0.75rem" }}>
+                <p style={{ fontFamily: FONT, fontSize: "0.75rem", color: "#166534", margin: 0 }}>💵 Ingresos de hoy (efectivo)</p>
+                <p style={{ fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: "#166534", margin: 0 }}>${ingresosEfectivoTurno.toFixed(2)}</p>
               </div>
               <div style={{ flex: 1, background: "#F8FAFC", border: "1px solid #F1F5F9", borderRadius: "8px", padding: "0.5rem 0.75rem" }}>
-                <p style={{ fontFamily: FONT, fontSize: "0.75rem", color: "#6B7280", margin: 0 }}>🏦 Transferencia en caja</p>
-                <p style={{ fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: DARK, margin: 0 }}>${disponibleTransferenciaTurno.toFixed(2)}</p>
+                <p style={{ fontFamily: FONT, fontSize: "0.75rem", color: "#6B7280", margin: 0 }}>🗄️ Fondo inicial</p>
+                <p style={{ fontFamily: FONTC, fontWeight: 800, fontSize: "0.95rem", color: DARK, margin: 0 }}>${fondoInicialTurno.toFixed(2)}</p>
               </div>
             </div>
+            <p style={{ fontSize: "0.72rem", color: "#9CA3AF", margin: "0 0 1rem", fontFamily: FONT }}>
+              El fondo inicial es el dinero de cambio con el que se abrió la caja: no cuenta como ingreso y no se usa para respaldar reembolsos.
+            </p>
 
             <label style={S.label}>Monto total a reembolsar</label>
             <input
@@ -1810,13 +1868,23 @@ function PagoParteSub({ parte, idx, esMixto, totalOrden, onChange }) {
           </p>
 
           <label style={S.label}>Banco *</label>
-          <input
-            type="text"
+          <select
             value={parte.banco}
             onChange={e => onChange(idx, "banco", e.target.value)}
-            style={{ ...S.input, width: "100%", marginBottom: "0.6rem" }}
-            placeholder="Ej: Banco Pichincha"
-          />
+            style={{ ...S.input, width: "100%", marginBottom: parte.banco === "Otro" ? "0.5rem" : "0.6rem" }}
+          >
+            <option value="" disabled>Selecciona el banco...</option>
+            {BANCOS_ECUADOR.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+          {parte.banco === "Otro" && (
+            <input
+              type="text"
+              value={parte.bancoManual}
+              onChange={e => onChange(idx, "bancoManual", e.target.value)}
+              style={{ ...S.input, width: "100%", marginBottom: "0.6rem" }}
+              placeholder="Escribe el nombre del banco"
+            />
+          )}
 
           <label style={S.label}>Titular de la transferencia *</label>
           <input
@@ -1830,11 +1898,21 @@ function PagoParteSub({ parte, idx, esMixto, totalOrden, onChange }) {
           <label style={S.label}>Cédula del titular *</label>
           <input
             type="text"
+            inputMode="numeric"
+            maxLength={10}
             value={parte.cedula_titular}
-            onChange={e => onChange(idx, "cedula_titular", e.target.value)}
-            style={{ ...S.input, width: "100%" }}
+            onChange={e => onChange(idx, "cedula_titular", e.target.value.replace(/\D/g, ""))}
+            style={{
+              ...S.input, width: "100%",
+              borderColor: parte.cedula_titular && !validarCedulaEcuador(parte.cedula_titular) ? "#EF4444" : undefined,
+            }}
             placeholder="Ej: 0912345678"
           />
+          {parte.cedula_titular && !validarCedulaEcuador(parte.cedula_titular) && (
+            <p style={{ fontSize: "0.72rem", color: "#DC2626", margin: "0.3rem 0 0", fontFamily: FONT }}>
+              Esta cédula no es válida.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -2027,7 +2105,7 @@ function ComprobanteView({ comprobante, onCerrar }) {
           <span>{orden.cedula || "—"}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-          <span style={{ color: "#6B7280" }}>Fecha:</span>
+          <span style={{ color: "#6B7280" }}>Fecha de pago:</span>
           <span>{fecha.toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
         </div>
 
@@ -2135,9 +2213,6 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
           <span>− Reembolsos efectivo ({reembolsos.filter(r => r.metodo_reembolso === "Efectivo").length})</span>
           <span>${parseFloat(cierre.total_reembolsos_efectivo || 0).toFixed(2)}</span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-          <span>− Reembolsos transferencia</span><span>${parseFloat(cierre.total_reembolsos_transferencia || 0).toFixed(2)}</span>
         </div>
 
         <div style={{ borderTop: "1px dashed #D1D5DB", margin: "0.5rem 0" }} />
@@ -2256,7 +2331,6 @@ function ComprobanteCierreView({ detalle, onCerrar }) {
             <tr><td style={{ padding: "3px 0" }}>(+) Efectivo cobrado</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.total_efectivo_sistema || 0).toFixed(2)}</td></tr>
             <tr><td style={{ padding: "3px 0" }}>(+) Transferencia cobrada</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.total_transferencia_sistema || 0).toFixed(2)}</td></tr>
             <tr><td style={{ padding: "3px 0" }}>(−) Reembolsos efectivo</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.total_reembolsos_efectivo || 0).toFixed(2)}</td></tr>
-            <tr><td style={{ padding: "3px 0" }}>(−) Reembolsos transferencia</td><td style={{ textAlign: "right" }}>${parseFloat(cierre.total_reembolsos_transferencia || 0).toFixed(2)}</td></tr>
             <tr style={{ borderTop: "2px solid #111" }}><td style={{ padding: "5px 0", fontWeight: 700 }}>Efectivo esperado</td><td style={{ textAlign: "right", fontWeight: 700 }}>${parseFloat(cierre.efectivo_esperado || 0).toFixed(2)}</td></tr>
             <tr><td style={{ padding: "3px 0", fontWeight: 700 }}>Efectivo contado (arqueo físico)</td><td style={{ textAlign: "right", fontWeight: 700 }}>${parseFloat(cierre.efectivo_contado || 0).toFixed(2)}</td></tr>
             <tr><td style={{ padding: "3px 0", fontWeight: 800, color: cuadrado ? "#10B981" : (dif > 0 ? "#3B82F6" : "#EF4444") }}>{cuadrado ? "CAJA CUADRADA" : dif > 0 ? "Sobrante" : "Faltante"}</td>
@@ -2592,8 +2666,9 @@ function CascadaCaja({ turno }) {
   const efReembolsado     = parseFloat(turno.total_reembolsos_efectivo || 0);
   const efEsperado        = parseFloat(turno.efectivo_esperado_actual || 0);
   const transCobrado      = parseFloat(turno.total_transferencia_sistema || 0);
-  const transReembolsado  = parseFloat(turno.total_reembolsos_transferencia || 0);
-  const transNeto         = transCobrado - transReembolsado;
+  // NOTA: los reembolsos SOLO se procesan en Efectivo (ver estadoInicialReembolso
+  // y el modal de reembolso), así que aquí no existe un "reembolsado por
+  // transferencia" que restar. Se muestra directo el total cobrado.
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
@@ -2608,9 +2683,8 @@ function CascadaCaja({ turno }) {
       <div style={{ ...S.tableCard, padding: "1.1rem 1.25rem" }}>
         <p style={{ fontFamily: FONTC, fontSize: "0.72rem", fontWeight: 700, color: "#9CA3AF", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 0.4rem" }}>🏧 Transferencia</p>
         <FilaCascada signo="+" label="Cobrada" value={`$${transCobrado.toFixed(2)}`} color="#3B82F6" />
-        <FilaCascada signo="−" label="Reembolsada" value={`$${transReembolsado.toFixed(2)}`} color="#EF4444" />
         <div style={{ borderTop: "1px dashed #E5E7EB", marginTop: "0.2rem" }} />
-        <FilaCascada signo="=" label="Neto del turno" value={`$${transNeto.toFixed(2)}`} bold color={ORANGE} />
+        <FilaCascada signo="=" label="Total del turno" value={`$${transCobrado.toFixed(2)}`} bold color={ORANGE} />
       </div>
     </div>
   );

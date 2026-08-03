@@ -235,6 +235,50 @@ export default function GestionOrdenes() {
     return out;
   };
 
+  // Abre una ventana de impresión con las credenciales, para que la secretaria
+  // pueda entregárselas físicamente al paciente además de que ya le llegaron
+  // por correo (esto NO reemplaza el envío de correo, es un respaldo en papel
+  // por si el paciente no tiene acceso a su correo en el momento).
+  const imprimirCredenciales = (cred) => {
+    const ventana = window.open("", "_blank", "width=420,height=560");
+    if (!ventana) return; // el navegador bloqueó el popup
+
+    const fecha = new Date().toLocaleString("es-EC", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+
+    ventana.document.write(`
+      <html>
+        <head>
+          <title>Credenciales de acceso</title>
+          <style>
+            body { font-family: 'Courier New', monospace; padding: 24px; color: #1F2937; }
+            h2 { text-align: center; margin: 0 0 4px; font-size: 1rem; }
+            .sub { text-align: center; color: #6B7280; font-size: 0.75rem; margin-bottom: 16px; }
+            hr { border: none; border-top: 1px dashed #9CA3AF; margin: 12px 0; }
+            .fila { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.9rem; }
+            .fila b { margin-left: 12px; }
+            .footer { text-align: center; font-size: 0.7rem; color: #9CA3AF; margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <h2>LABORATORIO CLÍNICO CARDENAS-GAROFALO</h2>
+          <div class="sub">CREDENCIALES DE ACCESO A LA APP</div>
+          <hr />
+          <div class="fila"><span>Paciente:</span><b>${cred.nombres || ""} ${cred.apellidos || ""}</b></div>
+          <div class="fila"><span>Usuario:</span><b>${cred.username || "—"}</b></div>
+          <div class="fila"><span>Contraseña:</span><b>${cred.password || "—"}</b></div>
+          <hr />
+          <div class="fila"><span>Generado:</span><b>${fecha}</b></div>
+          <div class="footer">Conserve este comprobante. Puede cambiar su contraseña desde su perfil en la app.</div>
+        </body>
+      </html>
+    `);
+    ventana.document.close();
+    ventana.focus();
+    ventana.print();
+  };
+
   // Genera un username legible mezclando nombre + apellido + dígitos de la cédula
   // (en vez de dejarlo como solo números), ej: "jennyg268"
   const generarUsername = (nombres, apellidos, cedula) => {
@@ -310,7 +354,7 @@ export default function GestionOrdenes() {
           throw err;
         }
       }
-      setCredencialesGeneradas({ username, password });
+      setCredencialesGeneradas({ username, password, nombres, apellidos, correo });
       await cargar(); // recarga pacientes para que el paciente recién creado quede seleccionado automáticamente
     } catch (err) {
       setMsgRegistro({ type: "error", text: err.response?.data?.error || "Error al registrar el paciente." });
@@ -930,10 +974,23 @@ export default function GestionOrdenes() {
                           <p style={{ margin: "0 0 0.25rem", fontSize: "0.82rem", color: DARK }}><b>Usuario:</b> {credencialesGeneradas.username}</p>
                           <p style={{ margin: 0, fontSize: "0.82rem", color: DARK }}><b>Contraseña temporal:</b> {credencialesGeneradas.password}</p>
                         </div>
-                        <p style={{ margin: "0 0 0.6rem", fontSize: "0.75rem", color: "#166534" }}>El paciente podrá cambiar esta contraseña luego desde su perfil.</p>
-                        <button type="button" onClick={resetFormRegistro} style={{ ...s.btnFull, padding: "0.6rem", fontSize: "0.85rem" }}>
-                          Continuar con la orden
-                        </button>
+                        <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", color: "#166534" }}>El paciente podrá cambiar esta contraseña luego desde su perfil.</p>
+                        <p style={{ margin: "0 0 0.6rem", fontSize: "0.75rem", color: "#166534" }}>
+                          📧 También se enviaron estas credenciales al correo registrado
+                          {credencialesGeneradas.correo ? <> (<b>{credencialesGeneradas.correo}</b>)</> : ""}.
+                        </p>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button
+                            type="button"
+                            onClick={() => imprimirCredenciales(credencialesGeneradas)}
+                            style={{ ...s.btnSecondary, flex: 1, padding: "0.6rem", fontSize: "0.85rem", textAlign: "center" }}
+                          >
+                            🖨️ Imprimir
+                          </button>
+                          <button type="button" onClick={resetFormRegistro} style={{ ...s.btnFull, flex: 1, padding: "0.6rem", fontSize: "0.85rem" }}>
+                            Continuar con la orden
+                          </button>
+                        </div>
                       </div>
                     ) : !showRegistroRapido ? (
                       <button

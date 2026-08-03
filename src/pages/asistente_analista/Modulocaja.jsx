@@ -2652,7 +2652,7 @@ function UltimoCierreCard({ cierre }) {
         <DetalleItem label="Fondo final (efectivo)" value={`$${efectivoFinal.toFixed(2)}`} />
         <DetalleItem label="Cerrado por" value={`${cierre.nombres || ""} ${cierre.apellidos || ""}`.trim() || "—"} />
         <DetalleItem
-          label="Cerrado el"
+          label="Cerrado el: "
           value={cierre.fecha_cierre ? new Date(cierre.fecha_cierre).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
         />
       </div>

@@ -87,42 +87,37 @@ export default function ConfiguracionSistema() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 p-20 font-[Barlow,sans-serif]">
-        <div className="w-7 h-7 rounded-full border-[3px] border-slate-100 border-t-[#E88B3A] animate-[spin_0.7s_linear_infinite]" />
-        <p className="m-0 text-[0.85rem] text-gray-400">Cargando configuracion...</p>
+      <div style={S.centered}>
+        <div style={S.spinner} />
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: '#9CA3AF' }}>Cargando configuracion...</p>
       </div>
     );
   }
 
   return (
-    <div className="relative max-w-[780px] p-6 font-[Barlow,sans-serif]">
+    <div style={S.page}>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+
       {/* Toast */}
       {toast && (
-        <div
-          className={`fixed top-4 right-4 z-[9999] max-w-[340px] rounded-lg border px-4 py-[0.7rem]
-            text-[0.85rem] shadow-[0_4px_16px_rgba(0,0,0,0.08)] animate-[fadeIn_0.2s_ease]
-            ${toast.tipo === 'ok'
-              ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
-              : 'bg-red-50 border-red-500 text-red-800'}`}
-        >
+        <div style={{
+          ...S.toast,
+          background:  toast.tipo === 'ok' ? '#ECFDF5' : '#FEF2F2',
+          borderColor: toast.tipo === 'ok' ? '#10B981' : '#EF4444',
+          color:       toast.tipo === 'ok' ? '#065F46' : '#991B1B',
+        }}>
           {toast.tipo === 'ok' ? 'OK' : 'Error'}: {toast.texto}
         </div>
       )}
 
       {/* Encabezado */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-9">
+      <div style={S.header}>
         <div>
-          <h2 className="m-0 text-[1.35rem] font-semibold text-gray-800">Configuracion del sistema</h2>
-          <p className="mt-2 mb-0 text-[0.82rem] text-gray-500">
-            Los cambios se aplican de inmediato en todo el sistema
-          </p>
+          <h2 style={S.title}>Configuracion del sistema</h2>
+          <p style={S.sub}>Los cambios se aplican de inmediato en todo el sistema</p>
         </div>
-        <button
-          onClick={handleGuardar}
-          disabled={guardando}
-          className={`rounded-lg bg-[#E88B3A] px-5 py-[0.6rem] text-[0.88rem] font-semibold
-            text-white transition-opacity ${guardando ? 'opacity-60 cursor-default' : 'opacity-100 cursor-pointer'}`}
-        >
+        <button onClick={handleGuardar} disabled={guardando} style={{ ...S.btnGuardar, opacity: guardando ? 0.6 : 1 }}>
           {guardando ? 'Guardando...' : 'Guardar cambios'}
         </button>
       </div>
@@ -133,12 +128,7 @@ export default function ConfiguracionSistema() {
           nombre="Validez del codigo QR del paciente"
           desc="Tiempo antes de que el QR expire"
         >
-          <select
-            value={config.expiracionQR}
-            onChange={e => handleChange('expiracionQR', e.target.value)}
-            className="cursor-pointer rounded-md border-[1.5px] border-gray-200 bg-[#FAFAFA]
-              px-[0.7rem] py-[0.4rem] text-[0.84rem] text-gray-700 outline-none"
-          >
+          <select value={config.expiracionQR} onChange={e => handleChange('expiracionQR', e.target.value)} style={S.select}>
             <option value="12">12 horas</option>
             <option value="24">24 horas</option>
             <option value="48">48 horas</option>
@@ -149,27 +139,23 @@ export default function ConfiguracionSistema() {
 
       {/* Seccion: Notificaciones por correo */}
       <Section titulo="Notificaciones por correo">
-        <div className="px-5 py-5">
-          <p className="m-0 text-[0.92rem] font-medium text-gray-800">
-            Correos para el reporte de cierre de caja
-          </p>
-          <p className="mt-1.5 mb-0 text-[0.78rem] leading-relaxed text-gray-500">
+        <div style={{ padding: '1rem 1.25rem' }}>
+          <p style={S.filaNombre}>Correos para el reporte de cierre de caja</p>
+          <p style={S.filaDesc}>
             Cada vez que una secretaria/asistente cierre un turno de caja, el reporte en PDF
             se enviará automáticamente a estos correos. Puedes agregar dos o más.
           </p>
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
             <input
               type="email"
               value={nuevoCorreo}
               onChange={e => { setNuevoCorreo(e.target.value); setErrorCorreo(''); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAgregarCorreo(); } }}
               placeholder="admin@laboratorio.com"
-              className="flex-1 basis-60 rounded-lg border-[1.5px] border-gray-200 bg-[#FAFAFA]
-                px-[0.8rem] py-[0.55rem] text-[0.86rem] text-gray-700 outline-none
-                focus:border-[#E88B3A]"
+              style={S.inputCorreo}
             />
-            <button
+           <button
               onClick={handleAgregarCorreo}
               type="button"
               className="whitespace-nowrap rounded-lg bg-gray-800 px-4 py-[0.55rem] text-[0.84rem]
@@ -177,31 +163,27 @@ export default function ConfiguracionSistema() {
             >
               + Agregar
             </button>
+         
           </div>
 
           {errorCorreo && (
-            <p className="mt-[0.4rem] mb-0 text-[0.78rem] text-red-500">{errorCorreo}</p>
+            <p style={{ color: '#EF4444', fontSize: '0.78rem', margin: '0.4rem 0 0' }}>{errorCorreo}</p>
           )}
 
-          <div className="mt-[0.9rem] flex flex-wrap gap-2">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.9rem' }}>
             {correos.length === 0 && (
-              <p className="m-0 text-[0.8rem] text-gray-400">
+              <p style={{ fontSize: '0.8rem', color: '#9CA3AF', margin: 0 }}>
                 Todavía no hay correos configurados.
               </p>
             )}
             {correos.map(correo => (
-              <span
-                key={correo}
-                className="inline-flex items-center gap-[0.4rem] rounded-full bg-slate-100
-                  py-[0.35rem] pl-3 pr-2 text-[0.82rem] text-gray-700"
-              >
+              <span key={correo} style={S.chip}>
                 {correo}
                 <button
                   onClick={() => handleQuitarCorreo(correo)}
                   type="button"
+                  style={S.chipBtn}
                   aria-label={`Quitar ${correo}`}
-                  className="cursor-pointer border-none bg-transparent px-[0.2rem] text-base
-                    leading-none text-gray-400"
                 >
                   ×
                 </button>
@@ -217,12 +199,7 @@ export default function ConfiguracionSistema() {
           nombre="Intentos de inicio de sesion fallidos permitidos"
           desc="Se registra una alerta si se supera este limite. El usuario que supere los intentos, deberá esperar 5 minutos para volver a ingresar."
         >
-          <select
-            value={config.reintentosLogin}
-            onChange={e => handleChange('reintentosLogin', e.target.value)}
-            className="cursor-pointer rounded-md border-[1.5px] border-gray-200 bg-[#FAFAFA]
-              px-[0.7rem] py-[0.4rem] text-[0.84rem] text-gray-700 outline-none"
-          >
+          <select value={config.reintentosLogin} onChange={e => handleChange('reintentosLogin', e.target.value)} style={S.select}>
             <option value="3">3 intentos</option>
             <option value="5">5 intentos</option>
             <option value="10">10 intentos</option>
@@ -237,11 +214,8 @@ export default function ConfiguracionSistema() {
 
 function Section({ titulo, children }) {
   return (
-    <div className="mb-5 overflow-hidden rounded-xl border border-slate-100 bg-white">
-      <div className="border-b border-slate-100 bg-slate-50 px-5 py-[0.65rem] text-[0.78rem]
-        font-bold uppercase tracking-[0.06em] text-gray-500">
-        {titulo}
-      </div>
+    <div style={S.section}>
+      <div style={S.sectionTitle}>{titulo}</div>
       {children}
     </div>
   );
@@ -249,12 +223,120 @@ function Section({ titulo, children }) {
 
 function Fila({ nombre, desc, children }) {
   return (
-    <div className="flex items-center justify-between gap-6 border-b border-slate-50 px-5 py-4">
-      <div className="flex-1">
-        <p className="m-0 text-[0.92rem] font-medium text-gray-800">{nombre}</p>
-        <p className="mt-0.75 mb-0 text-[0.78rem] leading-relaxed text-gray-500">{desc}</p>
+    <div style={S.fila}>
+      <div style={{ flex: 1 }}>
+        <p style={S.filaNombre}>{nombre}</p>
+        <p style={S.filaDesc}>{desc}</p>
       </div>
-      <div className="flex-shrink-0">{children}</div>
+      <div style={{ flexShrink: 0 }}>{children}</div>
     </div>
   );
 }
+
+/* Estilos */
+const S = {
+  page: {
+    padding: '1.5rem',
+    fontFamily: "'Barlow', sans-serif",
+    position: 'relative',
+    maxWidth: '780px',
+  },
+  centered: {
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    padding: '5rem', gap: '1rem',
+    fontFamily: "'Barlow', sans-serif",
+  },
+  spinner: {
+    width: '28px', height: '28px',
+    border: '3px solid #F1F5F9',
+    borderTop: '3px solid #E88B3A',
+    borderRadius: '50%',
+    animation: 'spin 0.7s linear infinite',
+  },
+  toast: {
+    position: 'fixed', top: '1rem', right: '1rem', zIndex: 9999,
+    padding: '0.7rem 1rem', borderRadius: '8px', border: '1px solid',
+    fontSize: '0.85rem', fontFamily: "'Barlow', sans-serif",
+    boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+    animation: 'fadeIn 0.2s ease', maxWidth: '340px',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem',
+  },
+  title: {
+    fontSize: '1.35rem', fontWeight: 600,
+    color: '#1F2937', margin: 0,
+  },
+  sub: {
+    fontSize: '0.82rem', color: '#6B7280', margin: '4px 0 0',
+  },
+  btnGuardar: {
+    background: '#E88B3A', color: '#FFF', border: 'none',
+    padding: '0.6rem 1.25rem', borderRadius: '8px',
+    fontFamily: "'Barlow', sans-serif", fontWeight: 600,
+    fontSize: '0.88rem', cursor: 'pointer',
+  },
+  section: {
+    background: '#FFF',
+    border: '1px solid #F1F5F9',
+    borderRadius: '12px',
+    marginBottom: '1.25rem',
+    overflow: 'hidden',
+  },
+  sectionTitle: {
+    fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase',
+    letterSpacing: '0.06em', color: '#6B7280',
+    padding: '0.65rem 1.25rem',
+    background: '#F8FAFC',
+    borderBottom: '1px solid #F1F5F9',
+  },
+  fila: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '1rem 1.25rem', borderBottom: '1px solid #F8FAFC',
+    gap: '1.5rem',
+  },
+  filaNombre: { fontSize: '0.92rem', fontWeight: 500, color: '#1F2937', margin: 0 },
+  filaDesc:   { fontSize: '0.78rem', color: '#6B7280', margin: '3px 0 0', lineHeight: 1.5 },
+  select: {
+    padding: '0.4rem 0.7rem', borderRadius: '6px',
+    border: '1.5px solid #E5E7EB', outline: 'none',
+    fontFamily: "'Barlow', sans-serif", fontSize: '0.84rem',
+    color: '#374151', background: '#FAFAFA', cursor: 'pointer',
+  },
+  inputCorreo: {
+    flex: '1 1 240px',
+    padding: '0.55rem 0.8rem', borderRadius: '8px',
+    border: '1.5px solid #E5E7EB', outline: 'none',
+    fontFamily: "'Barlow', sans-serif", fontSize: '0.86rem',
+    color: '#374151', background: '#FAFAFA',
+  },
+  btnAgregar: {
+    background: '#1F2937', color: '#FFF', border: 'none',
+    padding: '0.55rem 1rem', borderRadius: '8px',
+    fontFamily: "'Barlow', sans-serif", fontWeight: 600,
+    fontSize: '0.84rem', cursor: 'pointer', whiteSpace: 'nowrap',
+  },
+  chip: {
+    display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+    background: '#F1F5F9', color: '#374151',
+    padding: '0.35rem 0.5rem 0.35rem 0.75rem', borderRadius: '999px',
+    fontSize: '0.82rem', fontFamily: "'Barlow', sans-serif",
+  },
+  chipBtn: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    color: '#9CA3AF', fontSize: '1rem', lineHeight: 1, padding: '0 0.2rem',
+  },
+  toggleBase: {
+    width: '44px', height: '24px', borderRadius: '12px',
+    border: 'none', cursor: 'pointer', position: 'relative',
+    transition: 'background 0.2s',
+  },
+  toggleKnob: {
+    position: 'absolute', top: '3px',
+    width: '18px', height: '18px', borderRadius: '50%',
+    background: '#FFF', transition: 'left 0.2s',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+  },
+};

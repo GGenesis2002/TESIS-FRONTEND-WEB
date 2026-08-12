@@ -88,18 +88,18 @@ export default function ConfiguracionSistema() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 p-20 font-[Barlow,sans-serif]">
-        <div className="w-7 h-7 rounded-full border-[3px] border-slate-100 border-t-[#E88B3A] animate-spin" />
+        <div className="w-7 h-7 rounded-full border-[3px] border-slate-100 border-t-[#E88B3A] animate-[spin_0.7s_linear_infinite]" />
         <p className="m-0 text-[0.85rem] text-gray-400">Cargando configuracion...</p>
       </div>
     );
   }
 
   return (
-    <div className="relative max-w-[780px] p-6 font-[Barlow,sans-serif]">
+    <div className="relative max-w-195 p-6 font-[Barlow,sans-serif]">
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-[9999] max-w-[340px] rounded-lg border px-4 py-[0.7rem]
+          className={`fixed top-4 right-4 z-9999 max-w-85 rounded-lg border px-4 py-[0.7rem]
             text-[0.85rem] shadow-[0_4px_16px_rgba(0,0,0,0.08)] animate-[fadeIn_0.2s_ease]
             ${toast.tipo === 'ok'
               ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
@@ -121,7 +121,7 @@ export default function ConfiguracionSistema() {
           onClick={handleGuardar}
           disabled={guardando}
           className={`rounded-lg bg-[#E88B3A] px-5 py-[0.6rem] text-[0.88rem] font-semibold
-            text-white transition-opacity ${guardando ? 'opacity-60 cursor-default' : 'opacity-100 cursor-pointer hover:brightness-95'}`}
+            text-white transition-opacity ${guardando ? 'opacity-60 cursor-default' : 'opacity-100 cursor-pointer'}`}
         >
           {guardando ? 'Guardando...' : 'Guardar cambios'}
         </button>
@@ -137,7 +137,7 @@ export default function ConfiguracionSistema() {
             value={config.expiracionQR}
             onChange={e => handleChange('expiracionQR', e.target.value)}
             className="cursor-pointer rounded-md border-[1.5px] border-gray-200 bg-[#FAFAFA]
-              px-3 py-[0.4rem] text-[0.84rem] text-gray-700 outline-none"
+              px-[0.7rem] py-[0.4rem] text-[0.84rem] text-gray-700 outline-none"
           >
             <option value="12">12 horas</option>
             <option value="24">24 horas</option>
@@ -153,7 +153,7 @@ export default function ConfiguracionSistema() {
           <p className="m-0 text-[0.92rem] font-medium text-gray-800">
             Correos para el reporte de cierre de caja
           </p>
-          <p className="mt-[3px] mb-0 text-[0.78rem] leading-relaxed text-gray-500">
+          <p className="mt-0.75 mb-0 text-[0.78rem] leading-relaxed text-gray-500">
             Cada vez que una secretaria/asistente cierre un turno de caja, el reporte en PDF
             se enviará automáticamente a estos correos. Puedes agregar dos o más.
           </p>
@@ -173,7 +173,7 @@ export default function ConfiguracionSistema() {
               onClick={handleAgregarCorreo}
               type="button"
               className="whitespace-nowrap rounded-lg bg-gray-800 px-4 py-[0.55rem] text-[0.84rem]
-                font-semibold text-white cursor-pointer hover:bg-gray-700"
+                font-semibold text-white cursor-pointer"
             >
               + Agregar
             </button>
@@ -201,7 +201,7 @@ export default function ConfiguracionSistema() {
                   type="button"
                   aria-label={`Quitar ${correo}`}
                   className="cursor-pointer border-none bg-transparent px-[0.2rem] text-base
-                    leading-none text-gray-400 hover:text-gray-600"
+                    leading-none text-gray-400"
                 >
                   ×
                 </button>
@@ -221,7 +221,7 @@ export default function ConfiguracionSistema() {
             value={config.reintentosLogin}
             onChange={e => handleChange('reintentosLogin', e.target.value)}
             className="cursor-pointer rounded-md border-[1.5px] border-gray-200 bg-[#FAFAFA]
-              px-3 py-[0.4rem] text-[0.84rem] text-gray-700 outline-none"
+              px-[0.7rem] py-[0.4rem] text-[0.84rem] text-gray-700 outline-none"
           >
             <option value="3">3 intentos</option>
             <option value="5">5 intentos</option>
@@ -239,7 +239,7 @@ function Section({ titulo, children }) {
   return (
     <div className="mb-5 overflow-hidden rounded-xl border border-slate-100 bg-white">
       <div className="border-b border-slate-100 bg-slate-50 px-5 py-[0.65rem] text-[0.78rem]
-        font-bold uppercase tracking-wider text-gray-500">
+        font-bold uppercase tracking-[0.06em] text-gray-500">
         {titulo}
       </div>
       {children}
@@ -252,9 +252,9 @@ function Fila({ nombre, desc, children }) {
     <div className="flex items-center justify-between gap-6 border-b border-slate-50 px-5 py-4">
       <div className="flex-1">
         <p className="m-0 text-[0.92rem] font-medium text-gray-800">{nombre}</p>
-        <p className="mt-[3px] mb-0 text-[0.78rem] leading-relaxed text-gray-500">{desc}</p>
+        <p className="mt-0.75 mb-0 text-[0.78rem] leading-relaxed text-gray-500">{desc}</p>
       </div>
-      <div className="flex-shrink-0">{children}</div>
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }

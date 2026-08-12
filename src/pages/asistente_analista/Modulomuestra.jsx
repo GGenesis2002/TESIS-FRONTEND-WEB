@@ -433,16 +433,16 @@ export default function ModuloMuestra() {
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: "0.65rem" }}>
-                    <button onClick={abrirUsoAdicional} style={{
-                        ...S.btnRefresh,
-                        background: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA",
-                    }}>
+                    <button onClick={abrirUsoAdicional}
+                        className="bg-[#FFF7ED] border border-[#FED7AA] text-[#C2410C] px-[1.1rem] py-[0.5rem] rounded-lg font-[Barlow_Condensed,sans-serif] font-bold text-[0.84rem] cursor-pointer">
                         ➕ Usos Adicionales
                     </button>
-                    <button onClick={abrirLectorQR} style={S.btnQR}>
+                    <button onClick={abrirLectorQR}
+                        className="bg-[#1F2937] border border-[#1F2937] text-white px-[1.1rem] py-[0.5rem] rounded-lg font-[Barlow_Condensed,sans-serif] font-bold text-[0.84rem] cursor-pointer">
                         📷 LEER QR / TICKET
                     </button>
-                    <button onClick={cargar} disabled={loading} style={S.btnRefresh}>
+                    <button onClick={cargar} disabled={loading}
+                        className="bg-[rgba(232,139,58,0.1)] border border-[rgba(232,139,58,0.25)] text-[#E88B3A] px-[1.1rem] py-[0.5rem] rounded-lg font-[Barlow_Condensed,sans-serif] font-bold text-[0.84rem] cursor-pointer">
                         {loading ? "…" : "↻ Actualizar"}
                     </button>
                 </div>
@@ -455,13 +455,11 @@ export default function ModuloMuestra() {
                     { key: "buscar",    label: "🔍 Buscar por Código" },
                     { key: "historial", label: "📋 Historial" },
                 ].map(t => (
-                    <button key={t.key} onClick={() => setVistaTab(t.key)} style={{
-                        ...S.tabBtn,
-                        background: vistaTab === t.key ? "#FFF" : "transparent",
-                        color:      vistaTab === t.key ? DARK : "#6B7280",
-                        fontWeight: vistaTab === t.key ? 700 : 500,
-                        boxShadow:  vistaTab === t.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                    }}>
+                    <button key={t.key} onClick={() => setVistaTab(t.key)}
+                        className={`border-none rounded-[7px] px-4 py-[0.45rem] font-[Barlow_Condensed,sans-serif] text-[0.8rem] tracking-[0.03em] cursor-pointer transition-all duration-150 whitespace-nowrap
+                            ${vistaTab === t.key
+                                ? "bg-white text-[#1F2937] font-bold shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
+                                : "bg-transparent text-gray-500 font-medium"}`}>
                         {t.label}
                     </button>
                 ))}
@@ -486,7 +484,8 @@ export default function ModuloMuestra() {
                         <input type="date" value={desdeReg} max={hastaReg || undefined} onChange={e => setDesdeReg(e.target.value)} style={{ ...S.input, padding: "0.55rem 0.75rem" }} title="Desde" />
                         <input type="date" value={hastaReg} min={desdeReg || undefined} onChange={e => setHastaReg(e.target.value)} style={{ ...S.input, padding: "0.55rem 0.75rem" }} title="Hasta" />
                         {(desdeReg || hastaReg) && (
-                            <button onClick={() => { setDesdeReg(""); setHastaReg(""); }} style={S.btnRefresh}>
+                            <button onClick={() => { setDesdeReg(""); setHastaReg(""); }}
+                                className="bg-[rgba(232,139,58,0.1)] border border-[rgba(232,139,58,0.25)] text-[#E88B3A] px-[1.1rem] py-[0.5rem] rounded-lg font-[Barlow_Condensed,sans-serif] font-bold text-[0.84rem] cursor-pointer">
                                 ✕ Limpiar fechas
                             </button>
                         )}
@@ -532,8 +531,10 @@ export default function ModuloMuestra() {
                                         </span>
                                     </div>
                                     <div style={{ flex: "0 0 120px", display: "flex", justifyContent: "center", gap: "0.4rem" }}>
-                                        <button onClick={() => setShowDetalle(o)} style={S.btnVer} title="Ver detalle">👁️</button>
-                                        <button onClick={() => abrirToma(o)} style={S.btnTomar}>🧪 Tomar</button>
+                                        <button onClick={() => setShowDetalle(o)} title="Ver detalle"
+                                            className="bg-[rgba(232,139,58,0.1)] border border-[rgba(232,139,58,0.25)] rounded-md w-[30px] h-[30px] cursor-pointer text-[0.8rem] flex items-center justify-center text-[#E88B3A]">👁️</button>
+                                        <button onClick={() => abrirToma(o)}
+                                            className="bg-[#059669] border-none rounded-[7px] px-[0.7rem] py-[0.35rem] cursor-pointer font-[Barlow_Condensed,sans-serif] font-bold text-[0.75rem] text-white tracking-[0.04em] flex items-center gap-1">🧪 Tomar</button>
                                     </div>
                                 </div>
                             ))
@@ -605,14 +606,11 @@ export default function ModuloMuestra() {
                         {/* Filtro Hoy / Todos */}
                         <div style={{ display: "flex", background: "#F3F4F6", borderRadius: "8px", padding: "0.2rem", gap: "0.2rem" }}>
                             {[{ key: "hoy", label: "📅 Hoy" }, { key: "todos", label: "📂 Todos" }].map(f => (
-                                <button key={f.key} onClick={() => setFiltroFecha(f.key)} style={{
-                                    ...S.tabBtn,
-                                    background: filtroFecha === f.key ? "#FFF" : "transparent",
-                                    color:      filtroFecha === f.key ? DARK : "#6B7280",
-                                    fontWeight: filtroFecha === f.key ? 700 : 500,
-                                    boxShadow:  filtroFecha === f.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                                    fontSize: "0.78rem",
-                                }}>
+                                <button key={f.key} onClick={() => setFiltroFecha(f.key)}
+                                    className={`border-none rounded-[7px] px-4 py-[0.45rem] font-[Barlow_Condensed,sans-serif] text-[0.78rem] tracking-[0.03em] cursor-pointer transition-all duration-150 whitespace-nowrap
+                                        ${filtroFecha === f.key
+                                            ? "bg-white text-[#1F2937] font-bold shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
+                                            : "bg-transparent text-gray-500 font-medium"}`}>
                                     {f.label}
                                 </button>
                             ))}
@@ -622,7 +620,8 @@ export default function ModuloMuestra() {
                         <input type="date" value={desdeHist} max={hastaHist || undefined} onChange={e => setDesdeHist(e.target.value)} style={{ ...S.input, padding: "0.5rem 0.7rem" }} title="Desde" />
                         <input type="date" value={hastaHist} min={desdeHist || undefined} onChange={e => setHastaHist(e.target.value)} style={{ ...S.input, padding: "0.5rem 0.7rem" }} title="Hasta" />
                         {(desdeHist || hastaHist) && (
-                            <button onClick={() => { setDesdeHist(""); setHastaHist(""); }} style={S.btnRefresh}>
+                            <button onClick={() => { setDesdeHist(""); setHastaHist(""); }}
+                                className="bg-[rgba(232,139,58,0.1)] border border-[rgba(232,139,58,0.25)] text-[#E88B3A] px-[1.1rem] py-[0.5rem] rounded-lg font-[Barlow_Condensed,sans-serif] font-bold text-[0.84rem] cursor-pointer">
                                 ✕ Limpiar fechas
                             </button>
                         )}
@@ -642,7 +641,8 @@ export default function ModuloMuestra() {
                         </div>
 
                         {/* Refresh */}
-                        <button onClick={cargarHistorial} disabled={loadingHistorial} style={S.btnRefresh}>
+                        <button onClick={cargarHistorial} disabled={loadingHistorial}
+                            className="bg-[rgba(232,139,58,0.1)] border border-[rgba(232,139,58,0.25)] text-[#E88B3A] px-[1.1rem] py-[0.5rem] rounded-lg font-[Barlow_Condensed,sans-serif] font-bold text-[0.84rem] cursor-pointer">
                             {loadingHistorial ? "…" : "↻ Actualizar"}
                         </button>
                     </div>
@@ -1421,9 +1421,6 @@ function ResultadoMuestra({ data }) {
 
 // ─── ESTILOS ──────────────────────────────────────────────────────────────────
 const S = {
-    btnRefresh:  { background: "rgba(232,139,58,0.1)", border: "1px solid rgba(232,139,58,0.25)", color: "#E88B3A", padding: "0.5rem 1.1rem", borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" },
-    btnQR:       { background: "#1F2937", border: "1px solid #1F2937", color: "#FFF", padding: "0.5rem 1.1rem", borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer" },
-    tabBtn:      { border: "none", borderRadius: "7px", padding: "0.45rem 1rem", fontFamily: "'Barlow Condensed', sans-serif", fontSize: "0.8rem", letterSpacing: "0.03em", cursor: "pointer", transition: "all 0.15s", whiteSpace: "nowrap" },
     searchWrap:  { display: "flex", alignItems: "center", gap: "0.6rem", background: "#FFF", border: "1.5px solid #E5E7EB", borderRadius: "8px", padding: "0.6rem 1rem" },
     searchInput: { flex: 1, border: "none", outline: "none", fontFamily: "'Barlow', sans-serif", fontSize: "0.875rem", background: "transparent" },
     tableCard:   { background: "#FFF", borderRadius: "12px", border: "1px solid #E5E7EB", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" },
@@ -1431,8 +1428,6 @@ const S = {
     tableRow:    { display: "flex", alignItems: "center", padding: "0.85rem 1.25rem", borderBottom: "1px solid #F3F4F6", transition: "background 0.15s" },
     empty:       { textAlign: "center", padding: "3rem", color: "#9CA3AF", fontFamily: "'Barlow', sans-serif", fontSize: "0.875rem" },
     ticketBadge: { background: "#F1F5F9", color: "#374151", padding: "0.2rem 0.6rem", borderRadius: "6px", fontSize: "0.8rem", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, letterSpacing: "0.04em" },
-    btnVer:      { background: "rgba(232,139,58,0.1)", border: "1px solid rgba(232,139,58,0.25)", borderRadius: "6px", width: "30px", height: "30px", cursor: "pointer", fontSize: "0.8rem", display: "flex", alignItems: "center", justifyContent: "center", color: "#E88B3A" },
-    btnTomar:    { background: "#059669", border: "none", borderRadius: "7px", padding: "0.35rem 0.7rem", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.75rem", color: "#FFF", letterSpacing: "0.04em", display: "flex", alignItems: "center", gap: "0.25rem" },
     btnFull:     { width: "100%", padding: "0.75rem", background: "#1F2937", color: "#FFF", border: "none", borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.9rem", letterSpacing: "0.08em", cursor: "pointer", textTransform: "uppercase" },
     btnCancel:   { padding: "0.75rem 1.25rem", background: "#F1F5F9", color: "#374151", border: "none", borderRadius: "8px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", whiteSpace: "nowrap" },
     modalBody:   { padding: "1.5rem" },

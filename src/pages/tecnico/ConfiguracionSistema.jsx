@@ -95,11 +95,11 @@ export default function ConfiguracionSistema() {
   }
 
   return (
-    <div className="relative max-w-195 p-6 font-[Barlow,sans-serif]">
+    <div className="relative max-w-[780px] p-6 font-[Barlow,sans-serif]">
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-9999 max-w-85 rounded-lg border px-4 py-[0.7rem]
+          className={`fixed top-4 right-4 z-[9999] max-w-[340px] rounded-lg border px-4 py-[0.7rem]
             text-[0.85rem] shadow-[0_4px_16px_rgba(0,0,0,0.08)] animate-[fadeIn_0.2s_ease]
             ${toast.tipo === 'ok'
               ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
@@ -110,10 +110,10 @@ export default function ConfiguracionSistema() {
       )}
 
       {/* Encabezado */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-7">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-9">
         <div>
           <h2 className="m-0 text-[1.35rem] font-semibold text-gray-800">Configuracion del sistema</h2>
-          <p className="mt-1 mb-0 text-[0.82rem] text-gray-500">
+          <p className="mt-2 mb-0 text-[0.82rem] text-gray-500">
             Los cambios se aplican de inmediato en todo el sistema
           </p>
         </div>
@@ -149,11 +149,11 @@ export default function ConfiguracionSistema() {
 
       {/* Seccion: Notificaciones por correo */}
       <Section titulo="Notificaciones por correo">
-        <div className="px-5 py-4">
+        <div className="px-5 py-5">
           <p className="m-0 text-[0.92rem] font-medium text-gray-800">
             Correos para el reporte de cierre de caja
           </p>
-          <p className="mt-0.75 mb-0 text-[0.78rem] leading-relaxed text-gray-500">
+          <p className="mt-1.5 mb-0 text-[0.78rem] leading-relaxed text-gray-500">
             Cada vez que una secretaria/asistente cierre un turno de caja, el reporte en PDF
             se enviará automáticamente a estos correos. Puedes agregar dos o más.
           </p>
@@ -254,7 +254,7 @@ function Fila({ nombre, desc, children }) {
         <p className="m-0 text-[0.92rem] font-medium text-gray-800">{nombre}</p>
         <p className="mt-0.75 mb-0 text-[0.78rem] leading-relaxed text-gray-500">{desc}</p>
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="flex-shrink-0">{children}</div>
     </div>
   );
 }

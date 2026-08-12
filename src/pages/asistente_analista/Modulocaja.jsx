@@ -1158,6 +1158,30 @@ export default function ModuloCaja() {
                   </div>
                   <div style={{ flex: "0 0 110px", textAlign: "right" }}>
                     <span style={{ fontFamily: FONTC, fontSize: "1rem", fontWeight: 700, color: "#10B981" }}>${parseFloat(p.monto || 0).toFixed(2)}</span>
+                    {/* Indicador de reembolso parcial: la orden sigue 'Pagada' (no se
+                        canceló) pero ya tiene un reembolso registrado por menos del
+                        total pagado. Si el reembolso hubiera cubierto el 100%, el
+                        backend ya habría pasado la orden a 'Cancelada' y por lo tanto
+                        entra en la rama de abajo en vez de esta. */}
+                    {(() => {
+                      const yaReembolsado = reembolsadoPorOrden[p.id_orden] || 0;
+                      if (yaReembolsado <= 0) return null;
+                      if (p.estado_orden === "Pagada") {
+                        return (
+                          <div style={{ fontSize: "0.68rem", color: "#F59E0B", fontWeight: 700, marginTop: "0.15rem" }}>
+                            ↩️ Parcial: -${yaReembolsado.toFixed(2)}
+                          </div>
+                        );
+                      }
+                      if (p.estado_orden === "Cancelada") {
+                        return (
+                          <div style={{ fontSize: "0.68rem", color: "#EF4444", fontWeight: 700, marginTop: "0.15rem" }}>
+                            ↩️ Reembolsada: -${yaReembolsado.toFixed(2)}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   <div style={{ flex: "0 0 90px", display: "flex", justifyContent: "center", gap: "0.35rem" }}>
                     <button
